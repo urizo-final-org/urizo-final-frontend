@@ -143,6 +143,7 @@ export function PortalHome({ template }: { template: SiteTemplate }) {
 
     <section className="mx-auto max-w-[75rem] px-7 pb-2 pt-20 text-center max-[560px]:px-4 max-[560px]:pt-14">
       <h1 className="m-0 text-[clamp(2.5rem,6vw,4.75rem)] font-extrabold leading-[1.12] tracking-[-.05em] text-ink">어디로 떠나볼까요?</h1>
+      <p className="mt-4 text-base text-muted">가고 싶은 곳을 골라보세요</p>
 
       {/* 탭 8종은 portal-meta의 확정 상수 그대로다. 시안은 6종이지만 확정안이 우선한다. */}
       <div role="tablist" aria-label="여행 검색 카테고리" className="mt-12 flex flex-wrap items-center justify-center gap-1">
