@@ -185,7 +185,7 @@ export function ChatWidget({ domain = TOUR_DOMAIN }: { domain?: PortalDomain } =
         value={draft}
         onChange={(event) => setDraft(event.target.value)}
         disabled={sending || locked}
-        placeholder="메시지를 입력하세요…"
+        placeholder="무엇이든 물어보세요…"
         aria-label={`${domain.chatTitle} 메시지`}
         className="min-w-0 flex-1 rounded-[0.5625rem] border border-field-line bg-white px-3 py-[0.5625rem] text-[0.8125rem] text-ink outline-0 disabled:bg-sub"
       />
