@@ -97,7 +97,7 @@ export function ChatWidget() {
         <span className="box-border h-[0.875rem] w-4 rounded-[7px_7px_7px_2px] border-2 border-white" />
       </span>
       <span className="text-sm font-bold">관광 도우미</span>
-      <span className="text-[0.6875rem] font-medium text-sb-muted">AI 여행 안내</span>
+      <span className="text-[0.6875rem] font-medium text-sb-muted">AI 여행 도우미</span>
       <button type="button" onClick={() => setOpen(false)} aria-label="관광 도우미 닫기" className="ml-auto bg-transparent px-1 py-0.5 text-lg leading-none text-sb-muted hover:text-white">×</button>
     </div>
 
