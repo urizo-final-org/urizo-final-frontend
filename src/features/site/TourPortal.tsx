@@ -297,19 +297,34 @@ function SectionHead({ title, eyebrow, moreCategory }: { title: string; eyebrow:
 
 export function PortalHome({ template, menus = [], notices = [] }: { template: SiteTemplate; menus?: Menu[]; notices?: Post[] }) {
   const [page, setPage] = useState(1)
+  const [onlyOngoingFestivals, setOnlyOngoingFestivals] = useState(false)
 
   const [hero, ...rest] = HOME_SECTIONS
   const quickLinks = orderedMenus(menus, null).slice(0, 4)
   const notice = notices[0]
+
+  const shownFestivals = onlyOngoingFestivals
+    ? FESTIVALS.filter((festival) => festivalBadge(festival.start, festival.end) === '진행 중')
+    : FESTIVALS
 
   return <main>
     <TemplateBanner template={template} />
 
     <section className="border-b border-line-soft bg-page">
       <div className="mx-auto max-w-[75rem] px-7 pb-[3.75rem] pt-14 max-[560px]:px-4">
-        <SectionHead title="지금 열리는 축제·행사?" eyebrow={`${todayLabel()} 기준 · 진행·예정 19건`} moreCategory="event" />
+        <div className="flex items-end justify-between gap-5">
+          <SectionHead title="지금 열리는 축제·행사?" eyebrow={`${todayLabel()} 기준 · 진행·예정 19건`} moreCategory="event" />
+          <button
+            type="button"
+            aria-pressed={onlyOngoingFestivals}
+            onClick={() => setOnlyOngoingFestivals((v) => !v)}
+            className={`whitespace-nowrap rounded-full border px-4 py-2 text-[0.8125rem] font-bold transition ${onlyOngoingFestivals ? 'border-ink bg-ink text-white' : 'border-line-soft bg-page text-body hover:border-primary'}`}
+          >
+            진행 중만 보기
+          </button>
+        </div>
         <div className="mt-6 grid gap-5 [grid-template-columns:repeat(auto-fit,minmax(13.125rem,1fr))]">
-          {FESTIVALS.map((festival) => <article key={festival.name}>
+          {shownFestivals.map((festival) => <article key={festival.name}>
             <div className="relative overflow-hidden rounded-xl border border-line-soft">
               <CardPhoto name={festival.name} img={festival.img} className="aspect-[3/4]" />
               <span className="pointer-events-none absolute left-[0.625rem] top-[0.625rem] rounded-md bg-white/95 px-[0.5625rem] py-1 text-[0.6875rem] font-extrabold text-ink">{festivalBadge(festival.start, festival.end)}</span>
