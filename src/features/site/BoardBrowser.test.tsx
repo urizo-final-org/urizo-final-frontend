@@ -42,6 +42,23 @@ test('search finds document text, resets page, and handles zero results', () => 
   expect(screen.getAllByRole('link')).toHaveLength(10)
 })
 
+test('filters by month and combines with query and reset', () => {
+  open()
+  expect(screen.getByLabelText('월별')).toBeInTheDocument()
+  fireEvent.change(screen.getByLabelText('월별'), { target: { value: '2026-09' } })
+  expect(screen.getByLabelText('현재 주소')).toHaveTextContent('month=2026-09')
+  expect(screen.getAllByRole('link')).toHaveLength(10)
+
+  fireEvent.change(screen.getByRole('searchbox'), { target: { value: '여행 소식 1' } })
+  fireEvent.click(screen.getByRole('button', { name: '검색' }))
+  expect(screen.getByLabelText('현재 주소')).toHaveTextContent('month=2026-09')
+  expect(screen.getByLabelText('현재 주소')).toHaveTextContent('q=%EC%97%AC%ED%96%89+%EC%86%8C%EC%8B%9D+1')
+
+  fireEvent.click(screen.getByRole('button', { name: '초기화' }))
+  expect(screen.getByLabelText('현재 주소')).not.toHaveTextContent('month=')
+  expect(screen.getByLabelText('현재 주소')).not.toHaveTextContent('q=')
+})
+
 test('card board filters by separate region and category while retaining disabled labels', async () => {
   vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify([
     { id: 1, groupKey: 'REGION', value: 'SEOUL', label: '서울', displayOrder: 0, enabled: true },

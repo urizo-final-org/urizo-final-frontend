@@ -24,6 +24,7 @@ export default function BoardBrowser({ board, posts, publicPath = '/' }: { board
   const query = params.get('q') ?? ''
   const region = params.get('region') ?? ''
   const category = params.get('category') ?? ''
+  const month = params.get('month') ?? ''
   const [draft, setDraft] = useState(query)
   useEffect(() => { setDraft(query) }, [query])
   useEffect(() => {
@@ -36,10 +37,37 @@ export default function BoardBrowser({ board, posts, publicPath = '/' }: { board
     return () => { active = false }
   }, [api, board.id, board.regionGroupKey, board.categoryGroupKey])
 
+  const months = useMemo(() => {
+    const set = new Set<string>()
+    for (const post of posts) {
+      if (!post.createdAt) continue
+      const d = new Date(post.createdAt)
+      if (Number.isNaN(d.getTime())) continue
+      const y = d.getFullYear()
+      const m = String(d.getMonth() + 1).padStart(2, '0')
+      set.add(`${y}-${m}`)
+    }
+    return Array.from(set).sort().reverse()
+  }, [posts])
+
   const filtered = posts.filter((post) => {
+    let matchesMonth = true
+    if (month && post.createdAt) {
+      const d = new Date(post.createdAt)
+      if (!Number.isNaN(d.getTime())) {
+        const y = d.getFullYear()
+        const m = String(d.getMonth() + 1).padStart(2, '0')
+        matchesMonth = `${y}-${m}` === month
+      } else {
+        matchesMonth = false
+      }
+    } else if (month) {
+      matchesMonth = false
+    }
     return (!query.trim() || (post.title + ' ' + postText(post.body)).toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()))
       && (!region || String(post.regionCodeId) === region)
       && (!category || String(post.categoryCodeId) === category)
+      && matchesMonth
   })
   const pages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
   const requestedPage = Number(params.get('page') ?? '1')
@@ -71,11 +99,20 @@ export default function BoardBrowser({ board, posts, publicPath = '/' }: { board
           <option value="">전체 분류</option>{options(board.categoryGroupKey).map((code) => <option key={code.id} value={code.id}>{code.label}</option>)}
         </select>
       </label>}
+      <label className="grid gap-2 text-xs font-bold text-body">월별
+        <select className={field} value={month} onChange={(event) => update('month', event.target.value)}>
+          <option value="">전체 월</option>
+          {months.map((m) => {
+            const [y, mm] = m.split('-')
+            return <option key={m} value={m}>{y}년 {Number(mm)}월</option>
+          })}
+        </select>
+      </label>
       <label className="grid min-w-40 flex-1 gap-2 text-xs font-bold text-body">검색어
         <input className={field} type="search" placeholder="제목 또는 내용 검색" value={draft} onChange={(event) => setDraft(event.target.value)} />
       </label>
       <button className="h-11 rounded bg-primary px-6 text-sm font-bold text-white">검색</button>
-      {(query || region || category) && <button type="button" className="h-11 rounded border border-line px-4 text-sm" onClick={() => { setParams({}); setDraft('') }}>초기화</button>}
+      {(query || region || category || month) && <button type="button" className="h-11 rounded border border-line px-4 text-sm" onClick={() => { setParams({}); setDraft('') }}>초기화</button>}
     </form>
     <p className="mb-4 text-sm text-muted" role="status">총 <strong className="text-ink">{filtered.length}</strong>건 · {page} / {pages} 페이지</p>
     {board.displayType === 'CARD'
