@@ -1,0 +1,35 @@
+{
+  "name": "urizo-final-frontend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.9.0",
+  "engines": {
+    "node": "24.14.0",
+    "pnpm": "11.9.0"
+  },
+  "scripts": {
+    "dev": "vite",
+    "dev:container": "vite --host 0.0.0.0 --port 5173 --strictPort",
+    "typecheck": "tsc --project tsconfig.app.json --noEmit --incremental false --pretty false && tsc --project tsconfig.node.json --noEmit --incremental false --pretty false",
+    "build": "pnpm run typecheck && vite build",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "verify": "pnpm run test && pnpm run build"
+  },
+  "dependencies": {
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
+  },
+  "devDependencies": {
+    "@testing-library/jest-dom": "^7.0.1",
+    "@testing-library/react": "^16.3.2",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4",
+    "@vitejs/plugin-react": "^6.0.5",
+    "jsdom": "^30.0.1",
+    "typescript": "^7.0.2",
+    "vite": "^8.2.1",
+    "vitest": "^4.1.10"
+  }
+}
