@@ -1,0 +1,13 @@
+.git
+.gitignore
+.gitattributes
+.idea
+.vscode
+.env
+.env.*
+node_modules
+dist
+.vite
+coverage
+*.log
+README.md
