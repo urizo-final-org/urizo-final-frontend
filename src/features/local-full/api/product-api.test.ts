@@ -1,5 +1,7 @@
 import { describe, expect, test, vi } from 'vitest'
-import { ProductApi, ProductApiError, fetchProductSession } from './product-api'
+import { ProductApiError } from '../../../shared/api/error'
+import { fetchProductSession } from '../../../shared/api/session'
+import { ProductApi } from './product-api'
 
 const requestId = '66666666-6666-4666-8666-666666666666'
 

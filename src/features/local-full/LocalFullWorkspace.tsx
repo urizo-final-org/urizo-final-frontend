@@ -1,8 +1,8 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
+import { describeFailure } from '../../shared/api/error'
+import { fetchProductSession } from '../../shared/api/session'
 import {
   ProductApi,
-  describeFailure,
-  fetchProductSession,
   type AgentJob,
   type Chatbot,
   type Connector,
@@ -14,7 +14,7 @@ import {
   type Project,
   type RagQueryResponse,
   type ReadinessResponse,
-} from './product-api'
+} from './api'
 
 const ACTIVE_PROJECT_KEY = 'axms.local-full.active-project'
 
