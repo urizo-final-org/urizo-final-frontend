@@ -1,6 +1,6 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, expect, test, vi } from 'vitest'
-import App from './App'
+import AppShell from './AppShell'
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -24,7 +24,7 @@ beforeEach(() => {
 })
 
 test('preserves all provider forms without exposing a prefilled credential', async () => {
-  render(<App />)
+  render(<AppShell />)
 
   expect(await screen.findByText('OpenAI')).toBeInTheDocument()
   expect(screen.getByText('Google Gemini')).toBeInTheDocument()
@@ -68,7 +68,7 @@ test('restores a saved project through the real list and get client boundaries',
   })
   vi.stubGlobal('fetch', fetcher)
 
-  render(<App />)
+  render(<AppShell />)
 
   expect(await screen.findByText('Project에서 RAG 답변까지')).toBeInTheDocument()
   expect(await screen.findAllByText('Restored Local Project')).not.toHaveLength(0)
