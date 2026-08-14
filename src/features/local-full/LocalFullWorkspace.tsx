@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import { describeFailure } from '../../shared/api/error'
-import { fetchProductSession } from '../../shared/api/session'
+import { ROLE_LABELS, type AdminSession } from '../../shared/api/session'
 import {
   ProductApi,
   type AgentJob,
@@ -132,7 +132,14 @@ function jobReferences(job: AgentJob, type: string, id?: string | null): boolean
   return Boolean(id && job.resourceRefs?.some((reference) => reference.type === type && reference.id === id))
 }
 
-export default function LocalFullWorkspace() {
+interface LocalFullWorkspaceProps {
+  /** The signed-in session. The shell owns it, so this workspace never signs anyone in itself. */
+  session: AdminSession
+  /** Raised when the server stops accepting the session, so the shell can return to sign-in. */
+  onSessionExpired: () => void
+}
+
+export default function LocalFullWorkspace({ session, onSessionExpired }: LocalFullWorkspaceProps) {
   const [api, setApi] = useState<ProductApi | null>(null)
   const [bootNonce, setBootNonce] = useState(0)
   const [booting, setBooting] = useState(true)
@@ -140,7 +147,7 @@ export default function LocalFullWorkspace() {
   const [readinessError, setReadinessError] = useState<string | null>(null)
   const [health, setHealth] = useState<HealthResponse | null>(null)
   const [readiness, setReadiness] = useState<ReadinessResponse | null>(null)
-  const [actorId, setActorId] = useState<string | null>(null)
+  const actorId = session.actor.actorId
 
   const [projects, setProjects] = useState<Project[]>([])
   const [project, setProject] = useState<Project | null>(null)
@@ -266,11 +273,9 @@ export default function LocalFullWorkspace() {
       setBootError(null)
       setReadinessError(null)
       try {
-        const session = await fetchProductSession()
-        if (cancelled) return
-        const client = new ProductApi(session.bearerToken)
+        const client = new ProductApi(
+          session.sessionToken, undefined, undefined, onSessionExpired)
         setApi(client)
-        setActorId(session.actorId ?? null)
 
         const [healthResult, readinessResult, projectResult] = await Promise.allSettled([
           client.getHealth(),
@@ -509,7 +514,7 @@ export default function LocalFullWorkspace() {
       {notice && <div className={`inline-alert inline-alert--${notice.tone}`} role="status">{notice.text}</div>}
 
       <section className="context-strip">
-        <div><span>Actor</span><strong>{actorId ? shortId(actorId) : 'local fixture actor'}</strong></div>
+        <div><span>Actor</span><strong>{ROLE_LABELS[session.actor.role]} · {shortId(actorId)}</strong></div>
         <div><span>Project</span><strong>{project?.name ?? '아직 없음'}</strong></div>
         <div><span>Connector</span><strong>{connector?.name ?? '아직 없음'}</strong></div>
         <div><span>Active Knowledge</span><strong>{shortId(knowledgeBase?.activeVersionId)}</strong></div>

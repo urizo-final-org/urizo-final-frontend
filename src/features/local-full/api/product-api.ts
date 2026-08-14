@@ -31,6 +31,13 @@ export class ProductApi {
     private readonly bearerToken: string,
     private readonly fetcher: Fetcher = defaultFetcher,
     private readonly uuidFactory: UuidFactory = defaultUuidFactory,
+    /**
+     * Called when the server stops accepting this session.
+     *
+     * <p>Reported from the single request boundary rather than at each call site, so an operation
+     * added later cannot forget to notice that the session died underneath it.
+     */
+    private readonly onUnauthorized: () => void = () => {},
   ) {}
 
   private async request<T>(
@@ -53,6 +60,7 @@ export class ProductApi {
     })
     const body = await parseBody(response)
     if (!response.ok) {
+      if (response.status === 401) this.onUnauthorized()
       const envelope = asRecord(body) as PublicErrorEnvelope
       throw new ProductApiError({
         status: response.status,

@@ -1,18 +1,21 @@
 import { Fragment } from 'react'
-import { routes, type RouteId } from './routes'
+import type { AdminRole } from '../shared/api/session'
+import { routesForRole, type RouteId } from './routes'
 
 export function AppNavigation({
   activeRoute,
+  role,
   onNavigate,
 }: {
   activeRoute: RouteId
+  role: AdminRole
   onNavigate: (route: RouteId) => void
 }) {
   let renderedGroup: string | null = null
 
   return (
     <nav aria-label="관리자 메뉴">
-      {routes.map((route) => {
+      {routesForRole(role).map((route) => {
         const groupHeading = route.group === renderedGroup ? null : route.group
         renderedGroup = route.group
         return (

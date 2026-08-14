@@ -1,4 +1,5 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react'
+import { ProductApiError } from '../../shared/api/error'
 import {
   fetchOverview,
   storeCredential,
@@ -69,11 +70,15 @@ function ProviderCard({
   provider,
   status,
   csrfToken,
+  sessionToken,
+  onSessionExpired,
   onStatusChange,
 }: {
   provider: ProviderDefinition
   status?: ProviderStatus
   csrfToken: string
+  sessionToken: string
+  onSessionExpired: () => void
   onStatusChange: (status: ProviderStatus) => void
 }) {
   const [credential, setCredential] = useState('')
@@ -86,12 +91,16 @@ function ProviderCard({
     setBusy('save')
     setMessage(null)
     try {
-      const next = await storeCredential(provider.id, credential, csrfToken)
+      const next = await storeCredential(provider.id, credential, csrfToken, sessionToken)
       setCredential('')
       setTestResult(null)
       onStatusChange(next)
       setMessage('암호화 저장이 완료됐습니다. 원문은 다시 표시되지 않습니다.')
     } catch (failure) {
+      if (failure instanceof ProductApiError && failure.status === 401) {
+        onSessionExpired()
+        return
+      }
       setMessage(failure instanceof Error ? failure.message : '저장에 실패했습니다.')
     } finally {
       setBusy(null)
@@ -102,7 +111,7 @@ function ProviderCard({
     setBusy('test')
     setMessage(null)
     try {
-      const result = await testConnection(provider.id, csrfToken)
+      const result = await testConnection(provider.id, csrfToken, sessionToken)
       setTestResult(result)
       onStatusChange({
         ...(status ?? {
@@ -121,6 +130,10 @@ function ProviderCard({
         ? '공식 Provider API 연결이 확인됐습니다.'
         : `연결 판정: ${result.safeCode}`)
     } catch (failure) {
+      if (failure instanceof ProductApiError && failure.status === 401) {
+        onSessionExpired()
+        return
+      }
       setMessage(failure instanceof Error ? failure.message : '연결 테스트에 실패했습니다.')
     } finally {
       setBusy(null)
@@ -182,19 +195,31 @@ function ProviderCard({
   )
 }
 
-export default function ProviderSettings() {
+export default function ProviderSettings({
+  sessionToken,
+  onSessionExpired,
+}: {
+  sessionToken: string
+  onSessionExpired: () => void
+}) {
   const [overview, setOverview] = useState<CredentialOverview | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
 
   useEffect(() => {
     let active = true
-    fetchOverview()
+    fetchOverview(sessionToken)
       .then((result) => active && setOverview(result))
-      .catch((failure) => active && setLoadError(
-        failure instanceof Error ? failure.message : 'Backend CMS에 연결할 수 없습니다.',
-      ))
+      .catch((failure) => {
+        if (failure instanceof ProductApiError && failure.status === 401) {
+          onSessionExpired()
+          return
+        }
+        if (active) {
+          setLoadError(failure instanceof Error ? failure.message : 'Backend CMS에 연결할 수 없습니다.')
+        }
+      })
     return () => { active = false }
-  }, [])
+  }, [sessionToken, onSessionExpired])
 
   const statusMap = useMemo(() => new Map(
     overview?.providers.map((status) => [status.provider, status]) ?? [],
@@ -245,6 +270,8 @@ export default function ProviderSettings() {
               provider={provider}
               status={statusMap.get(provider.id)}
               csrfToken={overview.csrfToken}
+              sessionToken={sessionToken}
+              onSessionExpired={onSessionExpired}
               onStatusChange={updateStatus}
             />
           ))}
