@@ -277,3 +277,68 @@
   .provider-heading { grid-template-columns: auto 1fr; }
   .provider-heading > .status-pill { grid-column: 2; }
 }
+
+/* Sign-in — shown instead of the shell while there is no session. */
+.login-screen {
+  display: grid;
+  place-items: center;
+  min-height: 100vh;
+  padding: 32px 20px;
+  background: linear-gradient(160deg, var(--navy) 0%, var(--navy-soft) 55%, #232f45 100%);
+}
+
+.login-card {
+  display: grid;
+  gap: 16px;
+  width: min(100%, 412px);
+  padding: 30px 30px 26px;
+  background: var(--panel);
+  border-radius: 16px;
+  box-shadow: 0 24px 60px rgba(11, 17, 30, 0.42);
+}
+
+/* The lockup is authored for the dark sidebar; on the card it needs the light-surface colors. */
+.login-card .brand-lockup { padding: 0 0 18px; border-bottom-color: var(--line); }
+.login-card .brand-lockup strong { color: #151b27; }
+
+/* Not .page-heading: that one lays its children out in a row so a workflow screen can push a
+   status cluster to the far edge, which stacks a card this narrow into unreadable columns. */
+.login-heading { display: grid; gap: 5px; }
+.login-heading h1 { margin: 2px 0 0; color: #151b27; font-size: 25px; line-height: 1.2; letter-spacing: -0.03em; }
+.login-heading p:not(.section-label) { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.65; }
+
+.login-failure {
+  margin: 0;
+  padding: 10px 12px;
+  color: #a93242;
+  background: #fff7f8;
+  border: 1px solid #e6b8c0;
+  border-radius: 9px;
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.login-notice {
+  margin: 0;
+  padding: 10px 12px;
+  color: #7a5b12;
+  background: #fffaf0;
+  border: 1px solid #e8d5a8;
+  border-radius: 9px;
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.login-note { margin: 0; color: #8a94a5; text-align: center; font-size: 10px; }
+
+/* Signed-in identity in the top bar. */
+.session-chip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
+}
+
+.session-chip__identity { display: grid; gap: 2px; text-align: right; }
+.session-chip__identity strong { color: #252b38; font-size: 12px; }
+.session-chip__identity span { color: var(--muted); font: 9px/1.4 ui-monospace, monospace; letter-spacing: 0.06em; }
