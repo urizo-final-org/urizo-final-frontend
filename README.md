@@ -80,5 +80,8 @@ The latest local checkpoint passed all of the following gates:
   Readiness, and Session were ready, the console had no warnings or errors,
   and all three Provider CMS connection-test controls rendered correctly.
 
-The normal Git path remains `latest dev -> local feature -> pull request to dev`.
-No commit or push has been performed for this slice.
+## Team policy authority
+
+Cross-repository workflow, current Wave/Slice state, assignments, and Git/PR policy are owned by the
+sibling Master repository. Start from the canonical parent workspace and follow
+`../urizo-final-master/AGENTS.md`; this README contains only Frontend runtime and verification facts.
