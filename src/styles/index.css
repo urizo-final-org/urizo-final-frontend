@@ -1,0 +1,4 @@
+/* Load order is the cascade order: Tailwind's own layers, then the design tokens/global base. Every
+   component now styles itself with Tailwind utility classes directly in its .tsx file. */
+@import 'tailwindcss';
+@import './tokens.css';
