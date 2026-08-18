@@ -35,7 +35,7 @@ const providerOverview = {
 beforeEach(() => {
   window.localStorage.clear()
   window.sessionStorage.clear()
-  window.location.hash = '#providers'
+  window.history.pushState({}, '', '/providers')
 })
 
 afterEach(() => {
@@ -127,7 +127,7 @@ test('a customer operator is not offered platform LLM settings', async () => {
 
 /** The hash is client input, so reaching a restricted screen by typing it must not work. */
 test('a hand-typed route outside the role falls back to the default screen', async () => {
-  window.location.hash = '#providers'
+  window.history.pushState({}, '', '/providers')
   window.sessionStorage.setItem(TOKEN_KEY, STORED_TOKEN)
   vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => {
     if (String(input) === '/api/auth/me') return Promise.resolve(currentSession('GENERAL_ADMIN'))
@@ -164,11 +164,10 @@ test('a session that dies while the shell is open returns to sign-in with the re
   render(<AppShell />)
   expect(await screen.findByText('OpenAI')).toBeInTheDocument()
 
-  // The session is revoked, then a reload of the same screen hits the server again.
+  // The session is revoked, then navigating to a different screen hits the server again.
   sessionAlive = false
-  fireEvent(window, new HashChangeEvent('hashchange'))
-  window.location.hash = '#local-full'
-  fireEvent(window, new HashChangeEvent('hashchange'))
+  window.history.pushState({}, '', '/local-full')
+  fireEvent(window, new PopStateEvent('popstate'))
 
   expect(await screen.findByRole('heading', { name: '관리자 로그인' })).toBeInTheDocument()
   expect(screen.getByRole('status')).toHaveTextContent('세션이 만료되었습니다')
@@ -194,7 +193,7 @@ test('preserves all provider forms without exposing a prefilled credential', asy
 })
 
 test('restores a saved project through the real list and get client boundaries', async () => {
-  window.location.hash = '#local-full'
+  window.history.pushState({}, '', '/local-full')
   window.sessionStorage.setItem(TOKEN_KEY, STORED_TOKEN)
   const project = {
     schemaVersion: '1.0',
