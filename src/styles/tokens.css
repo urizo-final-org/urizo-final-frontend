@@ -16,6 +16,24 @@
   --panel: #ffffff;
 }
 
+/*
+ * Tailwind utility aliases for the design tokens above. The hex values live only in :root; this
+ * block gives Tailwind classes (bg-navy, text-purple, border-line, ...) without duplicating a
+ * single color and without touching the var(--navy) references already in shell.css/components.css.
+ */
+@theme {
+  --color-navy: var(--navy);
+  --color-navy-soft: var(--navy-soft);
+  --color-purple: var(--purple);
+  --color-purple-dark: var(--purple-dark);
+  --color-mint: var(--mint);
+  --color-red: var(--red);
+  --color-amber: var(--amber);
+  --color-line: var(--line);
+  --color-muted: var(--muted);
+  --color-panel: var(--panel);
+}
+
 * { box-sizing: border-box; }
 
 body {

@@ -18,6 +18,12 @@ interface ProviderDefinition {
   testDescription: string
 }
 
+const ACCENT_COLORS: Record<string, { accent: string; soft: string }> = {
+  mint: { accent: '#0da77b', soft: '#e7f8f2' },
+  blue: { accent: '#4f78da', soft: '#ebf1ff' },
+  coral: { accent: '#da6853', soft: '#fff0ed' },
+}
+
 const providers: ProviderDefinition[] = [
   {
     id: 'OPENAI',
@@ -53,6 +59,24 @@ function statusLabel(status?: ProviderStatus): string {
     case 'INVALID_CREDENTIAL': return '키 확인 필요'
     case 'PROVIDER_UNAVAILABLE': return '일시 확인 불가'
     default: return '상태 확인 중'
+  }
+}
+
+const STATUS_PILL_BASE =
+  'inline-flex w-fit items-center rounded-full border px-2 py-[5px] font-mono text-[9px] font-extrabold leading-none tracking-[0.04em]'
+
+function statusPillClasses(state?: ProviderStatus['state']): string {
+  switch (state) {
+    case 'VERIFIED':
+      return `${STATUS_PILL_BASE} border-[#bfeadb] bg-[#e8f8f2] text-[#087b5b]`
+    case 'STORED':
+    case 'BILLING_BLOCKED':
+      return `${STATUS_PILL_BASE} border-[#f0dba7] bg-[#fff7e4] text-[#8a5a03]`
+    case 'INVALID_CREDENTIAL':
+    case 'PROVIDER_UNAVAILABLE':
+      return `${STATUS_PILL_BASE} border-[#efc4cb] bg-[#fff0f2] text-[#b33243]`
+    default:
+      return `${STATUS_PILL_BASE} border-[#d7dce5] bg-[#f4f6f9] text-[#606b7e]`
   }
 }
 
@@ -140,23 +164,36 @@ function ProviderCard({
     }
   }
 
+  const { accent, soft } = ACCENT_COLORS[provider.accent] ?? { accent: '#6957e8', soft: '#f0edff' }
+
   return (
-    <article className={`provider-card provider-card--${provider.accent}`}>
-      <div className="provider-heading">
-        <span className="provider-mark" aria-hidden="true">{provider.shortName}</span>
+    <article
+      className="relative overflow-hidden rounded-[13px] border border-line bg-white p-[19px] shadow-[0_7px_28px_rgba(31,43,65,0.04)] before:absolute before:inset-y-0 before:left-0 before:w-[3px] before:bg-[var(--accent)]"
+      style={{ ['--accent' as string]: accent, ['--accent-soft' as string]: soft }}
+    >
+      <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-[13px] max-[560px]:grid-cols-[auto_1fr]">
+        <span
+          className="flex h-[39px] w-[39px] items-center justify-center rounded-[9px] bg-[var(--accent-soft)] font-mono text-[10px] font-extrabold leading-none text-[var(--accent)]"
+          aria-hidden="true"
+        >
+          {provider.shortName}
+        </span>
         <div>
-          <h3>{provider.name}</h3>
-          <p>{provider.testDescription}</p>
+          <h3 className="m-0 mb-1 text-sm">{provider.name}</h3>
+          <p className="m-0 font-mono text-[9px] leading-[1.5] text-[#7b8697]">{provider.testDescription}</p>
         </div>
-        <span className={`status-pill status-pill--${status?.state?.toLowerCase() ?? 'empty'}`}>
+        <span className={`${statusPillClasses(status?.state)} max-[560px]:col-start-2`}>
           {statusLabel(status)}
         </span>
       </div>
 
-      <form onSubmit={save} className="credential-form">
-        <label htmlFor={`${provider.id}-credential`}>API Key</label>
-        <div className="credential-row">
+      <form onSubmit={save} className="mt-[17px]">
+        <label className="mb-[6px] block text-[10px] font-bold text-[#667085]" htmlFor={`${provider.id}-credential`}>
+          API Key
+        </label>
+        <div className="grid grid-cols-[minmax(0,1fr)_auto_auto] gap-2 max-[820px]:grid-cols-2">
           <input
+            className="w-full min-w-0 rounded-lg border border-[#d6dce5] bg-white px-[11px] py-[10px] text-[#252b38] max-[820px]:col-span-2"
             id={`${provider.id}-credential`}
             type="password"
             value={credential}
@@ -170,11 +207,15 @@ function ProviderCard({
             disabled={busy !== null}
             required
           />
-          <button className="button button--primary" type="submit" disabled={busy !== null || credential.length < 8}>
+          <button
+            className="min-h-[38px] rounded-lg border border-transparent bg-purple px-[13px] text-[10px] font-extrabold whitespace-nowrap text-white shadow-[0_4px_12px_rgba(105,87,232,0.18)] enabled:hover:bg-purple-dark"
+            type="submit"
+            disabled={busy !== null || credential.length < 8}
+          >
             {busy === 'save' ? '저장 중…' : status?.configured ? '키 교체' : '암호화 저장'}
           </button>
           <button
-            className="button button--secondary"
+            className="min-h-[38px] rounded-lg border border-[#d8dee7] bg-[#f7f8fa] px-[13px] text-[10px] font-extrabold whitespace-nowrap text-[#4c5669] enabled:hover:bg-[#eef1f5]"
             type="button"
             onClick={runTest}
             disabled={busy !== null || !status?.configured}
@@ -184,13 +225,13 @@ function ProviderCard({
         </div>
       </form>
 
-      <div className="provider-meta">
-        <span>Fingerprint <strong>{status?.fingerprintSuffix ? `…${status.fingerprintSuffix}` : '—'}</strong></span>
-        <span>최근 테스트 <strong>{formatTime(status?.lastTestedAt)}</strong></span>
-        {testResult && <span>응답 <strong>{testResult.latencyMs} ms</strong></span>}
+      <div className="mt-3 flex flex-wrap gap-4 font-mono text-[9px] leading-[1.5] text-[#8993a4]">
+        <span>Fingerprint <strong className="font-bold text-[#596476]">{status?.fingerprintSuffix ? `…${status.fingerprintSuffix}` : '—'}</strong></span>
+        <span>최근 테스트 <strong className="font-bold text-[#596476]">{formatTime(status?.lastTestedAt)}</strong></span>
+        {testResult && <span>응답 <strong className="font-bold text-[#596476]">{testResult.latencyMs} ms</strong></span>}
       </div>
 
-      {message && <p className="card-message" role="status">{message}</p>}
+      {message && <p className="mb-0 mt-[11px] text-[10px] text-[var(--accent)]" role="status">{message}</p>}
     </article>
   )
 }
@@ -233,37 +274,47 @@ export default function ProviderSettings({
   }
 
   return (
-    <div className="provider-settings">
-      <section className="page-heading">
+    <div>
+      <section className="mb-6 flex items-start justify-between gap-7 max-[820px]:grid">
         <div>
-          <p className="section-label">Settings · Local Provider Gate</p>
-          <h1>LLM Provider 연결 준비</h1>
-          <p>기존 Stage 2 loopback CMS입니다. 저장된 Key 원문은 다시 표시하지 않습니다.</p>
+          <p className="m-0 font-mono text-[10px] font-extrabold uppercase leading-[1.4] tracking-[0.13em] text-purple">Settings · Local Provider Gate</p>
+          <h1 className="my-1 mb-[9px] text-[clamp(29px,4vw,43px)] leading-[1.07] tracking-[-0.045em] text-[#151b27]">LLM Provider 연결 준비</h1>
+          <p className="m-0 max-w-[760px] text-[13px] leading-[1.7] text-muted">기존 Stage 2 loopback CMS입니다. 저장된 Key 원문은 다시 표시하지 않습니다.</p>
         </div>
-        <span className="environment-chip">DEV · LOOPBACK ONLY</span>
+        <span className="rounded-full border border-[#bfeadb] bg-[#e6f8f1] px-[10px] py-[7px] font-mono text-[9px] font-bold leading-none tracking-[0.08em] text-[#087d5d]">
+          DEV · LOOPBACK ONLY
+        </span>
       </section>
 
-      <section className="security-note" aria-label="보안 안내">
-        <span className="security-icon" aria-hidden="true">⌁</span>
+      <section className="mb-[18px] flex items-center gap-[13px] rounded-[10px] border border-[#d7e8e2] bg-[#f1f7f5] px-[17px] py-[15px] text-[11px] leading-[1.6] text-[#586477]" aria-label="보안 안내">
+        <span className="text-[21px] text-[#0c9b73]" aria-hidden="true">⌁</span>
         <div>
-          <strong>채팅·명령행·소스에 키를 붙여넣지 마세요.</strong>
+          <strong className="text-[#253c35]">채팅·명령행·소스에 키를 붙여넣지 마세요.</strong>
           <span> 이 페이지의 password input만 사용하며, 저장 성공 즉시 브라우저 입력값을 비웁니다.</span>
         </div>
       </section>
 
       {loadError && (
-        <section className="load-state load-state--error" role="alert">
+        <section
+          className="grid min-h-[260px] place-items-center gap-3 rounded-2xl border border-dashed border-[#e6b8c0] bg-[#fff7f8] p-9 text-center text-xs text-[#a93242]"
+          role="alert"
+        >
           <strong>Backend CMS 연결 실패</strong>
           <span>{loadError}</span>
         </section>
       )}
 
       {!overview && !loadError && (
-        <section className="load-state" aria-live="polite">로컬 Secret Store를 확인하는 중입니다…</section>
+        <section
+          className="grid min-h-[260px] place-items-center gap-3 rounded-2xl border border-dashed border-[#cfd6e1] bg-white p-9 text-center text-xs text-[#707b8d]"
+          aria-live="polite"
+        >
+          로컬 Secret Store를 확인하는 중입니다…
+        </section>
       )}
 
       {overview && (
-        <section className="provider-grid" aria-label="LLM Provider 키 관리">
+        <section className="grid gap-3" aria-label="LLM Provider 키 관리">
           {providers.map((provider) => (
             <ProviderCard
               key={provider.id}

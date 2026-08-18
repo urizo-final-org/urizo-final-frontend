@@ -6,6 +6,8 @@ export const DEFAULT_ROUTE: RouteId = 'local-full'
 
 export interface RouteDefinition {
   id: RouteId
+  /** react-router path, always absolute from the app root. */
+  path: string
   /** Sidebar group heading rendered above the first route of each group. */
   group: string
   label: string
@@ -14,16 +16,19 @@ export interface RouteDefinition {
    * Roles allowed to open the route, or undefined when every administrator may.
    *
    * <p>Hiding a route is a usability feature only. The server repeats every authorization check, so
-   * this list must never be the sole thing keeping an operator out of an operation.
+   * this list must never be the sole thing keeping an operator out of an operation. Because the
+   * router only registers a <Route> for a permitted entry (see AppShell), a role outside
+   * allowedRoles has no matching route at all rather than a hidden one.
    */
   allowedRoles?: AdminRole[]
 }
 
 /** Registry order is the sidebar order. */
 export const routes: RouteDefinition[] = [
-  { id: 'local-full', group: 'DATA · KNOWLEDGE', label: 'Local Full Workflow', glyph: '⌘' },
+  { id: 'local-full', path: '/local-full', group: 'DATA · KNOWLEDGE', label: 'Local Full Workflow', glyph: '⌘' },
   {
     id: 'providers',
+    path: '/providers',
     group: 'SETTINGS',
     label: 'LLM Providers',
     glyph: '◇',
@@ -40,21 +45,10 @@ export function permitsRole(route: RouteDefinition, role: AdminRole): boolean {
   return route.allowedRoles === undefined || route.allowedRoles.includes(role)
 }
 
-/**
- * Narrows a requested route to one the role may actually open.
- *
- * <p>A hash typed by hand is a client-supplied claim like any other, so a route outside the role
- * falls back to the default instead of rendering.
- */
-export function routeForRole(requested: RouteId, role: AdminRole): RouteId {
-  const definition = routes.find((route) => route.id === requested)
-  return definition && permitsRole(definition, role) ? requested : DEFAULT_ROUTE
+export function pathForRoute(route: RouteId): string {
+  return routes.find((definition) => definition.id === route)?.path ?? routes[0].path
 }
 
-export function routeFromHash(hash: string): RouteId {
-  return hash === '#providers' ? 'providers' : DEFAULT_ROUTE
-}
-
-export function hashForRoute(route: RouteId): string {
-  return route === 'providers' ? 'providers' : 'local-full'
+export function routeIdForPath(pathname: string): RouteId | undefined {
+  return routes.find((definition) => definition.path === pathname)?.id
 }
