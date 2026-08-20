@@ -3,12 +3,13 @@ import { asRecord, defaultFetcher, defaultUuidFactory, parseBody, type Fetcher, 
 
 export const SCHEMA_VERSION = '1.0'
 
-export type AdminRole = 'SUPER_ADMIN' | 'GENERAL_ADMIN'
+export type AdminRole = 'SUPER_ADMIN' | 'GENERAL_ADMIN' | 'GENERAL_USER'
 
 /** Korean UI names for the two fixed roles of the Auth/RBAC MVP. */
 export const ROLE_LABELS: Record<AdminRole, string> = {
   SUPER_ADMIN: '최고관리자',
   GENERAL_ADMIN: '일반관리자',
+  GENERAL_USER: '일반사용자',
 }
 
 /**
@@ -19,21 +20,26 @@ export const ROLE_LABELS: Record<AdminRole, string> = {
  */
 export interface Actor {
   actorId: Uuid
+  name: string
   role: AdminRole
-  assignedProjectIds: Uuid[]
 }
 
 export interface AdminSession {
-  /** Returned once at login. Persistence keeps only a digest, so it cannot be read back. */
+  /** Access JWT. The legacy response key remains part of the public compatibility contract. */
   sessionToken: string
   expiresAt: string
   actor: Actor
 }
 
+export interface SessionLifecycle {
+  onSessionRefreshed?: (session: AdminSession) => void
+  onSessionExpired?: () => void
+}
+
 function readActor(body: Record<string, unknown>): Actor {
   const actor = asRecord(body.actor)
   const role = actor.role
-  if (role !== 'SUPER_ADMIN' && role !== 'GENERAL_ADMIN') {
+  if (role !== 'SUPER_ADMIN' && role !== 'GENERAL_ADMIN' && role !== 'GENERAL_USER') {
     throw new ProductApiError({
       status: 500,
       code: 'SESSION_RESPONSE_INVALID',
@@ -42,10 +48,8 @@ function readActor(body: Record<string, unknown>): Actor {
   }
   return {
     actorId: String(actor.actorId ?? ''),
+    name: typeof actor.name === 'string' ? actor.name : '',
     role,
-    assignedProjectIds: Array.isArray(actor.assignedProjectIds)
-      ? actor.assignedProjectIds.filter((id): id is string => typeof id === 'string')
-      : [],
   }
 }
 
@@ -57,6 +61,23 @@ function failure(status: number, body: Record<string, unknown>, fallback: string
     message: envelope.error?.message ?? envelope.message ?? fallback,
     traceId: envelope.traceId,
   })
+}
+
+function readSession(body: Record<string, unknown>): AdminSession {
+  const sessionToken = body.sessionToken
+  if (typeof sessionToken !== 'string' || sessionToken.length < 8) {
+    throw new ProductApiError({
+      status: 500,
+      code: 'SESSION_RESPONSE_INVALID',
+      message: 'The authentication response did not include a usable access token.',
+    })
+  }
+
+  return {
+    sessionToken,
+    expiresAt: typeof body.expiresAt === 'string' ? body.expiresAt : '',
+    actor: readActor(body),
+  }
 }
 
 /**
@@ -111,6 +132,99 @@ export async function login(
   }
 }
 
+/** Rotates the HttpOnly refresh JWT and returns a new access JWT. */
+export async function refreshSession(
+  fetcher: Fetcher = defaultFetcher,
+  uuidFactory: UuidFactory = defaultUuidFactory,
+): Promise<AdminSession> {
+  const response = await fetcher('/api/auth/refresh', {
+    method: 'POST',
+    headers: {
+      'Accept': 'application/json',
+      'X-Trace-Id': uuidFactory(),
+      'Idempotency-Key': uuidFactory(),
+    },
+    credentials: 'same-origin',
+    cache: 'no-store',
+  })
+  const body = asRecord(await parseBody(response))
+  if (!response.ok) {
+    throw failure(response.status, body, 'The session could not be refreshed.')
+  }
+  return readSession(body)
+}
+
+const refreshInFlight = new WeakMap<Fetcher, Map<string, Promise<AdminSession>>>()
+
+function refreshOnce(
+  fetcher: Fetcher,
+  sessionToken: string,
+  uuidFactory: UuidFactory,
+): Promise<AdminSession> {
+  let bySession = refreshInFlight.get(fetcher)
+  if (!bySession) {
+    bySession = new Map()
+    refreshInFlight.set(fetcher, bySession)
+  }
+
+  const current = bySession.get(sessionToken)
+  if (current) return current
+
+  const started = refreshSession(fetcher, uuidFactory)
+  bySession.set(sessionToken, started)
+  void started.finally(() => {
+    const active = refreshInFlight.get(fetcher)
+    if (active?.get(sessionToken) === started) active.delete(sessionToken)
+    if (active?.size === 0) refreshInFlight.delete(fetcher)
+  }).catch(() => {})
+  return started
+}
+
+/**
+ * Sends one protected request, refreshes after a 401, then retries the original request once.
+ * Concurrent 401 responses from the same access JWT share a refresh and mutation retries keep
+ * their Idempotency-Key. A different access JWT never joins that in-flight session boundary.
+ * Only a refresh 401 expires the session; transport and server failures remain observable.
+ */
+export async function fetchWithSessionRefresh(
+  input: RequestInfo | URL,
+  init: RequestInit,
+  sessionToken: string,
+  lifecycle: SessionLifecycle = {},
+  fetcher: Fetcher = defaultFetcher,
+  uuidFactory: UuidFactory = defaultUuidFactory,
+): Promise<Response> {
+  function request(accessToken: string): Promise<Response> {
+    const headers = new Headers(init.headers)
+    headers.set('Authorization', `Bearer ${accessToken}`)
+    return fetcher(input, {
+      ...init,
+      headers,
+      credentials: 'same-origin',
+      cache: 'no-store',
+    })
+  }
+
+  const response = await request(sessionToken)
+  if (response.status !== 401) return response
+
+  let refreshed: AdminSession
+  try {
+    refreshed = await refreshOnce(fetcher, sessionToken, uuidFactory)
+  } catch (refreshFailure) {
+    if (refreshFailure instanceof ProductApiError && refreshFailure.status === 401) {
+      lifecycle.onSessionExpired?.()
+      return response
+    }
+    throw refreshFailure
+  }
+
+  lifecycle.onSessionRefreshed?.(refreshed)
+  const retry = await request(refreshed.sessionToken)
+  if (retry.status === 401) lifecycle.onSessionExpired?.()
+  return retry
+}
+
 /**
  * Reads the actor behind a stored token.
  *
@@ -123,23 +237,30 @@ export async function fetchCurrentSession(
   sessionToken: string,
   fetcher: Fetcher = defaultFetcher,
   uuidFactory: UuidFactory = defaultUuidFactory,
+  lifecycle: SessionLifecycle = {},
 ): Promise<AdminSession> {
-  const response = await fetcher('/api/auth/me', {
+  let activeToken = sessionToken
+  const response = await fetchWithSessionRefresh('/api/auth/me', {
     method: 'GET',
     headers: {
       'Accept': 'application/json',
-      'Authorization': `Bearer ${sessionToken}`,
       'X-Trace-Id': uuidFactory(),
     },
     credentials: 'same-origin',
     cache: 'no-store',
-  })
+  }, sessionToken, {
+    onSessionRefreshed: (refreshed) => {
+      activeToken = refreshed.sessionToken
+      lifecycle.onSessionRefreshed?.(refreshed)
+    },
+    onSessionExpired: lifecycle.onSessionExpired,
+  }, fetcher, uuidFactory)
   const body = asRecord(await parseBody(response))
   if (!response.ok) {
     throw failure(response.status, body, '세션을 확인할 수 없습니다.')
   }
   return {
-    sessionToken,
+    sessionToken: activeToken,
     expiresAt: typeof body.expiresAt === 'string' ? body.expiresAt : '',
     actor: readActor(body),
   }
@@ -157,17 +278,16 @@ export async function logout(
   uuidFactory: UuidFactory = defaultUuidFactory,
 ): Promise<void> {
   try {
-    await fetcher('/api/auth/logout', {
+    await fetchWithSessionRefresh('/api/auth/logout', {
       method: 'POST',
       headers: {
         'Accept': 'application/json',
-        'Authorization': `Bearer ${sessionToken}`,
         'X-Trace-Id': uuidFactory(),
         'Idempotency-Key': uuidFactory(),
       },
       credentials: 'same-origin',
       cache: 'no-store',
-    })
+    }, sessionToken, {}, fetcher, uuidFactory)
   } catch {
     // Deliberately ignored; the local sign-out proceeds either way.
   }

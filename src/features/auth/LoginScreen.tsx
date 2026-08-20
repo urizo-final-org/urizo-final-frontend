@@ -46,14 +46,25 @@ export default function LoginScreen({ notice, onSignedIn }: LoginScreenProps) {
           </span>
           <div className="grid gap-1">
             <strong className="text-[13px] tracking-[0.1em] text-[#151b27]">MODULE STUDIO</strong>
-            <span className="text-[9px] tracking-[0.08em] text-[#7e8ba0]">ADMIN CONSOLE</span>
+            <span className="text-[9px] tracking-[0.08em] text-[#7e8ba0]">LOCAL DEMO CMS</span>
           </div>
         </div>
 
         <div className="grid gap-[5px]">
           <p className="m-0 font-mono text-[10px] font-extrabold uppercase leading-[1.4] tracking-[0.13em] text-purple">SIGN IN</p>
-          <h1 className="mt-[2px] mb-0 text-[25px] leading-[1.2] tracking-[-0.03em] text-[#151b27]">관리자 로그인</h1>
-          <p className="m-0 text-xs leading-[1.65] text-muted">운영 계정으로 로그인하면 역할에 따라 사용할 수 있는 기능이 정해집니다.</p>
+          <h1 className="mt-[2px] mb-0 text-[25px] leading-[1.2] tracking-[-0.03em] text-[#151b27]">CMS 로그인</h1>
+          <p className="m-0 text-xs leading-[1.65] text-muted">사이트 운영을 위한 관리자 전용 화면입니다.</p>
+        </div>
+
+        <div className="grid grid-cols-2 gap-2">
+          {[
+            ['최고관리자', 'super-admin', 'axms-super-admin-demo'],
+            ['일반관리자', 'general-admin', 'axms-general-admin-demo'],
+          ].map(([label, id, password]) => (
+            <button key={id} className="rounded-lg border border-[#ddd8ff] bg-[#f7f5ff] p-2 text-[10px] font-bold text-purple" type="button" onClick={() => { setLoginId(id); setPasswordValue(password) }}>
+              {label}
+            </button>
+          ))}
         </div>
 
         <label className="grid min-w-0 gap-[7px]">
@@ -101,7 +112,7 @@ export default function LoginScreen({ notice, onSignedIn }: LoginScreenProps) {
           {submitting ? '확인 중…' : '로그인'}
         </button>
 
-        <p className="m-0 text-center text-[10px] text-[#8a94a5]">내부망 전용 콘솔입니다. 계정 발급은 담당자에게 문의하세요.</p>
+        <p className="m-0 text-center text-[10px] text-[#8a94a5]">로컬 발표용 시연 계정입니다.</p>
       </form>
     </div>
   )
