@@ -89,7 +89,7 @@ function AuthenticatedAdmin({ session, onRefresh, onExpired, onSignOut }: {
         <div className="text-right"><strong className="block text-xs">{session.actor.name}</strong><span className="text-[10px] text-muted">{ROLE_LABELS[session.actor.role]}</span></div>
         <button className="rounded-lg border border-line bg-[#f7f8fa] px-3 py-2 text-xs font-bold" onClick={onSignOut}>로그아웃</button>
       </header>
-      <main className="mx-auto w-[min(1450px,100%)] p-8 max-[820px]:p-4">
+      <main className={`mx-auto w-full p-8 max-[820px]:p-4 ${visible === 'members' ? 'max-w-[1450px]' : 'max-w-[1680px]'}`}>
         <Routes>
           <Route path="/admin" element={<Navigate to={pathForRoute(fallback)} replace />} />
           {permitted.map((route) => <Route key={route.id} path={route.path} element={<CmsWorkspace route={route.id} api={api} />} />)}

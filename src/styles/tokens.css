@@ -60,6 +60,26 @@ a:focus-visible {
 button { cursor: pointer; }
 button:disabled { cursor: not-allowed; opacity: 0.48; }
 
+@keyframes cms-success-toast {
+  0% { opacity: 0; transform: translateY(18px) scale(0.96); }
+  12%, 78% { opacity: 1; transform: translateY(0) scale(1); }
+  100% { opacity: 0; transform: translateY(-12px) scale(0.98); }
+}
+
+.cms-success-toast { animation: cms-success-toast 2.6s ease-in-out both; }
+
+.cms-ai-scrollbar {
+  scrollbar-color: #c9c3ef transparent;
+  scrollbar-width: thin;
+}
+
+.cms-ai-scrollbar::-webkit-scrollbar { width: 6px; }
+.cms-ai-scrollbar::-webkit-scrollbar-track { background: transparent; }
+.cms-ai-scrollbar::-webkit-scrollbar-thumb {
+  background: #c9c3ef;
+  border-radius: 999px;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
 }

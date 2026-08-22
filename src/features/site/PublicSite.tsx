@@ -1,7 +1,7 @@
-import { Fragment, useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { describeFailure } from '../../shared/api/error'
-import { SiteApi, type Article, type Board, type Menu, type Post, type SiteTemplate } from '../cms/api'
+import { SITE_UPDATE_EVENT, SiteApi, type Article, type Board, type Menu, type Post, type SiteTemplate } from '../cms/api'
 
 export default function PublicSite() {
   const api = useMemo(() => new SiteApi(), [])
@@ -15,12 +15,33 @@ export default function PublicSite() {
   const [post, setPost] = useState<Post | null>(null)
   const [failure, setFailure] = useState<string | null>(null)
 
-  useEffect(() => {
+  const loadSite = useCallback(() => {
     Promise.all([api.template(), api.menus(), api.boards()]).then(([t, m, b]) => {
+      setFailure(null)
       setTemplate(t); setMenus(m); setBoards(b)
       if (b[0]) void api.posts(b[0].id).then(setNotices)
     }).catch((error) => setFailure(describeFailure(error)))
   }, [api])
+
+  useEffect(() => {
+    loadSite()
+  }, [loadSite])
+
+  useEffect(() => {
+    const refresh = () => loadSite()
+    const refreshFromStorage = (event: StorageEvent) => { if (event.key === SITE_UPDATE_EVENT) refresh() }
+    const refreshWhenVisible = () => { if (document.visibilityState === 'visible') refresh() }
+    window.addEventListener(SITE_UPDATE_EVENT, refresh)
+    window.addEventListener('storage', refreshFromStorage)
+    window.addEventListener('focus', refresh)
+    document.addEventListener('visibilitychange', refreshWhenVisible)
+    return () => {
+      window.removeEventListener(SITE_UPDATE_EVENT, refresh)
+      window.removeEventListener('storage', refreshFromStorage)
+      window.removeEventListener('focus', refresh)
+      document.removeEventListener('visibilitychange', refreshWhenVisible)
+    }
+  }, [loadSite])
 
   useEffect(() => {
     setContent(null); setPosts([]); setPost(null); setFailure(null)
@@ -37,7 +58,7 @@ export default function PublicSite() {
   const currentBoard = currentMenu?.targetType === 'BOARD' ? boards.find((board) => board.id === currentMenu.targetId) : null
   const style = { '--brand': template.primaryColor } as CSSProperties
 
-  return <div className={`min-h-screen bg-white text-[#1c2924] site-${template.layout.toLowerCase()}`} style={style}>
+  return <div className={`min-h-screen overflow-x-hidden bg-white text-[#1c2924] site-${template.layout.toLowerCase()}`} style={style}>
     <header className="relative z-30 bg-white">
       <div className="border-b border-[#e7ece9] bg-[#f7f9f8]">
         <div className="mx-auto flex max-w-[1240px] items-center justify-between px-5 py-2 text-[11px] text-[#66766f]"><span>{template.headerText}</span><Link className="font-bold hover:text-[var(--brand)]" to="/admin">CMS 관리자</Link></div>
@@ -65,11 +86,7 @@ export default function PublicSite() {
 
 function Home({ template, notices }: { template: SiteTemplate; notices: Post[] }) {
   return <main>
-    <section className="relative min-h-[620px] overflow-hidden bg-[#1d4437] text-white">
-      <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: `url(${template.heroImageUrl})` }} />
-      <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(10,35,27,.9)_0%,rgba(10,35,27,.58)_48%,rgba(10,35,27,.08)_100%)]" />
-      <div className="relative z-10 mx-auto flex min-h-[620px] max-w-[1240px] items-center px-5 py-24"><div className="max-w-[680px]"><p className="mb-5 text-xs font-bold tracking-[.22em] text-[#a8e5c9]">INNOVATION FOR LIFE</p><h1 className="m-0 text-[clamp(2.7rem,6vw,5.4rem)] font-semibold leading-[1.04] tracking-[-.055em]">{template.heroTitle}</h1><p className="mb-9 mt-7 max-w-[600px] text-[17px] leading-8 text-white/80">{template.heroSubtitle}</p><Link className="inline-flex items-center gap-4 rounded-full bg-white px-7 py-4 text-sm font-bold text-[#163c30] no-underline shadow-xl hover:-translate-y-0.5" to={template.heroButtonUrl}>{template.heroButtonLabel}<span>→</span></Link></div></div>
-    </section>
+    <Hero template={template} />
 
     <section className="mx-auto max-w-[1240px] px-5 py-24"><div className="mb-12 flex flex-wrap items-end justify-between gap-5"><div><p className="mb-3 text-xs font-bold tracking-[.18em] text-[var(--brand)]">OUR BUSINESS</p><h2 className="m-0 text-[clamp(2rem,4vw,3.2rem)] tracking-[-.05em]">기술로 만드는 새로운 가능성</h2></div><p className="max-w-lg text-sm leading-7 text-[#64736d]">복잡한 업무를 더 단순하게, 아이디어를 더 빠르게 실현하는 AX 비즈니스 솔루션을 제공합니다.</p></div><div className="grid gap-5 md:grid-cols-3">{[['01','AX Module Studio','모듈형 AI 업무 플랫폼으로 조직의 실행력을 높입니다.','/products/ax-module-studio'],['02','Business Solutions','현장의 과제를 중심으로 실용적인 솔루션을 설계합니다.','/products/solutions'],['03','Technical Support','도입부터 운영까지 안정적인 기술 지원을 제공합니다.','/services/technical-support']].map(([number,title,body,path]) => <Link className="group min-h-[300px] overflow-hidden rounded-2xl border border-[#e2e9e5] bg-[#f7faf8] p-8 text-inherit no-underline transition hover:-translate-y-1 hover:shadow-[0_24px_50px_rgba(33,71,57,.12)]" key={number} to={path}><span className="text-xs font-bold text-[var(--brand)]">{number}</span><div className="mt-16 grid h-14 w-14 place-items-center rounded-full bg-white text-xl shadow-sm transition group-hover:bg-[var(--brand)] group-hover:text-white">✦</div><h3 className="mb-3 mt-6 text-xl">{title}</h3><p className="m-0 text-sm leading-7 text-[#687770]">{body}</p></Link>)}</div></section>
 
@@ -77,6 +94,27 @@ function Home({ template, notices }: { template: SiteTemplate; notices: Post[] }
 
     <section className="mx-auto grid max-w-[1240px] gap-12 px-5 py-24 lg:grid-cols-[.7fr_1.3fr]"><div><p className="text-xs font-bold tracking-[.18em] text-[var(--brand)]">NEWS &amp; NOTICE</p><h2 className="text-4xl tracking-[-.05em]">새로운 소식</h2><p className="text-sm leading-7 text-[#687770]">AX Bio Studio의 주요 소식과 안내를 확인하세요.</p><Link className="mt-5 inline-block text-sm font-bold text-[var(--brand)]" to="/support/notices">공지사항 전체보기 →</Link></div><div className="border-t border-[#cfd9d4]">{notices.slice(0, 4).map((notice) => <Link className="grid gap-2 border-b border-[#dce4e0] py-6 text-inherit no-underline md:grid-cols-[1fr_auto]" key={notice.id} to={`/posts/${notice.id}`}><strong>{notice.title}</strong><span className="text-xs text-[#7d8a84]">{date(notice.createdAt)}</span></Link>)}</div></section>
   </main>
+}
+
+function Hero({ template }: { template: SiteTemplate }) {
+  if (template.layout === 'MINIMAL') return <section className="bg-white" aria-label="MINIMAL 템플릿 메인">
+    <div className="mx-auto grid min-h-[560px] max-w-[1240px] items-stretch md:grid-cols-2">
+      <div className="flex items-center px-5 py-20 md:px-10 md:py-24"><div className="max-w-[540px]"><p className="mb-7 text-xs font-bold tracking-[.22em] text-[var(--brand)]">MINIMAL TEMPLATE</p><h1 className="m-0 text-[clamp(2.7rem,5vw,4.5rem)] font-medium leading-[1.08] tracking-[-.055em]">{template.heroTitle}</h1><p className="mb-8 mt-7 text-[16px] leading-8 text-[#69776f]">{template.heroSubtitle}</p><Link className="inline-flex items-center gap-4 rounded-full px-7 py-4 text-sm font-bold text-white no-underline" style={{ background: template.primaryColor }} to={template.heroButtonUrl}>{template.heroButtonLabel}<span>→</span></Link></div></div>
+      <div className="min-h-[380px] bg-cover bg-center md:min-h-[560px]" style={{ backgroundImage: `url(${template.heroImageUrl})` }} />
+    </div>
+  </section>
+
+  if (template.layout === 'BOLD') return <section className="relative min-h-[650px] overflow-hidden bg-[#171522] text-white" aria-label="BOLD 템플릿 메인">
+    <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: `url(${template.heroImageUrl})` }} />
+    <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(20,18,34,.96)_0%,rgba(20,18,34,.78)_52%,rgba(20,18,34,.2)_100%)]" />
+    <div className="relative z-10 mx-auto flex min-h-[650px] max-w-[1240px] items-center px-5 py-24"><div className="max-w-[820px]"><p className="mb-6 text-xs font-black tracking-[.28em] text-white/65">BOLD TEMPLATE</p><h1 className="m-0 text-[clamp(3.2rem,7vw,6.4rem)] font-black uppercase leading-[.95] tracking-[-.065em]">{template.heroTitle}</h1><p className="mb-9 mt-8 max-w-[650px] text-[18px] leading-8 text-white/75">{template.heroSubtitle}</p><Link className="inline-flex items-center gap-4 rounded-full px-8 py-4 text-sm font-black text-white no-underline" style={{ background: template.primaryColor }} to={template.heroButtonUrl}>{template.heroButtonLabel}<span>→</span></Link></div></div>
+  </section>
+
+  return <section className="relative min-h-[620px] overflow-hidden bg-[#1d4437] text-white" aria-label="CLASSIC 템플릿 메인">
+    <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: `url(${template.heroImageUrl})` }} />
+    <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(10,35,27,.9)_0%,rgba(10,35,27,.58)_48%,rgba(10,35,27,.08)_100%)]" />
+    <div className="relative z-10 mx-auto flex min-h-[620px] max-w-[1240px] items-center px-5 py-24"><div className="max-w-[680px]"><p className="mb-5 text-xs font-bold tracking-[.22em] text-[#a8e5c9]">INNOVATION FOR LIFE</p><h1 className="m-0 text-[clamp(2.7rem,6vw,5.4rem)] font-semibold leading-[1.04] tracking-[-.055em]">{template.heroTitle}</h1><p className="mb-9 mt-7 max-w-[600px] text-[17px] leading-8 text-white/80">{template.heroSubtitle}</p><Link className="inline-flex items-center gap-4 rounded-full bg-white px-7 py-4 text-sm font-bold text-[#163c30] no-underline shadow-xl hover:-translate-y-0.5" to={template.heroButtonUrl}>{template.heroButtonLabel}<span>→</span></Link></div></div>
+  </section>
 }
 
 function SubPage({ menu, menus, board, content, posts, post, failure }: { menu?: Menu; menus: Menu[]; board: Board | null | undefined; content: Article | null; posts: Post[]; post: Post | null; failure: string | null }) {

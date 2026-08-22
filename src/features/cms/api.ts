@@ -1,6 +1,8 @@
 import { ProductApiError } from '../../shared/api/error'
 import { fetchWithSessionRefresh, type AdminSession } from '../../shared/api/session'
 
+export const SITE_UPDATE_EVENT = 'axms:site-updated'
+
 export type Member = { id: string; loginId: string; name: string; role: string }
 export type MenuTargetType = 'NONE' | 'CONTENT' | 'BOARD'
 export type Menu = {
@@ -77,7 +79,10 @@ export class CmsApi {
   updatePost = (id: number, value: Pick<Post, 'title' | 'body'>) => this.request<Post>(`/api/cms/posts/${id}`, { method: 'PUT', body: JSON.stringify(value) })
   deletePost = (id: number) => this.request<void>(`/api/cms/posts/${id}`, { method: 'DELETE' })
   templates = () => this.request<SiteTemplate[]>('/api/cms/templates')
-  saveTemplate = (value: SiteTemplate) => this.request<SiteTemplate>(`/api/cms/templates/${value.key}`, { method: 'PUT', body: JSON.stringify(value) })
+  saveTemplate = ({ key, layout, primaryColor, siteName, headerText, footerText, heroImageUrl, heroTitle, heroSubtitle, heroButtonLabel, heroButtonUrl }: SiteTemplate) => this.request<SiteTemplate>(`/api/cms/templates/${key}`, {
+    method: 'PUT',
+    body: JSON.stringify({ layout, primaryColor, siteName, headerText, footerText, heroImageUrl, heroTitle, heroSubtitle, heroButtonLabel, heroButtonUrl }),
+  })
 }
 
 export class SiteApi {
