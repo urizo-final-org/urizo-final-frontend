@@ -32,6 +32,8 @@ RUN --mount=type=secret,id=node_build_extra_ca,required=false \
 
 COPY --chown=node:node index.html tsconfig*.json vite.config.ts ./
 COPY --chown=node:node src/ src/
+COPY --chown=node:node public/ public/
+RUN chown node:node /app
 
 USER node
 
