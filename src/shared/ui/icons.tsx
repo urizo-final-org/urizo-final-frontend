@@ -61,19 +61,22 @@ const paths: Record<IconName, ReactNode> = {
   'loader-circle': <path d="M21 12a9 9 0 1 1-6.2-8.6" />,
 }
 
+/**
+ * `size` is the design's pixel size at the 16px reference root; it is emitted as rem so icons grow
+ * and shrink with the fluid root font-size alongside type and spacing.
+ */
 export function Icon({ name, size = 14, className = '' }: { name: IconName; size?: number; className?: string }) {
+  const edge = `${size / 16}rem`
   return (
     <svg
       className={className}
-      width={size}
-      height={size}
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
       strokeWidth="1.8"
       strokeLinecap="round"
       strokeLinejoin="round"
-      style={{ flex: `0 0 ${size}px` }}
+      style={{ width: edge, height: edge, flex: `0 0 ${edge}` }}
       aria-hidden="true"
     >
       {paths[name]}

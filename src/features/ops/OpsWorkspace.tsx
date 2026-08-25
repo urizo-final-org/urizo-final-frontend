@@ -21,11 +21,11 @@ export default function OpsWorkspace({ route, actorName, roleLabel }: { route: O
 }
 
 const grid = 'grid gap-3'
-const headRow = 'bg-sub px-4 py-2 text-[11px] font-semibold text-muted-2 border-b border-line-soft grid'
-const bodyRow = 'grid items-center border-b border-row-line px-4 py-[10px] text-xs text-body'
+const headRow = 'bg-sub px-4 py-2 text-[0.6875rem] font-semibold text-muted-2 border-b border-line-soft grid'
+const bodyRow = 'grid items-center border-b border-row-line px-4 py-[0.625rem] text-xs text-body'
 
 function MockNote({ children }: { children: string }) {
-  return <p className="mb-4 text-[11.5px] text-muted-2">{children}</p>
+  return <p className="mb-4 text-[0.71875rem] text-muted-2">{children}</p>
 }
 
 /* ------------------------------------------------------------------ 홈 */
@@ -70,27 +70,27 @@ function Home({ actorName }: { actorName: string }) {
     </PageHead>
     <MockNote>이 화면의 모든 수치는 정적 데모 데이터입니다. 실제 API를 호출하지 않습니다.</MockNote>
 
-    <div className={`${grid} mb-[14px] sm:grid-cols-2 xl:grid-cols-4`}>
-      {stats.map((stat) => <div key={stat.label} className={`${panel} px-4 py-[15px]`}>
-        <div className="flex items-center gap-[7px] text-[11.5px] font-semibold text-muted">
+    <div className={`${grid} mb-[0.875rem] sm:grid-cols-2 xl:grid-cols-4`}>
+      {stats.map((stat) => <div key={stat.label} className={`${panel} px-4 py-[0.9375rem]`}>
+        <div className="flex items-center gap-[0.4375rem] text-[0.71875rem] font-semibold text-muted">
           <Icon name={stat.icon} className="text-muted-2" />{stat.label}
         </div>
-        <div className="mt-[11px] flex items-end gap-[7px]">
-          <b className="text-[25px] font-semibold leading-none tracking-[-.03em]">{stat.value}</b>
-          <span className="pb-[2px] text-[11px] text-muted-2">{stat.unit}</span>
+        <div className="mt-[0.6875rem] flex items-end gap-[0.4375rem]">
+          <b className="text-[1.5625rem] font-semibold leading-none tracking-[-.03em]">{stat.value}</b>
+          <span className="pb-[0.125rem] text-[0.6875rem] text-muted-2">{stat.unit}</span>
         </div>
-        <div className={`mt-[10px] border-t border-[#f0f2f5] pt-[10px] text-[11px] ${stat.deltaClass}`}>{stat.delta}</div>
+        <div className={`mt-[0.625rem] border-t border-[#f0f2f5] pt-[0.625rem] text-[0.6875rem] ${stat.deltaClass}`}>{stat.delta}</div>
       </div>)}
     </div>
 
-    <div className="grid items-start gap-[14px] xl:grid-cols-[minmax(0,1fr)_340px]">
-      <div className="flex min-w-0 flex-col gap-[14px]">
+    <div className="grid items-start gap-[0.875rem] xl:grid-cols-[minmax(0,1fr)_21.25rem]">
+      <div className="flex min-w-0 flex-col gap-[0.875rem]">
         <section className={panel}>
           <PanelTitle title="최근 실행" sub="오케스트레이션 · LLM DevOps · RAG Build">
-            <button className="bg-transparent text-[11.5px] font-semibold text-link">전체 보기</button>
+            <button className="bg-transparent text-[0.71875rem] font-semibold text-link">전체 보기</button>
           </PanelTitle>
           <div className="overflow-x-auto">
-            <div className="min-w-[680px]">
+            <div className="min-w-[42.5rem]">
               <div className={`${headRow} ${runsColumns}`}>
                 <span>작업</span><span>Agent · 모델</span><span>상태</span><span>소요</span><span className="text-right">시작</span>
               </div>
@@ -98,14 +98,14 @@ function Home({ actorName }: { actorName: string }) {
                 <span className="flex min-w-0 items-center gap-2">
                   <Icon name={run.icon} className="text-muted-2" />
                   <span className="min-w-0">
-                    <b className="block truncate text-[12.5px] font-semibold text-ink">{run.title}</b>
-                    <small className="block font-mono text-[10.5px] text-muted-3">{run.id}</small>
+                    <b className="block truncate text-[0.78125rem] font-semibold text-ink">{run.title}</b>
+                    <small className="block font-mono text-[0.65625rem] text-muted-3">{run.id}</small>
                   </span>
                 </span>
                 <span className="truncate">{run.agent}</span>
                 <span><Badge tone={run.tone}>{run.state}</Badge></span>
-                <span className="font-mono text-[11.5px]">{run.dur}</span>
-                <span className="text-right text-[11.5px] text-muted-2">{run.at}</span>
+                <span className="font-mono text-[0.71875rem]">{run.dur}</span>
+                <span className="text-right text-[0.71875rem] text-muted-2">{run.at}</span>
               </div>)}
             </div>
           </div>
@@ -113,45 +113,45 @@ function Home({ actorName }: { actorName: string }) {
 
         <section className={panel}>
           <PanelTitle title="주간 실행 현황" sub="최근 7일 · 정적 Mock 데이터">
-            <div className="flex items-center gap-3 text-[11px] text-muted max-[560px]:hidden">
-              <span className="inline-flex items-center gap-[5px]"><i className="block h-2 w-2 rounded-sm bg-run-fg" />성공</span>
-              <span className="inline-flex items-center gap-[5px]"><i className="block h-2 w-2 rounded-sm bg-wait-dot" />대기</span>
-              <span className="inline-flex items-center gap-[5px]"><i className="block h-2 w-2 rounded-sm bg-[#d18d86]" />실패</span>
+            <div className="flex items-center gap-3 text-[0.6875rem] text-muted max-[560px]:hidden">
+              <span className="inline-flex items-center gap-[0.3125rem]"><i className="block h-2 w-2 rounded-sm bg-run-fg" />성공</span>
+              <span className="inline-flex items-center gap-[0.3125rem]"><i className="block h-2 w-2 rounded-sm bg-wait-dot" />대기</span>
+              <span className="inline-flex items-center gap-[0.3125rem]"><i className="block h-2 w-2 rounded-sm bg-[#d18d86]" />실패</span>
             </div>
           </PanelTitle>
-          <div className="flex h-[170px] items-end gap-[18px] px-[18px] pb-[10px] pt-5">
+          <div className="flex h-[10.625rem] items-end gap-[1.125rem] px-[1.125rem] pb-[0.625rem] pt-5">
             {chart.map(([day, ok, wait, fail]) => <div key={day} className="flex h-full flex-1 flex-col items-center justify-end gap-2">
-              <div className="flex h-full w-full max-w-[44px] flex-col justify-end gap-[2px]">
+              <div className="flex h-full w-full max-w-[2.75rem] flex-col justify-end gap-[0.125rem]">
                 <div className="rounded-t-sm bg-[#d18d86]" style={{ height: `${fail}%` }} />
                 <div className="bg-wait-dot" style={{ height: `${wait}%` }} />
                 <div className="rounded-b-sm bg-run-fg" style={{ height: `${ok}%` }} />
               </div>
-              <small className="text-[10.5px] text-muted-3">{day}</small>
+              <small className="text-[0.65625rem] text-muted-3">{day}</small>
             </div>)}
           </div>
         </section>
       </div>
 
-      <div className="flex flex-col gap-[14px]">
+      <div className="flex flex-col gap-[0.875rem]">
         <section className={panel}>
           <PanelTitle title="승인 대기" sub="일반관리자 확인이 필요한 항목" />
           {pending.map((item) => <div key={item.title} className="border-b border-row-line px-4 py-3">
-            <div className="flex items-center gap-[7px]">
+            <div className="flex items-center gap-[0.4375rem]">
               <Badge tone="wait">승인 대기</Badge>
-              <small className="ml-auto text-[10.5px] text-muted-3">{item.at}</small>
+              <small className="ml-auto text-[0.65625rem] text-muted-3">{item.at}</small>
             </div>
-            <b className="mt-[7px] block text-[12.5px] font-semibold">{item.title}</b>
-            <small className="mt-[3px] block text-[11px] text-muted-2">{item.meta}</small>
+            <b className="mt-[0.4375rem] block text-[0.78125rem] font-semibold">{item.title}</b>
+            <small className="mt-[0.1875rem] block text-[0.6875rem] text-muted-2">{item.meta}</small>
           </div>)}
           <div className="px-4 py-3">
-            <button className={`${secondaryButton} h-[30px] w-full justify-center text-[11.5px]`}>승인 관리로 이동</button>
+            <button className={`${secondaryButton} h-[1.875rem] w-full justify-center text-[0.71875rem]`}>승인 관리로 이동</button>
           </div>
         </section>
 
         <section className={panel}>
           <PanelTitle title="운영 요약" />
-          <div className="px-4 pb-[14px] pt-[6px]">
-            {summary.map((item) => <div key={item.label} className="flex items-center gap-[10px] border-b border-row-line py-[10px] text-xs">
+          <div className="px-4 pb-[0.875rem] pt-[0.375rem]">
+            {summary.map((item) => <div key={item.label} className="flex items-center gap-[0.625rem] border-b border-row-line py-[0.625rem] text-xs">
               <Icon name={item.icon} className="text-muted-2" />
               <span className="flex-1 text-body">{item.label}</span>
               <b className="font-semibold">{item.value}</b>
@@ -178,7 +178,7 @@ const agentRows: { name: string; role: string; model: string; color: string; at:
   { name: 'Agent 4', role: '문서 요약 (실험)', model: '미배치', color: '#c2cad3', at: '2026.08.12', tone: 'idle', state: '중지' },
 ]
 
-const agentColumns = 'grid-cols-[1.3fr_1fr_1fr_.8fr_.9fr_40px]'
+const agentColumns = 'grid-cols-[1.3fr_1fr_1fr_.8fr_.9fr_2.5rem]'
 
 function Agents() {
   return <>
@@ -187,49 +187,49 @@ function Agents() {
     </PageHead>
     <MockNote>정적 데모 화면입니다. 등록·수정·배치는 아직 연결되지 않았습니다.</MockNote>
 
-    <div className={`${grid} mb-[14px] md:grid-cols-3`}>
-      {agentCards.map((agent) => <div key={agent.name} className={`${panel} px-4 py-[15px]`}>
-        <div className="flex items-center gap-[9px]">
+    <div className={`${grid} mb-[0.875rem] md:grid-cols-3`}>
+      {agentCards.map((agent) => <div key={agent.name} className={`${panel} px-4 py-[0.9375rem]`}>
+        <div className="flex items-center gap-[0.5625rem]">
           <span className="grid h-7 w-7 shrink-0 place-items-center rounded-md bg-run-bg text-run-fg"><Icon name={agent.icon} size={15} /></span>
           <span className="min-w-0 flex-1">
-            <b className="block text-[13px] font-semibold">{agent.name}</b>
-            <small className="block text-[11px] text-muted-2">{agent.role}</small>
+            <b className="block text-[0.8125rem] font-semibold">{agent.name}</b>
+            <small className="block text-[0.6875rem] text-muted-2">{agent.role}</small>
           </span>
           <Badge tone="ok" dot={false}>활성</Badge>
         </div>
-        <div className="mt-[14px] grid grid-cols-2 gap-[10px] border-t border-[#f0f2f5] pt-3">
+        <div className="mt-[0.875rem] grid grid-cols-2 gap-[0.625rem] border-t border-[#f0f2f5] pt-3">
           <span>
-            <small className="block text-[10.5px] text-muted-3">배치 모델</small>
-            <b className="mt-[3px] block text-xs font-semibold">{agent.model}</b>
+            <small className="block text-[0.65625rem] text-muted-3">배치 모델</small>
+            <b className="mt-[0.1875rem] block text-xs font-semibold">{agent.model}</b>
           </span>
           <span>
-            <small className="block text-[10.5px] text-muted-3">최근 7일 실행</small>
-            <b className="mt-[3px] block text-xs font-semibold">{agent.runs}</b>
+            <small className="block text-[0.65625rem] text-muted-3">최근 7일 실행</small>
+            <b className="mt-[0.1875rem] block text-xs font-semibold">{agent.runs}</b>
           </span>
         </div>
       </div>)}
     </div>
 
     <section className={panel}>
-      <div className="flex flex-wrap items-center gap-[10px] border-b border-line-soft px-4 py-3">
-        <SearchField placeholder="Agent 이름 또는 역할 검색" className="min-w-[220px] max-w-[320px] flex-1" />
+      <div className="flex flex-wrap items-center gap-[0.625rem] border-b border-line-soft px-4 py-3">
+        <SearchField placeholder="Agent 이름 또는 역할 검색" className="min-w-[13.75rem] max-w-[20rem] flex-1" />
         {['역할 전체', '상태 전체', '모델 전체', '최근 수정순'].map((label, index) => <FilterChip key={label} label={label} active={index === 0} />)}
-        <span className="ml-auto text-[11.5px] text-muted-2">전체 4건</span>
+        <span className="ml-auto text-[0.71875rem] text-muted-2">전체 4건</span>
       </div>
       <div className="overflow-x-auto">
-        <div className="min-w-[760px]">
+        <div className="min-w-[47.5rem]">
           <div className={`${headRow} ${agentColumns}`}>
             <span>Agent</span><span>역할</span><span>배치 모델</span><span>상태</span><span>최근 수정</span><span />
           </div>
           {agentRows.map((agent) => <div key={agent.name} className={`${bodyRow} ${agentColumns}`}>
             <span className="flex items-center gap-2">
               <Icon name="bot" className="text-muted-2" />
-              <b className="text-[12.5px] font-semibold text-ink">{agent.name}</b>
+              <b className="text-[0.78125rem] font-semibold text-ink">{agent.name}</b>
             </span>
             <span>{agent.role}</span>
-            <span className="flex items-center gap-[6px]"><i className="block h-[6px] w-[6px] rounded-sm" style={{ background: agent.color }} />{agent.model}</span>
+            <span className="flex items-center gap-[0.375rem]"><i className="block h-[0.375rem] w-[0.375rem] rounded-sm" style={{ background: agent.color }} />{agent.model}</span>
             <span><Badge tone={agent.tone}>{agent.state}</Badge></span>
-            <span className="text-[11.5px] text-muted-2">{agent.at}</span>
+            <span className="text-[0.71875rem] text-muted-2">{agent.at}</span>
             <span className="flex justify-end text-muted-3"><Icon name="ellipsis" size={15} /></span>
           </div>)}
         </div>
@@ -267,17 +267,17 @@ function Models() {
 
     <Tabs items={[{ label: 'Provider', count: '3' }, { label: '모델', count: '18' }, { label: 'Agent 배치', count: '3' }]} active={1} />
 
-    <div className={`${grid} mb-[14px] md:grid-cols-3`}>
-      {providers.map((provider) => <div key={provider.name} className={`${panel} px-4 py-[15px]`}>
-        <div className="flex items-center gap-[9px]">
+    <div className={`${grid} mb-[0.875rem] md:grid-cols-3`}>
+      {providers.map((provider) => <div key={provider.name} className={`${panel} px-4 py-[0.9375rem]`}>
+        <div className="flex items-center gap-[0.5625rem]">
           <span className="grid h-7 w-7 shrink-0 place-items-center rounded-md text-xs font-bold" style={{ background: provider.markBg, color: provider.markFg }}>{provider.initial}</span>
           <span className="min-w-0 flex-1">
-            <b className="block text-[13px] font-semibold">{provider.name}</b>
-            <small className="block text-[11px] text-muted-2">모델 {provider.models}개 · Agent {provider.agents}개 배치</small>
+            <b className="block text-[0.8125rem] font-semibold">{provider.name}</b>
+            <small className="block text-[0.6875rem] text-muted-2">모델 {provider.models}개 · Agent {provider.agents}개 배치</small>
           </span>
           <Badge tone="ok">연결됨</Badge>
         </div>
-        <div className="mt-[13px] flex items-center justify-between border-t border-[#f0f2f5] pt-[11px] text-[11.5px] text-muted">
+        <div className="mt-[0.8125rem] flex items-center justify-between border-t border-[#f0f2f5] pt-[0.6875rem] text-[0.71875rem] text-muted">
           <span>API Key</span>
           <b className="font-mono font-medium text-body">{provider.key}</b>
         </div>
@@ -285,26 +285,26 @@ function Models() {
     </div>
 
     <section className={panel}>
-      <div className="flex flex-wrap items-center gap-[10px] border-b border-line-soft px-4 py-3">
-        <SearchField placeholder="모델명, Provider 검색" className="min-w-[220px] max-w-[360px] flex-1" />
+      <div className="flex flex-wrap items-center gap-[0.625rem] border-b border-line-soft px-4 py-3">
+        <SearchField placeholder="모델명, Provider 검색" className="min-w-[13.75rem] max-w-[22.5rem] flex-1" />
         {['Provider 전체', '활성 상태', '배치 여부'].map((label, index) => <FilterChip key={label} label={label} active={index === 0} />)}
         <button className={`${smallButton} ml-auto`}><Icon name="sliders-horizontal" size={13} />표시 항목</button>
       </div>
       <div className="overflow-x-auto">
-        <div className="min-w-[880px]">
+        <div className="min-w-[55rem]">
           <div className={`${headRow} ${modelColumns}`}>
             <span>모델</span><span>Provider</span><span>Agent 배치</span><span>활성 상태</span><span>태그</span><span className="text-right">최근 수정일</span>
           </div>
           {modelRows.map((model) => <div key={model.name} className={`${bodyRow} ${modelColumns}`}>
             <span className="flex items-center gap-2">
-              <i className="block h-[7px] w-[7px] rounded-sm" style={{ background: model.color }} />
-              <b className="text-[12.5px] font-semibold text-ink">{model.name}</b>
+              <i className="block h-[0.4375rem] w-[0.4375rem] rounded-sm" style={{ background: model.color }} />
+              <b className="text-[0.78125rem] font-semibold text-ink">{model.name}</b>
             </span>
             <span>{model.provider}</span>
             <span className={model.placedMuted ? 'text-muted-3' : ''}>{model.placed}</span>
             <span><Badge tone={model.tone}>{model.state}</Badge></span>
             <span><Tag>{model.tag}</Tag></span>
-            <span className="text-right text-[11.5px] text-muted-2">{model.at}</span>
+            <span className="text-right text-[0.71875rem] text-muted-2">{model.at}</span>
           </div>)}
         </div>
       </div>
@@ -366,26 +366,26 @@ function Rag() {
     </PageHead>
     <MockNote>정적 데모 화면입니다. 모든 지표와 진행 상태는 예시 값입니다.</MockNote>
 
-    <div className="grid items-start gap-[14px] xl:grid-cols-[272px_minmax(0,1fr)]">
+    <div className="grid items-start gap-[0.875rem] xl:grid-cols-[17rem_minmax(0,1fr)]">
       <section className={panel}>
-        <div className="border-b border-line-soft px-[14px] py-3">
+        <div className="border-b border-line-soft px-[0.875rem] py-3">
           <SearchField placeholder="데이터 소스 검색" />
         </div>
         <div className="px-2 pb-3 pt-2">
           {tree.map((node) => <button
             key={node.label}
             type="button"
-            className={`flex w-full items-center gap-2 rounded-[5px] py-[6px] pr-2 text-left text-xs ${node.active ? 'bg-[#eef2f7] font-semibold text-primary' : node.strong ? 'font-semibold text-ink' : 'font-medium text-body'}`}
-            style={{ paddingLeft: node.indent }}
+            className={`flex w-full items-center gap-2 rounded-[0.3125rem] py-[0.375rem] pr-2 text-left text-xs ${node.active ? 'bg-[#eef2f7] font-semibold text-primary' : node.strong ? 'font-semibold text-ink' : 'font-medium text-body'}`}
+            style={{ paddingLeft: `${node.indent / 16}rem` }}
           >
             <Icon name={node.icon} className={node.active ? 'text-run-fg' : node.strong ? 'text-muted-2' : 'text-muted-4'} />
             <span className="flex-1 truncate">{node.label}</span>
-            <small className="text-[10.5px] text-muted-3">{node.count}</small>
+            <small className="text-[0.65625rem] text-muted-3">{node.count}</small>
           </button>)}
         </div>
       </section>
 
-      <div className="flex min-w-0 flex-col gap-[14px]">
+      <div className="flex min-w-0 flex-col gap-[0.875rem]">
         <section className={panel}>
           <div className="flex items-start justify-between gap-4 border-b border-line-soft p-4">
             <div>
@@ -393,42 +393,42 @@ function Rag() {
                 <h2 className="text-base font-semibold">관광지 공공데이터 API</h2>
                 <Badge tone="ok">등록 완료</Badge>
               </div>
-              <p className="mt-[5px] text-xs text-muted-2">고객사 · 한빛관광공사 · 최근 수집 2026.08.23</p>
+              <p className="mt-[0.3125rem] text-xs text-muted-2">고객사 · 한빛관광공사 · 최근 수집 2026.08.23</p>
             </div>
             <button className={smallButton}>수집 설정</button>
           </div>
           <div className="grid sm:grid-cols-2 xl:grid-cols-4">
-            {ragMeta.map((meta) => <div key={meta.label} className="border-r border-row-line px-4 py-[14px]">
-              <small className="block text-[10.5px] text-muted-3">{meta.label}</small>
-              <b className="mt-[5px] block text-[12.5px] font-semibold">{meta.value}</b>
+            {ragMeta.map((meta) => <div key={meta.label} className="border-r border-row-line px-4 py-[0.875rem]">
+              <small className="block text-[0.65625rem] text-muted-3">{meta.label}</small>
+              <b className="mt-[0.3125rem] block text-[0.78125rem] font-semibold">{meta.value}</b>
             </div>)}
           </div>
         </section>
 
-        <div className="grid gap-[14px] lg:grid-cols-2">
+        <div className="grid gap-[0.875rem] lg:grid-cols-2">
           <section className={panel}>
             <PanelTitle title="RAG Build 진행"><Badge tone="run">진행 중 · 3/5</Badge></PanelTitle>
-            <div className="flex flex-col gap-[2px] px-4 pb-4 pt-[14px]">
-              {buildSteps.map((step) => <div key={step.label} className={`flex items-center gap-[10px] py-[9px] text-xs ${step.kind === 'wait' ? 'text-muted-3' : 'text-body'}`}>
-                <span className={`grid h-5 w-5 shrink-0 place-items-center rounded-full border text-[10px] font-bold ${stepSkin[step.kind]}`}>
+            <div className="flex flex-col gap-[0.125rem] px-4 pb-4 pt-[0.875rem]">
+              {buildSteps.map((step) => <div key={step.label} className={`flex items-center gap-[0.625rem] py-[0.5625rem] text-xs ${step.kind === 'wait' ? 'text-muted-3' : 'text-body'}`}>
+                <span className={`grid h-5 w-5 shrink-0 place-items-center rounded-full border text-[0.625rem] font-bold ${stepSkin[step.kind]}`}>
                   {step.kind === 'done' ? '✓' : step.kind === 'run' ? '•' : '—'}
                 </span>
                 <span className="flex-1">{step.label}</span>
-                <small className="font-mono text-[11px] text-muted-3">{step.dur}</small>
+                <small className="font-mono text-[0.6875rem] text-muted-3">{step.dur}</small>
               </div>)}
             </div>
           </section>
 
           <section className={panel}>
-            <PanelTitle title="품질 지표 · Tour-RAG v3"><small className="text-[11px] text-muted-2">Mock 데이터</small></PanelTitle>
-            <div className="flex flex-col gap-[14px] px-4 pb-4 pt-[14px]">
+            <PanelTitle title="품질 지표 · Tour-RAG v3"><small className="text-[0.6875rem] text-muted-2">Mock 데이터</small></PanelTitle>
+            <div className="flex flex-col gap-[0.875rem] px-4 pb-4 pt-[0.875rem]">
               {metrics.map((metric) => <div key={metric.label}>
-                <div className="flex items-center justify-between text-[11.5px] text-muted">
+                <div className="flex items-center justify-between text-[0.71875rem] text-muted">
                   <span>{metric.label}</span>
-                  <b className="text-[12.5px] font-semibold text-ink">{metric.value}</b>
+                  <b className="text-[0.78125rem] font-semibold text-ink">{metric.value}</b>
                 </div>
-                <div className="mt-[7px] h-[6px] overflow-hidden rounded-[3px] bg-[#f0f2f5]">
-                  <div className="h-[6px] rounded-[3px] bg-run-fg" style={{ width: `${metric.pct}%` }} />
+                <div className="mt-[0.4375rem] h-[0.375rem] overflow-hidden rounded-[0.1875rem] bg-[#f0f2f5]">
+                  <div className="h-[0.375rem] rounded-[0.1875rem] bg-run-fg" style={{ width: `${metric.pct}%` }} />
                 </div>
               </div>)}
             </div>
@@ -443,14 +443,14 @@ function Rag() {
             </div>
           </PanelTitle>
           <div className="overflow-x-auto">
-            <div className="min-w-[700px]">
+            <div className="min-w-[43.75rem]">
               <div className={`${headRow} ${ragColumns}`}>
                 <span>버전</span><span>Recall@5</span><span>Hit@5</span><span>MRR@5</span><span>실패 질문</span><span className="text-right">빌드 상태</span>
               </div>
               {ragRows.map((version) => <div key={version.name} className={`${bodyRow} ${ragColumns}`}>
                 <span className="flex items-center gap-2">
-                  <b className="text-[12.5px] font-semibold text-ink">{version.name}</b>
-                  {version.active && <span className="rounded bg-ok-bg px-[6px] py-[2px] text-[10px] font-semibold text-ok-fg">현재 활성</span>}
+                  <b className="text-[0.78125rem] font-semibold text-ink">{version.name}</b>
+                  {version.active && <span className="rounded bg-ok-bg px-[0.375rem] py-[0.125rem] text-[0.625rem] font-semibold text-ok-fg">현재 활성</span>}
                 </span>
                 <span className="font-mono">{version.recall}</span>
                 <span className="font-mono">{version.hit}</span>
@@ -498,39 +498,39 @@ function Devops() {
     </PageHead>
     <MockNote>정적 데모 화면입니다. Diff는 저장되지 않고 PR도 생성되지 않습니다.</MockNote>
 
-    <section className={`${panel} mb-[14px]`}>
+    <section className={`${panel} mb-[0.875rem]`}>
       <div className="flex flex-wrap items-start justify-between gap-5 p-4">
         <div>
-          <div className="flex items-center gap-2 text-[11.5px] text-muted-2">
+          <div className="flex items-center gap-2 text-[0.71875rem] text-muted-2">
             <span className="font-mono">TOUR-2026-031</span><span>·</span><span>관광지 목록 화면</span>
           </div>
-          <h2 className="mt-[7px] text-[17px] font-semibold">관광지 목록 필터 기능 추가</h2>
-          <p className="mt-[5px] max-w-[760px] text-[12.5px] leading-[1.6] text-muted">관광지 목록에서 지역과 관광 유형을 선택해 검색할 수 있도록 필터를 추가해줘.</p>
+          <h2 className="mt-[0.4375rem] text-[1.0625rem] font-semibold">관광지 목록 필터 기능 추가</h2>
+          <p className="mt-[0.3125rem] max-w-[47.5rem] text-[0.78125rem] leading-[1.6] text-muted">관광지 목록에서 지역과 관광 유형을 선택해 검색할 수 있도록 필터를 추가해줘.</p>
         </div>
         <Badge tone="wait">Agent 1 분석 완료 · 승인 대기</Badge>
       </div>
       <div className="grid border-t border-line-soft sm:grid-cols-2 xl:grid-cols-4">
-        {devopsStatus.map((step) => <div key={step.name} className="border-r border-row-line px-4 py-[13px]">
+        {devopsStatus.map((step) => <div key={step.name} className="border-r border-row-line px-4 py-[0.8125rem]">
           <Badge tone={step.tone}>{step.state}</Badge>
-          <b className="mt-2 block text-[12.5px] font-semibold">{step.name}</b>
-          <small className="mt-[2px] block text-[11px] text-muted-2">{step.meta}</small>
+          <b className="mt-2 block text-[0.78125rem] font-semibold">{step.name}</b>
+          <small className="mt-[0.125rem] block text-[0.6875rem] text-muted-2">{step.meta}</small>
         </div>)}
       </div>
     </section>
 
-    <div className="grid gap-[14px] xl:grid-cols-[1fr_1.15fr]">
+    <div className="grid gap-[0.875rem] xl:grid-cols-[1fr_1.15fr]">
       <section className={panel}>
         <PanelTitle title="요구사항 분석 결과"><Badge tone="ok">완료</Badge></PanelTitle>
-        <div className="px-4 pb-4 pt-[6px]">
-          {checks.map((check) => <div key={check.label} className="flex items-center gap-[10px] border-b border-row-line py-[11px] text-[12.5px] text-body">
-            <span className="grid h-[18px] w-[18px] shrink-0 place-items-center rounded-full bg-ok-bg text-ok-fg"><Icon name="check" size={12} /></span>
+        <div className="px-4 pb-4 pt-[0.375rem]">
+          {checks.map((check) => <div key={check.label} className="flex items-center gap-[0.625rem] border-b border-row-line py-[0.6875rem] text-[0.78125rem] text-body">
+            <span className="grid h-[1.125rem] w-[1.125rem] shrink-0 place-items-center rounded-full bg-ok-bg text-ok-fg"><Icon name="check" size={12} /></span>
             <span className="flex-1">{check.label}</span>
-            <small className="text-[11px] text-muted-3">{check.kind}</small>
+            <small className="text-[0.6875rem] text-muted-3">{check.kind}</small>
           </div>)}
-          <div className="mt-[14px]">
+          <div className="mt-[0.875rem]">
             <Callout tone="warn" icon="triangle-alert">추가 확인: 지역·관광 유형의 구체적인 선택 항목은 팀 논의가 필요합니다.</Callout>
           </div>
-          <button className={`${primaryButton} mt-[14px] w-full justify-center`}>분석 승인</button>
+          <button className={`${primaryButton} mt-[0.875rem] w-full justify-center`}>분석 승인</button>
         </div>
       </section>
 
@@ -539,15 +539,15 @@ function Devops() {
           <Badge tone="run" dot={false}>Mock · 저장 안 함</Badge>
         </PanelTitle>
         <div className="p-4">
-          <div className="overflow-x-auto rounded-[5px] border border-line font-mono text-[11.5px] leading-[2]">
-            <div className="min-w-[420px]">
-              {diff.map((line) => <div key={line.n} className={`grid grid-cols-[34px_1fr] border-b border-[#f4f6f8] ${line.skin}`}>
-                <span className="bg-sub pr-[9px] text-right text-muted-4">{line.n}</span>
-                <span className="whitespace-pre pl-[10px]">{line.text}</span>
+          <div className="overflow-x-auto rounded-[0.3125rem] border border-line font-mono text-[0.71875rem] leading-[2]">
+            <div className="min-w-[26.25rem]">
+              {diff.map((line) => <div key={line.n} className={`grid grid-cols-[2.125rem_1fr] border-b border-[#f4f6f8] ${line.skin}`}>
+                <span className="bg-sub pr-[0.5625rem] text-right text-muted-4">{line.n}</span>
+                <span className="whitespace-pre pl-[0.625rem]">{line.text}</span>
               </div>)}
             </div>
           </div>
-          <div className="mt-[14px]">
+          <div className="mt-[0.875rem]">
             <Callout tone="ok" icon="check-check">테스트 결과 · 12개 통과 · 데모 데이터</Callout>
           </div>
         </div>
@@ -565,7 +565,7 @@ const approvals = [
   { title: '음식점 목록 정렬 오류 수정 재작업', id: 'TOUR-2026-029', kind: 'LLM DevOps', by: '이은지', at: '어제 09:26' },
 ]
 
-const approvalColumns = 'grid-cols-[1.8fr_1fr_.9fr_.9fr_160px]'
+const approvalColumns = 'grid-cols-[1.8fr_1fr_.9fr_.9fr_10rem]'
 
 function Approvals() {
   return <>
@@ -574,27 +574,27 @@ function Approvals() {
 
     <Tabs items={[{ label: '승인 대기', count: '3' }, { label: '승인 완료', count: '24' }, { label: '반려', count: '0' }, { label: '전체', count: '27' }]} active={0} />
 
-    <section className={`${panel} mb-[14px]`}>
-      <div className="flex flex-wrap items-center gap-[10px] border-b border-line-soft px-4 py-3">
-        <SearchField placeholder="요청 제목, 요청자, 작업 ID 검색" className="min-w-[240px] max-w-[400px] flex-1" />
+    <section className={`${panel} mb-[0.875rem]`}>
+      <div className="flex flex-wrap items-center gap-[0.625rem] border-b border-line-soft px-4 py-3">
+        <SearchField placeholder="요청 제목, 요청자, 작업 ID 검색" className="min-w-[15rem] max-w-[25rem] flex-1" />
         {['유형 전체', '요청자 전체', '최근 30일'].map((label, index) => <FilterChip key={label} label={label} active={index === 0} />)}
       </div>
       <div className="overflow-x-auto">
-        <div className="min-w-[840px]">
+        <div className="min-w-[52.5rem]">
           <div className={`${headRow} ${approvalColumns}`}>
             <span>요청</span><span>유형</span><span>요청자</span><span>요청일</span><span className="text-right">처리</span>
           </div>
           {approvals.map((item) => <div key={item.id} className={`${bodyRow} ${approvalColumns}`}>
             <span className="min-w-0">
-              <b className="block truncate text-[12.5px] font-semibold text-ink">{item.title}</b>
-              <small className="block font-mono text-[10.5px] text-muted-3">{item.id}</small>
+              <b className="block truncate text-[0.78125rem] font-semibold text-ink">{item.title}</b>
+              <small className="block font-mono text-[0.65625rem] text-muted-3">{item.id}</small>
             </span>
             <span><Tag>{item.kind}</Tag></span>
             <span>{item.by}</span>
-            <span className="text-[11.5px] text-muted-2">{item.at}</span>
-            <span className="flex justify-end gap-[7px]">
+            <span className="text-[0.71875rem] text-muted-2">{item.at}</span>
+            <span className="flex justify-end gap-[0.4375rem]">
               <button className={smallButton}>반려</button>
-              <button className="inline-flex h-7 items-center rounded-[5px] bg-primary px-3 text-[11.5px] font-semibold text-white">승인</button>
+              <button className="inline-flex h-7 items-center rounded-[0.3125rem] bg-primary px-3 text-[0.71875rem] font-semibold text-white">승인</button>
             </span>
           </div>)}
         </div>
@@ -640,40 +640,40 @@ function Runs() {
     </PageHead>
     <MockNote>정적 데모 화면입니다. 아래 통계 카드는 Loading State를 보여주기 위한 예시입니다.</MockNote>
 
-    <section className={`${panel} mb-[14px]`}>
-      <div className="flex flex-wrap items-center gap-[10px] px-4 py-3">
-        <SearchField placeholder="작업명, 실행 ID, Agent 검색" className="min-w-[280px] max-w-[420px] flex-1" />
-        <span className="flex h-[30px] overflow-hidden rounded-[5px] border border-field-line">
+    <section className={`${panel} mb-[0.875rem]`}>
+      <div className="flex flex-wrap items-center gap-[0.625rem] px-4 py-3">
+        <SearchField placeholder="작업명, 실행 ID, Agent 검색" className="min-w-[17.5rem] max-w-[26.25rem] flex-1" />
+        <span className="flex h-[1.875rem] overflow-hidden rounded-[0.3125rem] border border-field-line">
           {['24시간', '7일', '30일', '사용자 지정'].map((label, index) => <span
             key={label}
-            className={`grid place-items-center border-l border-field-line px-[11px] text-[11.5px] font-semibold first:border-l-0 ${index === 1 ? 'bg-primary text-white' : 'bg-white text-body'}`}
+            className={`grid place-items-center border-l border-field-line px-[0.6875rem] text-[0.71875rem] font-semibold first:border-l-0 ${index === 1 ? 'bg-primary text-white' : 'bg-white text-body'}`}
           >{label}</span>)}
         </span>
         {['상태 전체', '유형 전체', 'Agent 전체'].map((label, index) => <FilterChip key={label} label={label} active={index === 0} />)}
-        <div className="ml-auto flex items-center gap-3 text-[11px] text-muted">
-          {legend.map((item) => <span key={item.label} className="inline-flex items-center gap-[5px]">
-            <i className={`block h-[7px] w-[7px] rounded-full ${item.dot}`} />{item.label}
+        <div className="ml-auto flex items-center gap-3 text-[0.6875rem] text-muted">
+          {legend.map((item) => <span key={item.label} className="inline-flex items-center gap-[0.3125rem]">
+            <i className={`block h-[0.4375rem] w-[0.4375rem] rounded-full ${item.dot}`} />{item.label}
           </span>)}
         </div>
       </div>
     </section>
 
-    <section className={`${panel} mb-[14px]`}>
+    <section className={`${panel} mb-[0.875rem]`}>
       <PanelTitle title="실행 통계" sub="데이터를 불러오는 중입니다 · Loading State">
         <Badge tone="run" dot={false}><Icon name="loader-circle" size={12} />불러오는 중</Badge>
       </PanelTitle>
       <div className={`${grid} p-4 sm:grid-cols-2 xl:grid-cols-4`} aria-hidden="true">
-        {[1, 2, 3, 4].map((key) => <div key={key} className="rounded-md border border-line-soft p-[14px]">
-          <div className="h-[9px] w-[44%] rounded-[3px] bg-line-soft" />
+        {[1, 2, 3, 4].map((key) => <div key={key} className="rounded-md border border-line-soft p-[0.875rem]">
+          <div className="h-[0.5625rem] w-[44%] rounded-[0.1875rem] bg-line-soft" />
           <div className="mt-3 h-5 w-[64%] rounded bg-row-line" />
-          <div className="mt-3 h-[9px] w-[80%] rounded-[3px] bg-[#f4f6f8]" />
+          <div className="mt-3 h-[0.5625rem] w-[80%] rounded-[0.1875rem] bg-[#f4f6f8]" />
         </div>)}
       </div>
     </section>
 
     <section className={panel}>
       <div className="overflow-x-auto">
-        <div className="min-w-[900px]">
+        <div className="min-w-[56.25rem]">
           <div className={`${headRow} ${runHistoryColumns}`}>
             <span>실행</span><span>단계</span><span>Agent · 모델</span><span>상태</span><span>소요</span><span className="text-right">시작 시각</span>
           </div>
@@ -681,15 +681,15 @@ function Runs() {
             <span className="flex min-w-0 items-center gap-2">
               <Icon name={run.icon} className="text-muted-2" />
               <span className="min-w-0">
-                <b className="block truncate text-[12.5px] font-semibold text-ink">{run.title}</b>
-                <small className="block font-mono text-[10.5px] text-muted-3">{run.id}</small>
+                <b className="block truncate text-[0.78125rem] font-semibold text-ink">{run.title}</b>
+                <small className="block font-mono text-[0.65625rem] text-muted-3">{run.id}</small>
               </span>
             </span>
             <span>{run.step}</span>
             <span className="truncate">{run.agent}</span>
             <span><Badge tone={run.tone}>{run.state}</Badge></span>
-            <span className="font-mono text-[11.5px]">{run.dur}</span>
-            <span className="text-right text-[11.5px] text-muted-2">{run.at}</span>
+            <span className="font-mono text-[0.71875rem]">{run.dur}</span>
+            <span className="text-right text-[0.71875rem] text-muted-2">{run.at}</span>
           </div>)}
         </div>
       </div>
@@ -720,57 +720,57 @@ function Settings({ roleLabel }: { roleLabel: string }) {
 
     <Tabs items={[{ label: '일반' }, { label: '권한' }, { label: 'API Key' }, { label: '알림' }]} active={0} />
 
-    <div className="grid items-start gap-[14px] xl:grid-cols-2">
+    <div className="grid items-start gap-[0.875rem] xl:grid-cols-2">
       <section className={panel}>
         <PanelTitle title="조직 정보" />
         <div className="p-4">
           <label className={fieldLabel}>고객사명
             <input className={control} defaultValue="한빛관광공사" />
           </label>
-          <label className={`${fieldLabel} mt-[14px]`}>서비스 도메인
+          <label className={`${fieldLabel} mt-[0.875rem]`}>서비스 도메인
             <input className={`${control} font-mono`} defaultValue="tour.hanbit.example" />
           </label>
-          <label className={`${fieldLabel} mt-[14px]`}>현재 로그인 역할
+          <label className={`${fieldLabel} mt-[0.875rem]`}>현재 로그인 역할
             <input className={control} value={roleLabel} readOnly />
           </label>
-          <div className={`${fieldLabel} mt-[14px]`}>운영 환경
-            <span className="mt-[6px] flex w-fit overflow-hidden rounded-[5px] border border-field-line">
+          <div className={`${fieldLabel} mt-[0.875rem]`}>운영 환경
+            <span className="mt-[0.375rem] flex w-fit overflow-hidden rounded-[0.3125rem] border border-field-line">
               {['Mock', 'Staging', 'Production'].map((env, index) => <span
                 key={env}
-                className={`px-[14px] py-[6px] text-[11.5px] font-semibold ${index === 0 ? 'bg-primary text-white' : 'bg-white text-muted'}`}
+                className={`px-[0.875rem] py-[0.375rem] text-[0.71875rem] font-semibold ${index === 0 ? 'bg-primary text-white' : 'bg-white text-muted'}`}
               >{env}</span>)}
             </span>
           </div>
-          <div className="mt-[18px] flex justify-end gap-2">
+          <div className="mt-[1.125rem] flex justify-end gap-2">
             <button className={secondaryButton}>취소</button>
             <button className={primaryButton}>저장하기</button>
           </div>
         </div>
       </section>
 
-      <div className="flex flex-col gap-[14px]">
+      <div className="flex flex-col gap-[0.875rem]">
         <section className={panel}>
           <PanelTitle title="API Key"><button className={smallButton}>키 발급</button></PanelTitle>
-          {keys.map((key) => <div key={key.name} className="flex items-center gap-3 border-b border-row-line px-4 py-[10px] text-xs">
+          {keys.map((key) => <div key={key.name} className="flex items-center gap-3 border-b border-row-line px-4 py-[0.625rem] text-xs">
             <span className="min-w-0 flex-1">
-              <b className="block truncate text-[12.5px] font-semibold">{key.name}</b>
-              <small className="block font-mono text-[11px] text-muted-3">{key.value}</small>
+              <b className="block truncate text-[0.78125rem] font-semibold">{key.name}</b>
+              <small className="block font-mono text-[0.6875rem] text-muted-3">{key.value}</small>
             </span>
-            <span className="text-[11.5px] text-muted-2 max-[560px]:hidden">{key.at}</span>
+            <span className="text-[0.71875rem] text-muted-2 max-[560px]:hidden">{key.at}</span>
             <Badge tone={key.tone} dot={false}>{key.state}</Badge>
           </div>)}
         </section>
 
         <section className={panel}>
           <PanelTitle title="권한 · 알림" />
-          <div className="px-4 pb-4 pt-[6px]">
+          <div className="px-4 pb-4 pt-[0.375rem]">
             {toggles.map((toggle) => <div key={toggle.label} className="flex items-center gap-3 border-b border-row-line py-3">
               <span className="min-w-0 flex-1">
-                <b className="block text-[12.5px] font-semibold">{toggle.label}</b>
-                <small className="mt-[2px] block text-[11px] text-muted-2">{toggle.desc}</small>
+                <b className="block text-[0.78125rem] font-semibold">{toggle.label}</b>
+                <small className="mt-[0.125rem] block text-[0.6875rem] text-muted-2">{toggle.desc}</small>
               </span>
-              <span className={`flex h-[19px] w-[34px] shrink-0 rounded-[10px] p-[2px] ${toggle.on ? 'justify-end bg-primary' : 'justify-start bg-btn-line'}`} aria-hidden="true">
-                <span className="block h-[15px] w-[15px] rounded-full bg-white shadow-[0_1px_2px_#10203426]" />
+              <span className={`flex h-[1.1875rem] w-[2.125rem] shrink-0 rounded-[0.625rem] p-[0.125rem] ${toggle.on ? 'justify-end bg-primary' : 'justify-start bg-btn-line'}`} aria-hidden="true">
+                <span className="block h-[0.9375rem] w-[0.9375rem] rounded-full bg-white shadow-[0_1px_2px_#10203426]" />
               </span>
             </div>)}
           </div>

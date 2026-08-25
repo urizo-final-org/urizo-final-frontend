@@ -1,6 +1,15 @@
 :root {
   /* The canvas ships Pretendard; the stack degrades to the platform UI font when it is absent. */
   font-family: 'Pretendard Variable', Pretendard, -apple-system, 'Helvetica Neue', ui-sans-serif, system-ui, sans-serif;
+
+  /*
+   * One fluid knob drives every size. Sizes are authored in rem, so type, icons, gaps and panel
+   * padding all scale from this single value; the layout itself never changes.
+   * 15px floor → 16px at the 1440px canvas width (1:1 with the design) → 20px ceiling.
+   * The rem term keeps the browser's own font-size preference working.
+   */
+  font-size: clamp(0.9375rem, 0.625rem + 0.4167vw, 1.25rem);
+
   color: var(--ink);
   background: var(--page);
   font-synthesis: none;
@@ -32,13 +41,13 @@
   --primary: #173b5b;
   --accent: #62c7cd;
 
-  /* Navy sidebar */
+  /* Navy sidebar. Every foreground here clears 7:1 on --sb-bg, so nothing reads as dark-on-dark. */
   --sb-bg: #16293c;
-  --sb-border: #26405a;
+  --sb-border: #33526f;
   --sb-card: #1d3450;
-  --sb-strong: #ffffff;
-  --sb-muted: #8ea3b5;
-  --sb-item: #a9bdcd;
+  --sb-strong: #ffffff;   /* 14.8:1 */
+  --sb-muted: #adc0d0;    /*  7.9:1 */
+  --sb-item: #d3dfe9;     /* 10.9:1 */
   --sb-active-bg: #22405d;
 
   /* Status tones: fill / text / dot */
@@ -97,10 +106,10 @@
 
 body {
   margin: 0;
-  min-width: 320px;
+  min-width: 20rem;
   min-height: 100vh;
   background: var(--page);
-  font-size: 13px;
+  font-size: 0.8125rem;
   line-height: 1.55;
 }
 
