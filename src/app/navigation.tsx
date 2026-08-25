@@ -1,6 +1,7 @@
-import { Fragment } from 'react'
+import { Fragment, useState } from 'react'
 import type { AdminRole } from '../shared/api/session'
-import { routesForRole, type RouteId } from './routes'
+import { Icon } from '../shared/ui/icons'
+import { foldableGroups, routesForRole, type RouteId } from './routes'
 
 export function AppNavigation({
   activeRoute,
@@ -11,38 +12,49 @@ export function AppNavigation({
   role: AdminRole
   onNavigate: (route: RouteId) => void
 }) {
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
   let renderedGroup: string | null = null
 
+  function toggle(group: string) {
+    setCollapsed((current) => ({ ...current, [group]: !current[group] }))
+  }
+
   return (
-    <nav
-      className="mt-7 grid gap-[5px] max-[820px]:mt-3 max-[820px]:flex max-[820px]:flex-wrap"
-      aria-label="관리자 메뉴"
-    >
+    <nav className="flex flex-1 flex-col gap-[0.125rem] overflow-y-auto px-2 pb-2" aria-label="관리자 메뉴">
       {routesForRole(role).map((route) => {
         const groupHeading = route.group === renderedGroup ? null : route.group
         renderedGroup = route.group
+        const foldable = foldableGroups.includes(route.group)
+        const open = !collapsed[route.group]
         const active = activeRoute === route.id
         return (
           <Fragment key={route.id}>
-            {groupHeading && (
-              <p className="m-0 mx-[10px] mb-[5px] mt-4 font-mono text-[9px] font-bold leading-none tracking-[0.14em] text-[#59677c] max-[820px]:hidden">
-                {groupHeading}
-              </p>
-            )}
-            <button
-              className={`flex w-full items-center gap-[10px] rounded-[9px] border border-transparent px-3 py-[11px] text-left text-xs text-[#94a1b6] hover:bg-white/[0.045] hover:text-[#e6eaf2] max-[820px]:w-auto ${
-                active ? 'border-[rgba(134,117,244,0.25)] bg-[rgba(105,87,232,0.22)] text-white' : ''
-              }`}
-              onClick={() => onNavigate(route.id)}
-            >
-              <span
-                className={`w-[18px] text-center text-[15px] ${active ? 'text-[#b6aaff]' : 'text-[#6e7b91]'}`}
-                aria-hidden="true"
+            {groupHeading && (foldable ? (
+              <button
+                type="button"
+                className="flex w-full items-center gap-[0.375rem] bg-transparent px-[0.625rem] pb-[0.3125rem] pt-[0.875rem] text-left text-[0.59375rem] font-bold tracking-[.09em] text-sb-muted"
+                onClick={() => toggle(route.group)}
+                aria-expanded={open}
               >
-                {route.glyph}
-              </span>{' '}
-              {route.label}
-            </button>
+                <span className="flex-1">{groupHeading}</span>
+                <span className={`flex transition-transform ${open ? '' : '-rotate-90'}`}><Icon name="chevron-down" size={13} /></span>
+              </button>
+            ) : (
+              <p className="m-0 px-[0.625rem] pb-[0.3125rem] pt-[0.875rem] text-[0.59375rem] font-bold tracking-[.09em] text-sb-muted">{groupHeading}</p>
+            ))}
+            {(!foldable || open) && (
+              <button
+                type="button"
+                className={`flex w-full items-center gap-[0.5625rem] rounded-[0.3125rem] px-[0.625rem] py-[0.4375rem] text-left text-[0.78125rem] ${
+                  active ? 'bg-sb-active font-semibold text-white' : 'font-medium text-sb-item hover:bg-sb-active/60 hover:text-white'
+                }`}
+                onClick={() => onNavigate(route.id)}
+              >
+                <Icon name={route.icon} size={15} />
+                <span className="flex-1 truncate">{route.label}</span>
+                {route.count && <span className="rounded-[0.5625rem] bg-[#fdf1e0] px-[0.375rem] py-[0.0625rem] text-[0.59375rem] font-bold text-[#8a5a22]">{route.count}</span>}
+              </button>
+            )}
           </Fragment>
         )
       })}
