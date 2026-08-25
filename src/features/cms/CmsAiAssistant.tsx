@@ -1,7 +1,9 @@
 import { type FormEvent, useId, useState } from 'react'
-import type { RouteId } from '../../app/routes'
+import type { CmsRouteId } from '../../app/routes'
+import { Icon } from '../../shared/ui/icons'
+import { Badge, panel, primaryButton, secondaryButton, textarea } from '../../shared/ui/primitives'
 
-type AssistedRoute = Exclude<RouteId, 'members'>
+type AssistedRoute = Exclude<CmsRouteId, 'members'>
 
 type AssistantProfile = {
   section: string
@@ -62,114 +64,93 @@ export default function CmsAiAssistant({ route, collapsed, onToggle }: { route: 
   }
 
   if (collapsed) return <aside
-    className="sticky top-[86px] flex min-h-[620px] flex-col items-center gap-3 overflow-hidden rounded-[22px] border border-[#dce5eb] bg-white px-3 py-4 shadow-[0_18px_55px_rgba(32,39,63,.12)] max-[1179px]:static max-[1179px]:min-h-0 max-[1179px]:flex-row"
+    className={`${panel} sticky top-[70px] flex flex-col items-center gap-3 px-2 py-3 max-[1239px]:static max-[1239px]:flex-row`}
     aria-label={`${profile.section} 자연어 도우미`}
   >
     <button
       type="button"
-      className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-[#cfe8ea] bg-[#eef7f7] text-xl font-bold text-accent-ink transition hover:border-[#a9d8db] hover:bg-[#e4f5f5]"
+      className="grid h-8 w-8 shrink-0 place-items-center rounded-[5px] border border-btn-line bg-white text-base font-semibold text-muted hover:bg-sub"
       onClick={onToggle}
       aria-expanded="false"
       aria-label={`${profile.title} 패널 펼치기`}
     >‹</button>
-    <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-[linear-gradient(135deg,#62c7cd,#367f87)] text-lg text-white shadow-[0_8px_22px_rgba(54,127,135,.24)]" aria-hidden="true">✦</span>
-    <strong className="mt-2 text-xs tracking-[.08em] text-[#4b5263] [writing-mode:vertical-rl] max-[1179px]:mt-0 max-[1179px]:[writing-mode:horizontal-tb]">{profile.title}</strong>
-    <span className="mt-auto h-2 w-2 rounded-full bg-[#3f8a65] shadow-[0_0_0_4px_rgba(63,138,101,.12)] max-[1179px]:ml-auto max-[1179px]:mt-0" aria-label="화면 컨텍스트 준비됨" />
+    <span className="grid h-[26px] w-[26px] shrink-0 place-items-center rounded-md bg-teal-bg text-teal-fg" aria-hidden="true"><Icon name="bot" size={15} /></span>
+    <strong className="text-[11.5px] font-semibold text-body [writing-mode:vertical-rl] max-[1239px]:[writing-mode:horizontal-tb]">{profile.title}</strong>
   </aside>
 
   return <aside
-    className="sticky top-[86px] flex h-[calc(100vh-110px)] min-h-[620px] flex-col overflow-hidden rounded-[22px] border border-[#dce5eb] bg-[#f9fbfb] shadow-[0_22px_70px_rgba(32,39,63,.14)]"
+    className={`${panel} sticky top-[70px] flex max-h-[calc(100vh-90px)] flex-col overflow-hidden max-[1239px]:static max-[1239px]:max-h-none`}
     aria-label={`${profile.section} 자연어 도우미`}
   >
-    <header className="relative overflow-hidden border-b border-[#e1eaeb] bg-white px-5 pb-4 pt-5">
-      <div className="absolute -right-10 -top-14 h-36 w-36 rounded-full bg-[#ece8ff] blur-2xl" aria-hidden="true" />
-      <div className="relative flex items-start gap-3">
-        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-[linear-gradient(135deg,#62c7cd,#367f87)] text-lg text-white shadow-[0_8px_22px_rgba(54,127,135,.28)]" aria-hidden="true">✦</span>
-        <div className="min-w-0 flex-1">
-          <span className="block text-[9px] font-extrabold tracking-[.16em] text-accent-ink">AX AI COPILOT</span>
-          <h2 className="mb-0 mt-1 text-[17px] tracking-[-.02em]">{profile.title}</h2>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="rounded-full border border-[#cfe8ea] bg-[#eef7f7] px-2.5 py-1 text-[9px] font-extrabold tracking-[.08em] text-accent-ink">MOCKUP</span>
-          <button
-            type="button"
-            className="grid h-8 w-8 place-items-center rounded-lg border border-[#dce5e9] bg-white/80 text-lg font-bold text-[#6f7687] transition hover:border-[#a9d8db] hover:bg-[#eef7f7] hover:text-accent-ink"
-            onClick={onToggle}
-            aria-expanded="true"
-            aria-label={`${profile.title} 패널 접기`}
-          >›</button>
-        </div>
-      </div>
-      <div className="relative mt-4 flex items-center gap-2 text-[10px] font-bold text-[#657087]">
-        <span className="h-2 w-2 rounded-full bg-[#3f8a65] shadow-[0_0_0_4px_rgba(63,138,101,.12)]" aria-hidden="true" />
-        화면 컨텍스트 준비됨
-      </div>
-    </header>
-
-    <div className="border-b border-[#e1eaeb] bg-[#f2fafa] px-5 py-4">
-      <div className="flex items-center gap-2 text-[11px] font-extrabold text-[#367f87]">
-        <span className="grid h-6 w-6 place-items-center rounded-full bg-white text-xs shadow-sm" aria-hidden="true">⌁</span>
-        현재 화면 전용
-      </div>
-      <p className="mb-0 mt-2 text-xs font-bold leading-5 text-[#2b3140]"><strong className="text-accent-ink">{profile.section}</strong>에서 제공하는 기능만 자연어로 다룹니다.</p>
-      <p className="mb-0 mt-1 text-[11px] leading-5 text-[#6e7586]">{profile.excluded}</p>
+    <div className="flex items-center gap-[9px] border-b border-line-soft px-4 py-[14px]">
+      <span className="grid h-[26px] w-[26px] shrink-0 place-items-center rounded-md bg-teal-bg text-teal-fg" aria-hidden="true"><Icon name="bot" size={15} /></span>
+      <span className="min-w-0 flex-1">
+        <h2 className="m-0 text-[13px] font-semibold">{profile.title}</h2>
+        <small className="block text-[10.5px] text-muted-2">현재 화면 범위 전용 AI 패널</small>
+      </span>
+      <span className="rounded bg-teal-bg px-[7px] py-[2px] text-[10.5px] font-semibold text-teal-ink">AI</span>
+      <button
+        type="button"
+        className="grid h-7 w-7 shrink-0 place-items-center rounded-[5px] border border-btn-line bg-white text-base font-semibold text-muted hover:bg-sub"
+        onClick={onToggle}
+        aria-expanded="true"
+        aria-label={`${profile.title} 패널 접기`}
+      >›</button>
     </div>
 
-    <div className="cms-ai-scrollbar flex-1 overflow-y-auto px-4 py-5">
-      <div className="flex items-start gap-2.5">
-        <span className="mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-[#e4f5f5] text-xs font-black text-accent-ink" aria-hidden="true">AX</span>
-        <div className="rounded-2xl rounded-tl-md border border-[#e1eaeb] bg-white px-4 py-3 shadow-[0_6px_20px_rgba(35,43,66,.06)]">
-          <p className="m-0 text-xs font-bold leading-5 text-[#242a38]">{profile.description}</p>
-          <p className="mb-0 mt-2 text-[11px] leading-5 text-[#737b8d]">요청을 먼저 제안으로 만들고, 적용 전 변경 범위를 다시 확인하게 됩니다.</p>
-        </div>
+    <div className="cms-ai-scrollbar min-h-0 flex-1 overflow-y-auto px-4 pb-4 pt-[14px]">
+      <div className="rounded-[5px] border border-line-soft bg-sub px-[11px] py-[10px] text-[11.5px] leading-[1.6] text-muted">
+        <b className="font-semibold text-ink">현재 화면 전용</b> · 이 패널은 <b className="font-semibold text-ink">{profile.section}</b> 범위의 CMS 변경만 제안합니다.
+        <span className="mt-[5px] block text-muted-2">{profile.excluded}</span>
       </div>
 
-      <section className="mt-5 rounded-2xl border border-[#e1eaeb] bg-white p-4" aria-label="현재 화면에서 가능한 작업">
-        <div className="flex items-center gap-2"><span className="text-xs" aria-hidden="true">✓</span><h3 className="m-0 text-[11px] font-extrabold text-[#32394a]">이 화면에서 할 수 있어요</h3></div>
-        <div className="mt-3 flex flex-wrap gap-1.5">
-          {profile.capabilities.map((item) => <span key={item} className="rounded-full border border-[#cfe8ea] bg-[#eef7f7] px-2.5 py-1.5 text-[10px] font-bold text-[#3f8085]">{item}</span>)}
-        </div>
-      </section>
+      <p className="mt-[14px] text-[11.5px] leading-[1.6] text-muted">{profile.description}</p>
 
-      <section className="mt-5" aria-label="추천 요청">
-        <div className="mb-2 flex items-center"><h3 className="m-0 text-[11px] font-extrabold text-[#4b5365]">이렇게 요청해 보세요</h3><span className="ml-auto text-[9px] font-bold text-[#969dad]">클릭하여 입력</span></div>
-        <div className="grid gap-2">
-          {profile.suggestions.map((suggestion) => <button
-            key={suggestion}
-            type="button"
-            className="group flex items-center gap-2 rounded-xl border border-[#e1eaeb] bg-white px-3 py-2.5 text-left text-[11px] font-bold leading-5 text-[#525a6c] transition hover:border-[#a9d8db] hover:bg-[#f7fbfb] hover:text-[#367f87]"
-            onClick={() => setDraft(suggestion)}
-          ><span className="text-accent-ink transition group-hover:translate-x-0.5" aria-hidden="true">↗</span>{suggestion}</button>)}
-        </div>
-      </section>
+      <div className="mt-[14px] flex flex-wrap gap-[6px]">
+        {profile.capabilities.map((item) => <span key={item} className="rounded border border-[#d6e2e6] bg-[#f7fbfb] px-[7px] py-[3px] text-[10.5px] font-semibold text-[#3f7f86]">{item}</span>)}
+      </div>
 
-      {preview && <div className="mt-5 grid gap-3" aria-live="polite">
-        <div className="ml-8 rounded-2xl rounded-tr-md bg-primary px-4 py-3 text-xs font-bold leading-5 text-white shadow-[0_8px_24px_rgba(23,59,91,.2)]">{preview}</div>
-        <div className="flex items-start gap-2.5">
-          <span className="mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-[#e4f5f5] text-xs font-black text-accent-ink" aria-hidden="true">AX</span>
-          <div className="rounded-2xl rounded-tl-md border border-[#e1eaeb] bg-white px-4 py-3 text-[11px] leading-5 text-[#687083]">
-            요청이 <strong className="text-[#333a4b]">{profile.section}</strong> 범위인지 확인하는 목업입니다. 실제 데이터 변경은 아직 연결되지 않았습니다.
-          </div>
+      <label className="mt-[14px] block text-[11.5px] font-semibold text-body" htmlFor={inputId}>자연어 요청</label>
+      <textarea
+        id={inputId}
+        className={`${textarea} min-h-[76px]`}
+        value={draft}
+        onChange={(event) => setDraft(event.target.value)}
+        placeholder="CMS 변경 요청을 입력하세요"
+      />
+
+      <div className="mt-[9px] grid gap-[6px]">
+        {profile.suggestions.map((suggestion) => <button
+          key={suggestion}
+          type="button"
+          className="w-full rounded-[5px] border border-dashed border-[#d6e2e6] bg-[#f7fbfb] px-[10px] py-[9px] text-left text-[11.5px] leading-[1.5] text-[#3f7f86] hover:bg-[#eef7f8]"
+          onClick={() => setDraft(suggestion)}
+        >추천 요청: {suggestion}</button>)}
+      </div>
+
+      {preview && <div className="mt-4 border-t border-line-soft pt-[14px]" aria-live="polite">
+        <div className="flex items-center gap-[7px]">
+          <Badge tone="wait">승인 대기</Badge>
+          <b className="text-[12.5px] font-semibold">변경 내용 확인</b>
+        </div>
+        <div className="mt-[10px] rounded-[5px] border border-line-soft bg-sub px-[11px] py-[10px]">
+          <small className="block text-[10.5px] text-muted-3">변경 전</small>
+          <span className="mt-[3px] block text-[11.5px] text-body">현재 {profile.section} 데이터</span>
+        </div>
+        <div className="mt-2 rounded-[5px] border border-[#dceae2] bg-[#f5faf7] px-[11px] py-[10px]">
+          <small className="block text-[10.5px] text-[#79a08c]">변경 후 Mock</small>
+          <span className="mt-[3px] block text-[11.5px] text-[#37725a]">{preview}</span>
+        </div>
+        <div className="mt-[14px] flex gap-2">
+          <button type="button" className={`${secondaryButton} flex-1 justify-center`} onClick={() => setPreview(null)}>취소</button>
+          <button type="button" className={`${primaryButton} flex-1 justify-center`} onClick={() => setPreview(null)}>승인하고 반영</button>
         </div>
       </div>}
     </div>
 
-    <form className="border-t border-[#e1eaeb] bg-white p-4" onSubmit={submit}>
-      <label className="sr-only" htmlFor={inputId}>{profile.section} 자연어 요청</label>
-      <div className="rounded-2xl border border-[#dce5e9] bg-white p-2.5 shadow-[0_8px_24px_rgba(31,38,58,.08)] focus-within:border-[#62c7cd] focus-within:ring-4 focus-within:ring-[#e4f5f5]">
-        <textarea
-          id={inputId}
-          className="min-h-16 w-full resize-none border-0 bg-transparent px-1.5 py-1 text-xs leading-5 text-[#2a3040] outline-none placeholder:text-[#9ca3b2]"
-          value={draft}
-          onChange={(event) => setDraft(event.target.value)}
-          placeholder={`${profile.section} 작업을 자연어로 입력하세요`}
-        />
-        <div className="mt-1 flex items-center gap-2">
-          <span className="mr-auto px-1 text-[9px] font-bold text-[#9aa1af]">제안 미리보기 · 실행 안 됨</span>
-          <button className="grid h-8 w-8 place-items-center rounded-xl bg-primary text-sm font-bold text-white shadow-[0_6px_16px_rgba(54,127,135,.24)] enabled:hover:bg-primary-dark" type="submit" disabled={!draft.trim()} aria-label="요청 범위 미리보기">↑</button>
-        </div>
-      </div>
-      <p className="mb-0 mt-2 text-center text-[9px] leading-4 text-[#959cab]">목업 화면입니다. 저장·수정·삭제 API를 호출하지 않습니다.</p>
+    <form className="border-t border-line-soft p-3" onSubmit={submit}>
+      <button className={`${primaryButton} w-full justify-center`} type="submit" disabled={!draft.trim()}>요청 분석하기</button>
+      <p className="mb-0 mt-2 text-center text-[10px] leading-4 text-muted-3">목업 화면입니다. 저장·수정·삭제 API를 호출하지 않습니다.</p>
     </form>
   </aside>
 }

@@ -1,20 +1,20 @@
 import { type CSSProperties, type FormEvent, type ReactNode, useEffect, useState } from 'react'
-import type { RouteId } from '../../app/routes'
+import type { CmsRouteId } from '../../app/routes'
 import { describeFailure } from '../../shared/api/error'
+import { Icon } from '../../shared/ui/icons'
+import {
+  Badge, EmptyState, PageHead, PanelTitle,
+  control, fieldLabel, panel, primaryButton, secondaryButton, smallButton, textarea, type Tone,
+} from '../../shared/ui/primitives'
 import { SITE_UPDATE_EVENT, CmsApi, type Article, type Board, type Member, type Menu, type MenuTargetType, type Post, type SiteTemplate } from './api'
 import CmsAiAssistant from './CmsAiAssistant'
 
-const card = 'rounded-[7px] border border-line bg-panel p-[18px] shadow-[0_2px_7px_rgba(32,60,80,0.06)]'
-const input = 'w-full rounded-[5px] border border-[#dce5e9] bg-white px-[10px] py-[9px] text-[13px] font-normal text-[#4c6471]'
-const primary = 'inline-flex items-center justify-center gap-[7px] rounded-[5px] bg-primary px-[13px] py-[9px] text-[11px] font-bold text-white enabled:hover:bg-primary-dark'
-const secondary = 'inline-flex items-center justify-center gap-[7px] rounded-[5px] border border-line bg-white px-[13px] py-[9px] text-[11px] font-bold text-[#496272] enabled:hover:bg-[#f4f7f8]'
-const danger = 'inline-flex items-center justify-center gap-[7px] rounded-[5px] border border-[#f2d5d3] bg-red-soft px-[13px] py-[9px] text-[11px] font-bold text-red enabled:hover:bg-[#fbdedc]'
-const field = 'grid gap-[7px] text-[10px] font-bold text-[#607783]'
-const panelHead = 'mb-[9px] flex items-center justify-between gap-[10px] border-b border-[#edf1f3] pb-[13px]'
+const dangerButton = 'inline-flex h-8 items-center gap-[6px] rounded-[5px] border border-[#f0d5d1] bg-fail-bg px-[11px] text-xs font-semibold text-fail-fg enabled:hover:bg-[#f8e0dc]'
+const recordRow = 'flex w-full items-center gap-[10px] border-b border-row-line px-4 py-[10px] text-left text-body hover:bg-sub'
 const CMS_SUCCESS_EVENT = 'axms:cms-success'
 type SuccessNotice = { id: string; message: string }
 
-export default function CmsWorkspace({ route, api }: { route: RouteId; api: CmsApi }) {
+export default function CmsWorkspace({ route, api }: { route: CmsRouteId; api: CmsApi }) {
   const [success, setSuccess] = useState<SuccessNotice | null>(null)
   const [assistantCollapsed, setAssistantCollapsed] = useState(false)
   useEffect(() => {
@@ -37,7 +37,7 @@ export default function CmsWorkspace({ route, api }: { route: RouteId; api: CmsA
   return <>
     <SuccessToast notice={success} />
     {assistantRoute
-      ? <div className={`grid items-start gap-[14px] ${assistantCollapsed ? 'min-[1180px]:grid-cols-[minmax(0,1fr)_72px]' : 'min-[1180px]:grid-cols-[minmax(0,1fr)_350px]'}`}>
+      ? <div className={`grid items-start gap-[14px] ${assistantCollapsed ? 'min-[1240px]:grid-cols-[minmax(0,1fr)_64px]' : 'min-[1240px]:grid-cols-[minmax(0,1fr)_352px]'}`}>
         <div className="min-w-0">{workspace}</div>
         <CmsAiAssistant key={assistantRoute} route={assistantRoute} collapsed={assistantCollapsed} onToggle={() => setAssistantCollapsed((value) => !value)} />
       </div>
@@ -45,15 +45,17 @@ export default function CmsWorkspace({ route, api }: { route: RouteId; api: CmsA
   </>
 }
 
-function Heading({ title, description }: { title: string; description: string }) {
-  return <div className="mb-6"><p className="m-0 text-[10px] text-[#7d909d]">CMS 관리 / {title}</p><h1 className="my-[5px] text-[26px] tracking-[-.04em]">{title}</h1><p className="m-0 text-xs text-[#748590]">{description}</p></div>
+function Heading({ title, description, children }: { title: string; description: string; children?: ReactNode }) {
+  return <PageHead title={title} description={description}>{children}</PageHead>
 }
 function SuccessToast({ notice }: { notice: SuccessNotice | null }) {
   return notice ? <div className="pointer-events-none fixed inset-0 z-[100] grid place-items-center p-5" aria-live="polite" aria-atomic="true">
-    <div key={notice.id} className="cms-success-toast flex max-w-[520px] items-center gap-3 rounded-2xl bg-navy px-6 py-5 text-sm font-bold text-white shadow-[0_24px_70px_rgba(23,49,73,.35)]" role="status"><span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-accent text-base text-navy" aria-hidden="true">✓</span><span>{notice.message}</span></div>
+    <div key={notice.id} className="cms-success-toast flex max-w-[520px] items-center gap-3 rounded-lg bg-[#16293c] px-6 py-5 text-sm font-semibold text-white shadow-[0_24px_70px_rgba(22,41,60,.35)]" role="status"><span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-accent text-base text-[#16293c]" aria-hidden="true">✓</span><span>{notice.message}</span></div>
   </div> : null
 }
-function Feedback({ failure }: { failure: string | null }) { return failure ? <p className="mb-5 flex items-start gap-2 rounded-[5px] border border-[#f2d5d3] bg-red-soft p-[11px] text-xs leading-5 text-red" role="alert"><span aria-hidden="true">⚠</span>{failure}</p> : null }
+function Feedback({ failure }: { failure: string | null }) {
+  return failure ? <p className="mb-[14px] flex items-start gap-2 rounded-[5px] border border-[#f0d5d1] bg-fail-bg p-[11px] text-[11.5px] leading-[1.6] text-fail-fg" role="alert"><Icon name="triangle-alert" size={15} className="mt-[1px]" />{failure}</p> : null
+}
 function Failure({ value }: { value: string | null }) { return <Feedback failure={value} /> }
 
 function notifyCmsSuccess(message: string) { window.dispatchEvent(new CustomEvent(CMS_SUCCESS_EVENT, { detail: message })) }
@@ -68,7 +70,43 @@ function Members({ api }: { api: CmsApi }) {
   const [selected, setSelected] = useState<Member | null>(null)
   const [failure, setFailure] = useState<string | null>(null)
   useEffect(() => { api.members().then(setItems).catch((e) => setFailure(describeFailure(e))) }, [api])
-  return <><Heading title="회원 관리" description="시연 회원의 목록과 상세를 조회합니다." /><Feedback failure={failure} /><div className="grid gap-[14px] lg:grid-cols-[minmax(0,1.5fr)_minmax(260px,1fr)]"><section className={card}><div className={panelHead}><div><b className="text-[13px]">회원 목록</b><small className="mt-[3px] block text-[10px] font-normal text-[#91a0a9]">총 {items.length}건</small></div></div><table className="w-full border-collapse text-left"><thead><tr className="border-b border-[#edf1f3] text-[10px] text-[#93a0a9]"><th className="px-1 pb-[6px] pt-1 font-normal">이름</th><th className="font-normal">로그인 ID</th><th className="font-normal">역할</th></tr></thead><tbody>{items.map((member) => <tr key={member.id} className="cursor-pointer border-b border-[#edf1f3] text-[11px] text-[#667985] hover:bg-[#f7fafb]" onClick={() => setSelected(member)}><td className="px-1 py-3 font-bold text-[#4c6471]">{member.name}</td><td>{member.loginId}</td><td><Badge tone={member.role === 'SUPER_ADMIN' ? 'amber' : 'gray'}>{roleLabel(member.role)}</Badge></td></tr>)}</tbody></table></section><aside className={card}><div className={panelHead}><div><b className="text-[13px]">회원 상세</b><small className="mt-[3px] block text-[10px] font-normal text-[#91a0a9]">목록에서 선택한 회원 정보</small></div></div>{selected ? <div className="grid gap-4 pt-2"><h2 className="m-0 text-xl">{selected.name}</h2><Detail label="로그인 ID" value={selected.loginId} /><Detail label="역할" value={roleLabel(selected.role)} /><Detail label="회원 ID" value={selected.id} /></div> : <EmptyState>목록에서 회원을 선택하세요.</EmptyState>}</aside></div></>
+  return <>
+    <Heading title="회원 관리" description="시연 회원의 목록과 상세를 조회합니다." />
+    <Feedback failure={failure} />
+    <div className="grid gap-[14px] lg:grid-cols-[minmax(0,1.5fr)_minmax(280px,1fr)]">
+      <section className={panel}>
+        <PanelTitle title="회원 목록" sub={`총 ${items.length}건`}><Icon name="search" size={15} className="text-muted-3" /></PanelTitle>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[420px] border-collapse text-left">
+            <thead>
+              <tr className="border-b border-line-soft bg-sub text-[11px] font-semibold text-muted-2">
+                <th className="px-4 py-2 font-semibold">이름</th><th className="font-semibold">로그인 ID</th><th className="font-semibold">역할</th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((member) => <tr key={member.id} className="cursor-pointer border-b border-row-line text-xs text-body hover:bg-sub" onClick={() => setSelected(member)}>
+                <td className="px-4 py-[10px] text-[12.5px] font-semibold text-ink">{member.name}</td>
+                <td className="font-mono text-[11.5px]">{member.loginId}</td>
+                <td><Badge tone={member.role === 'SUPER_ADMIN' ? 'wait' : 'idle'}>{roleLabel(member.role)}</Badge></td>
+              </tr>)}
+            </tbody>
+          </table>
+        </div>
+        {items.length === 0 && <EmptyState icon="users" title="표시할 회원이 없습니다" description="회원 데이터를 불러오면 이곳에 표시됩니다." />}
+      </section>
+      <aside className={panel}>
+        <PanelTitle title="회원 상세" sub="목록에서 선택한 회원 정보" />
+        {selected
+          ? <div className="grid gap-4 p-4">
+            <h2 className="m-0 text-base font-semibold">{selected.name}</h2>
+            <Detail label="로그인 ID" value={selected.loginId} />
+            <Detail label="역할" value={roleLabel(selected.role)} />
+            <Detail label="회원 ID" value={selected.id} />
+          </div>
+          : <EmptyState icon="users" title="선택된 회원이 없습니다" description="목록에서 회원을 선택하세요." />}
+      </aside>
+    </div>
+  </>
 }
 
 function Menus({ api }: { api: CmsApi }) {
@@ -97,7 +135,42 @@ function Menus({ api }: { api: CmsApi }) {
   }
   async function remove(id: number) { if (!window.confirm('이 메뉴를 삭제할까요?')) return; setFailure(null); try { await api.deleteMenu(id); select(null); await load(); notifySiteUpdated(); notifyCmsSuccess('메뉴를 삭제했습니다.') } catch (e) { setFailure(`메뉴를 삭제하지 못했습니다. ${describeFailure(e)}`) } }
   const targetOptions = targetType === 'CONTENT' ? contents : targetType === 'BOARD' ? boards : []
-  return <><Heading title="메뉴 관리" description="메뉴 구조를 만들고 특정 컨텐츠 또는 게시판을 연결합니다." /><Failure value={failure} /><div className="grid gap-[14px] 2xl:grid-cols-[390px_1fr]"><form className={`${card} grid content-start gap-[14px]`} onSubmit={submit}><div className={panelHead}><div><b className="text-[13px]">{editing ? '메뉴 수정' : '메뉴 등록'}</b><small className="mt-[3px] block text-[10px] font-normal text-[#91a0a9]">{editing ? '선택한 메뉴를 수정합니다.' : '새 메뉴를 추가합니다.'}</small></div>{editing && <button type="button" className={secondary} onClick={() => select(null)}>새 메뉴</button>}</div><label className={field}>메뉴명<input className={input} value={name} onChange={(e) => setName(e.target.value)} required /></label><label className={field}>URL 경로<input className={input} value={path} onChange={(e) => setPath(e.target.value)} required /></label><label className={field}>상위 메뉴<select className={input} value={parentId} onChange={(e) => setParentId(e.target.value)}><option value="">대메뉴</option>{items.filter((item) => item.parentId === null && item.id !== editing?.id).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label><label className={field}>표시 순서<input className={input} type="number" min="0" value={order} onChange={(e) => setOrder(Number(e.target.value))} /></label><label className={field}>연결 유형<select className={input} value={targetType} onChange={(e) => { setTargetType(e.target.value as MenuTargetType); setTargetId('') }}><option value="NONE">연결 없음</option><option value="CONTENT">정적 컨텐츠</option><option value="BOARD">게시판</option></select></label>{targetType !== 'NONE' && <label className={field}>연결 대상<select className={input} value={targetId} onChange={(e) => setTargetId(e.target.value)} required><option value="">선택하세요</option>{targetOptions.map((item) => <option key={item.id} value={item.id}>{'title' in item ? item.title : item.name}</option>)}</select></label>}<div className="flex justify-end gap-[7px] pt-1">{editing && <button type="button" className={danger} onClick={() => void remove(editing.id)}>삭제</button>}<button className={primary}>저장</button></div></form><section className={card}><div className={panelHead}><div><b className="text-[13px]">메뉴 목록</b><small className="mt-[3px] block text-[10px] font-normal text-[#91a0a9]">총 {items.length}건</small></div></div>{items.length === 0 ? <EmptyState>등록된 메뉴가 없습니다.</EmptyState> : items.map((item) => <button type="button" key={item.id} className="flex w-full items-center gap-[10px] border-b border-[#edf1f3] py-3 text-left text-[#526876] hover:bg-[#f7fafb]" onClick={() => select(item)}><span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-accent-soft text-[11px] font-bold text-accent-ink">{item.displayOrder}</span><div className="mr-auto min-w-0"><b className="block text-[11px]">{item.parentId ? '└ ' : ''}{item.name}</b><small className="mt-[3px] block text-[10px] text-[#9aa7af]">{item.path} · {targetLabel(item, contents, boards)}</small></div><span className="text-[#9aa8af]" aria-hidden="true">›</span></button>)}</section></div></>
+  return <>
+    <Heading title="메뉴 관리" description="메뉴 구조를 만들고 특정 컨텐츠 또는 게시판을 연결합니다.">
+      {editing && <button type="button" className={secondaryButton} onClick={() => select(null)}><Icon name="plus" />새 메뉴</button>}
+    </Heading>
+    <Failure value={failure} />
+    <div className="grid gap-[14px] 2xl:grid-cols-[390px_minmax(0,1fr)]">
+      <form className={panel} onSubmit={submit}>
+        <PanelTitle title={editing ? '메뉴 수정' : '메뉴 등록'} sub={editing ? '선택한 메뉴를 수정합니다.' : '새 메뉴를 추가합니다.'} />
+        <div className="p-4">
+          <label className={fieldLabel}>메뉴명<input className={control} value={name} onChange={(e) => setName(e.target.value)} required /></label>
+          <label className={`${fieldLabel} mt-[14px]`}>URL 경로<input className={`${control} font-mono`} value={path} onChange={(e) => setPath(e.target.value)} required /></label>
+          <label className={`${fieldLabel} mt-[14px]`}>상위 메뉴<select className={control} value={parentId} onChange={(e) => setParentId(e.target.value)}><option value="">대메뉴</option>{items.filter((item) => item.parentId === null && item.id !== editing?.id).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+          <label className={`${fieldLabel} mt-[14px]`}>표시 순서<input className={control} type="number" min="0" value={order} onChange={(e) => setOrder(Number(e.target.value))} /></label>
+          <label className={`${fieldLabel} mt-[14px]`}>연결 유형<select className={control} value={targetType} onChange={(e) => { setTargetType(e.target.value as MenuTargetType); setTargetId('') }}><option value="NONE">연결 없음</option><option value="CONTENT">정적 컨텐츠</option><option value="BOARD">게시판</option></select></label>
+          {targetType !== 'NONE' && <label className={`${fieldLabel} mt-[14px]`}>연결 대상<select className={control} value={targetId} onChange={(e) => setTargetId(e.target.value)} required><option value="">선택하세요</option>{targetOptions.map((item) => <option key={item.id} value={item.id}>{'title' in item ? item.title : item.name}</option>)}</select></label>}
+          <div className="mt-4 flex justify-end gap-2">
+            {editing && <button type="button" className={dangerButton} onClick={() => void remove(editing.id)}>삭제</button>}
+            <button className={primaryButton}>저장하기</button>
+          </div>
+        </div>
+      </form>
+      <section className={panel}>
+        <PanelTitle title="메뉴 목록" sub={`총 ${items.length}건`}><Icon name="search" size={15} className="text-muted-3" /></PanelTitle>
+        {items.length === 0
+          ? <EmptyState icon="menu" title="등록된 메뉴가 없습니다" description="왼쪽 폼에서 첫 메뉴를 추가해 보세요." />
+          : items.map((item) => <button type="button" key={item.id} className={recordRow} onClick={() => select(item)}>
+            <span className="grid h-6 w-6 shrink-0 place-items-center rounded bg-run-bg text-[10.5px] font-bold text-run-fg">{item.displayOrder}</span>
+            <span className="min-w-0 flex-1">
+              <b className="block text-[12.5px] font-semibold text-ink">{item.parentId ? '└ ' : ''}{item.name}</b>
+              <small className="block font-mono text-[11px] text-muted-3">{item.path} · {targetLabel(item, contents, boards)}</small>
+            </span>
+            <Icon name="chevron-right" className="text-muted-4" />
+          </button>)}
+      </section>
+    </div>
+  </>
 }
 
 function Contents({ api }: { api: CmsApi }) {
@@ -112,7 +185,47 @@ function Contents({ api }: { api: CmsApi }) {
   function insert(mark: string) { setBody((value) => value ? `${value}\n${mark}` : mark) }
   async function submit(event: FormEvent) { event.preventDefault(); setFailure(null); const action = editing ? '수정' : '등록'; try { if (editing) await api.updateContent(editing.id, { title, body }); else await api.createContent({ title, body }); select(null); await load(); notifySiteUpdated(); notifyCmsSuccess(`컨텐츠를 ${action}했습니다.`) } catch (e) { setFailure(`컨텐츠를 저장하지 못했습니다. ${describeFailure(e)}`) } }
   async function remove(id: number) { if (!window.confirm('컨텐츠를 삭제할까요?')) return; setFailure(null); try { await api.deleteContent(id); select(null); await load(); notifySiteUpdated(); notifyCmsSuccess('컨텐츠를 삭제했습니다.') } catch (e) { setFailure(`컨텐츠를 삭제하지 못했습니다. ${describeFailure(e)}`) } }
-  return <><Heading title="컨텐츠 관리" description="메뉴에 연결할 정적 페이지를 가벼운 에디터로 작성합니다." /><Failure value={failure} /><div className="grid gap-[14px] 2xl:grid-cols-[minmax(280px,.75fr)_minmax(0,1.5fr)]"><section className={card}><div className={panelHead}><div><b className="text-[13px]">컨텐츠 목록</b><small className="mt-[3px] block text-[10px] font-normal text-[#91a0a9]">총 {items.length}건</small></div><button className={secondary} onClick={() => select(null)}>새 컨텐츠</button></div>{items.length === 0 ? <EmptyState>등록된 컨텐츠가 없습니다.</EmptyState> : items.map((item) => <button key={item.id} className="flex w-full items-center gap-[10px] border-b border-[#edf1f3] py-3 text-left text-[#526876] hover:bg-[#f7fafb]" onClick={() => select(item)}><span className="text-accent-ink" aria-hidden="true">▤</span><div className="mr-auto min-w-0"><b className="block text-[11px]">{item.title}</b><small className="mt-[3px] block text-[10px] text-[#9aa7af]">{item.authorName} · {date(item.updatedAt)}</small></div><span className="text-[#9aa8af]" aria-hidden="true">›</span></button>)}</section><form className={`${card} grid content-start gap-[14px]`} onSubmit={submit}><div className={panelHead}><div><b className="text-[13px]">{editing ? '컨텐츠 수정' : '컨텐츠 등록'}</b><small className="mt-[3px] block text-[10px] font-normal text-[#91a0a9]">제목(##), 강조(**문구**), 목록(-) 형식을 지원합니다.</small></div></div><label className={field}>제목<input className={input} placeholder="제목을 입력하세요" value={title} onChange={(e) => setTitle(e.target.value)} required /></label><div className={field}><span>본문</span><div><div className="flex flex-wrap gap-[7px] rounded-t-[5px] border border-b-0 border-[#dce5e9] bg-[#f7f9fa] p-2"><button type="button" className={secondary} onClick={() => insert('## 제목')}>제목</button><button type="button" className={secondary} onClick={() => insert('**강조 문구**')}>강조</button><button type="button" className={secondary} onClick={() => insert('- 목록 항목')}>목록</button></div><textarea className={`${input} min-h-[340px] rounded-t-none font-mono leading-7`} placeholder="내용을 입력하세요" value={body} onChange={(e) => setBody(e.target.value)} required /></div></div><div className="flex justify-end gap-[7px]">{editing && <button type="button" className={danger} onClick={() => void remove(editing.id)}>삭제</button>}<button className={primary}>저장</button></div></form></div></>
+  return <>
+    <Heading title="컨텐츠 관리" description="메뉴에 연결할 정적 페이지를 가벼운 에디터로 작성합니다.">
+      <button className={primaryButton} onClick={() => select(null)}><Icon name="plus" />새 컨텐츠</button>
+    </Heading>
+    <Failure value={failure} />
+    <div className="grid gap-[14px] 2xl:grid-cols-[minmax(280px,.75fr)_minmax(0,1.5fr)]">
+      <section className={panel}>
+        <PanelTitle title="컨텐츠 목록" sub={`총 ${items.length}건`}><Icon name="search" size={15} className="text-muted-3" /></PanelTitle>
+        {items.length === 0
+          ? <EmptyState icon="file-text" title="등록된 컨텐츠가 없습니다" description="새 컨텐츠 버튼으로 첫 페이지를 만들어 보세요." />
+          : items.map((item) => <button key={item.id} className={recordRow} onClick={() => select(item)}>
+            <Icon name="file-text" className="text-muted-2" />
+            <span className="min-w-0 flex-1">
+              <b className="block truncate text-[12.5px] font-semibold text-ink">{item.title}</b>
+              <small className="block text-[11px] text-muted-3">{item.authorName} · {date(item.updatedAt)}</small>
+            </span>
+            <Icon name="chevron-right" className="text-muted-4" />
+          </button>)}
+      </section>
+      <form className={panel} onSubmit={submit}>
+        <PanelTitle title={editing ? '컨텐츠 수정' : '컨텐츠 등록'} sub="제목(##), 강조(**문구**), 목록(-) 형식을 지원합니다." />
+        <div className="p-4">
+          <label className={fieldLabel}>제목<input className={control} placeholder="제목을 입력하세요" value={title} onChange={(e) => setTitle(e.target.value)} required /></label>
+          <div className={`${fieldLabel} mt-[14px]`}>본문
+            <div className="mt-[6px]">
+              <div className="flex flex-wrap gap-2 rounded-t-[5px] border border-b-0 border-field-line bg-sub p-2">
+                <button type="button" className={smallButton} onClick={() => insert('## 제목')}>제목</button>
+                <button type="button" className={smallButton} onClick={() => insert('**강조 문구**')}>강조</button>
+                <button type="button" className={smallButton} onClick={() => insert('- 목록 항목')}>목록</button>
+              </div>
+              <textarea className={`${textarea} mt-0 min-h-[340px] rounded-t-none font-mono leading-[1.9]`} placeholder="내용을 입력하세요" value={body} onChange={(e) => setBody(e.target.value)} required />
+            </div>
+          </div>
+          <div className="mt-4 flex justify-end gap-2">
+            {editing && <button type="button" className={dangerButton} onClick={() => void remove(editing.id)}>삭제</button>}
+            <button className={primaryButton}>저장하기</button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </>
 }
 
 function Boards({ api }: { api: CmsApi }) {
@@ -134,7 +247,67 @@ function Boards({ api }: { api: CmsApi }) {
   function choosePost(post: Post | null) { setSelectedPost(post); setTitle(post?.title ?? ''); setBody(post?.body ?? '') }
   async function savePost(event: FormEvent) { event.preventDefault(); if (!selectedBoard) return; setFailure(null); const action = selectedPost ? '수정' : '등록'; try { if (selectedPost) await api.updatePost(selectedPost.id, { title, body }); else await api.createPost(selectedBoard.id, { title, body }); choosePost(null); setPosts(await api.posts(selectedBoard.id)); notifySiteUpdated(); notifyCmsSuccess(`게시물을 ${action}했습니다.`) } catch (e) { setFailure(`게시물을 저장하지 못했습니다. ${describeFailure(e)}`) } }
   async function removePost() { if (!selectedPost || !selectedBoard || !window.confirm('게시물을 삭제할까요?')) return; setFailure(null); try { await api.deletePost(selectedPost.id); choosePost(null); setPosts(await api.posts(selectedBoard.id)); notifySiteUpdated(); notifyCmsSuccess('게시물을 삭제했습니다.') } catch (e) { setFailure(`게시물을 삭제하지 못했습니다. ${describeFailure(e)}`) } }
-  return <><Heading title="게시판 관리" description="게시판과 게시글을 관리하고 메뉴 관리에서 연결합니다." /><Failure value={failure} /><div className="grid gap-[14px] 2xl:grid-cols-[260px_minmax(280px,.8fr)_minmax(320px,1fr)]"><section className={card}><div className={panelHead}><div><b className="text-[13px]">게시판</b><small className="mt-[3px] block text-[10px] font-normal text-[#91a0a9]">총 {boards.length}건</small></div><button className={secondary} onClick={newBoard}>새 게시판</button></div>{boards.length === 0 ? <EmptyState>등록된 게시판이 없습니다.</EmptyState> : boards.map((board) => <button key={board.id} className={`flex w-full items-center gap-[10px] border-b border-[#edf1f3] py-3 text-left text-[#526876] hover:bg-[#f7fafb] ${selectedBoard?.id === board.id ? 'bg-[#f7fafb]' : ''}`} onClick={() => void chooseBoard(board)}><span className="text-accent-ink" aria-hidden="true">▦</span><div className="mr-auto min-w-0"><b className="block text-[11px]">{board.name}</b><small className="mt-[3px] block text-[10px] text-[#9aa7af]">{board.description}</small></div><span className="text-[#9aa8af]" aria-hidden="true">›</span></button>)}</section><section className="grid content-start gap-[14px]"><form className={`${card} grid gap-[14px]`} onSubmit={saveBoard}><div className={panelHead}><div><b className="text-[13px]">{selectedBoard ? '게시판 수정' : '게시판 등록'}</b><small className="mt-[3px] block text-[10px] font-normal text-[#91a0a9]">{selectedBoard ? '선택한 게시판을 수정합니다.' : '새 게시판을 추가합니다.'}</small></div></div><label className={field}>게시판명<input className={input} placeholder="게시판명을 입력하세요" value={boardName} onChange={(e) => setBoardName(e.target.value)} required /></label><label className={field}>설명<textarea className={input} placeholder="설명을 입력하세요" value={description} onChange={(e) => setDescription(e.target.value)} /></label><div className="flex justify-end gap-[7px]">{selectedBoard && <button type="button" className={danger} onClick={() => void removeBoard()}>삭제</button>}<button className={primary}>저장</button></div></form>{selectedBoard && <div className={card}><div className={panelHead}><div><b className="text-[13px]">게시물</b><small className="mt-[3px] block text-[10px] font-normal text-[#91a0a9]">{selectedBoard.name} · 총 {posts.length}건</small></div><button className={secondary} onClick={() => choosePost(null)}>새 게시물</button></div>{posts.length === 0 ? <EmptyState>등록된 게시물이 없습니다.</EmptyState> : posts.map((post) => <button className="flex w-full items-center gap-[10px] border-b border-[#edf1f3] py-3 text-left text-[#526876] hover:bg-[#f7fafb]" key={post.id} onClick={() => choosePost(post)}><div className="mr-auto min-w-0"><b className="block text-[11px]">{post.title}</b><small className="mt-[3px] block text-[10px] text-[#9aa7af]">{date(post.updatedAt)}</small></div><span className="text-[#9aa8af]" aria-hidden="true">›</span></button>)}</div>}</section><form className={`${card} grid content-start gap-[14px]`} onSubmit={savePost}><div className={panelHead}><div><b className="text-[13px]">{selectedPost ? '게시물 수정' : '게시물 등록'}</b><small className="mt-[3px] block text-[10px] font-normal text-[#91a0a9]">{selectedBoard ? selectedBoard.name : '게시판 선택 후 작성할 수 있습니다.'}</small></div></div>{selectedBoard ? <><label className={field}>제목<input className={input} placeholder="제목을 입력하세요" value={title} onChange={(e) => setTitle(e.target.value)} required /></label><label className={field}>내용<textarea className={`${input} min-h-[280px]`} placeholder="내용을 입력하세요" value={body} onChange={(e) => setBody(e.target.value)} required /></label><div className="flex justify-end gap-[7px]">{selectedPost && <button type="button" className={danger} onClick={() => void removePost()}>삭제</button>}<button className={primary}>저장</button></div></> : <EmptyState>게시판을 먼저 선택하세요.</EmptyState>}</form></div></>
+  return <>
+    <Heading title="게시판 관리" description="게시판과 게시글을 관리하고 메뉴 관리에서 연결합니다.">
+      <button className={primaryButton} onClick={newBoard}><Icon name="plus" />새 게시판</button>
+    </Heading>
+    <Failure value={failure} />
+    <div className="grid gap-[14px] 2xl:grid-cols-[260px_minmax(280px,.8fr)_minmax(320px,1fr)]">
+      <section className={panel}>
+        <PanelTitle title="게시판" sub={`총 ${boards.length}건`} />
+        {boards.length === 0
+          ? <EmptyState icon="message-square" title="게시판이 없습니다" description="새 게시판 버튼으로 시작하세요." />
+          : boards.map((board) => <button key={board.id} className={`${recordRow} ${selectedBoard?.id === board.id ? 'bg-sub' : ''}`} onClick={() => void chooseBoard(board)}>
+            <Icon name="message-square" className="text-muted-2" />
+            <span className="min-w-0 flex-1">
+              <b className="block truncate text-[12.5px] font-semibold text-ink">{board.name}</b>
+              <small className="block truncate text-[11px] text-muted-3">{board.description}</small>
+            </span>
+            <Icon name="chevron-right" className="text-muted-4" />
+          </button>)}
+      </section>
+      <section className="grid content-start gap-[14px]">
+        <form className={panel} onSubmit={saveBoard}>
+          <PanelTitle title={selectedBoard ? '게시판 수정' : '게시판 등록'} sub={selectedBoard ? '선택한 게시판을 수정합니다.' : '새 게시판을 추가합니다.'} />
+          <div className="p-4">
+            <label className={fieldLabel}>게시판명<input className={control} placeholder="게시판명을 입력하세요" value={boardName} onChange={(e) => setBoardName(e.target.value)} required /></label>
+            <label className={`${fieldLabel} mt-[14px]`}>설명<textarea className={`${textarea} min-h-[76px]`} placeholder="설명을 입력하세요" value={description} onChange={(e) => setDescription(e.target.value)} /></label>
+            <div className="mt-4 flex justify-end gap-2">
+              {selectedBoard && <button type="button" className={dangerButton} onClick={() => void removeBoard()}>삭제</button>}
+              <button className={primaryButton}>저장하기</button>
+            </div>
+          </div>
+        </form>
+        {selectedBoard && <div className={panel}>
+          <PanelTitle title="게시물" sub={`${selectedBoard.name} · 총 ${posts.length}건`}>
+            <button className={smallButton} onClick={() => choosePost(null)}>새 게시물</button>
+          </PanelTitle>
+          {posts.length === 0
+            ? <EmptyState icon="file-text" title="게시물이 없습니다" description="새 게시물 버튼으로 작성하세요." />
+            : posts.map((post) => <button className={recordRow} key={post.id} onClick={() => choosePost(post)}>
+              <span className="min-w-0 flex-1">
+                <b className="block truncate text-[12.5px] font-semibold text-ink">{post.title}</b>
+                <small className="block text-[11px] text-muted-3">{date(post.updatedAt)}</small>
+              </span>
+              <Icon name="chevron-right" className="text-muted-4" />
+            </button>)}
+        </div>}
+      </section>
+      <form className={`${panel} content-start`} onSubmit={savePost}>
+        <PanelTitle title={selectedPost ? '게시물 수정' : '게시물 등록'} sub={selectedBoard ? selectedBoard.name : '게시판 선택 후 작성할 수 있습니다.'} />
+        {selectedBoard
+          ? <div className="p-4">
+            <label className={fieldLabel}>제목<input className={control} placeholder="제목을 입력하세요" value={title} onChange={(e) => setTitle(e.target.value)} required /></label>
+            <label className={`${fieldLabel} mt-[14px]`}>내용<textarea className={`${textarea} min-h-[280px]`} placeholder="내용을 입력하세요" value={body} onChange={(e) => setBody(e.target.value)} required /></label>
+            <div className="mt-4 flex justify-end gap-2">
+              {selectedPost && <button type="button" className={dangerButton} onClick={() => void removePost()}>삭제</button>}
+              <button className={primaryButton}>저장하기</button>
+            </div>
+          </div>
+          : <EmptyState icon="message-square" title="게시판을 먼저 선택하세요" description="왼쪽에서 게시판을 고르면 게시물을 작성할 수 있습니다." />}
+      </form>
+    </div>
+  </>
 }
 
 function Templates({ api }: { api: CmsApi }) {
@@ -156,67 +329,70 @@ function Templates({ api }: { api: CmsApi }) {
     <Heading title="템플릿 관리" description="공통 디자인과 메인 화면, Header, Footer를 한곳에서 관리합니다." />
     <Failure value={failure} />
     <div className="mb-[14px] grid gap-[14px] md:grid-cols-3">
-      {items.map((item) => <article key={item.key} className={`${card} grid content-start gap-4 ${value?.key === item.key ? 'border-accent ring-2 ring-accent-soft' : ''}`}>
+      {items.map((item) => <article key={item.key} className={`${panel} grid content-start gap-3 p-4 ${value?.key === item.key ? 'border-primary ring-2 ring-[#eef2f7]' : ''}`}>
         <button type="button" className="text-left" aria-label={`${item.key} 템플릿 선택`} onClick={() => select(item)}>
-          <span className="flex items-center gap-2 text-[10px] font-bold text-accent-ink">{item.key}{item.active && <Badge tone="mint">ACTIVE</Badge>}</span>
-          <h2 className="mb-1 mt-3 text-lg">{item.siteName}</h2>
-          <span className="text-[10px] text-[#91a0a9]">{item.layout}</span>
+          <span className="flex items-center gap-2 text-[10.5px] font-semibold text-run-fg">{item.key}{item.active && <Badge tone="ok">ACTIVE</Badge>}</span>
+          <h2 className="mb-1 mt-2 text-base font-semibold">{item.siteName}</h2>
+          <span className="text-[11px] text-muted-2">{item.layout}</span>
         </button>
-        <button type="button" className={secondary} aria-label={`${item.key} 템플릿 미리보기`} onClick={() => setPreview(item)}>미리보기</button>
+        <button type="button" className={`${secondaryButton} justify-center`} aria-label={`${item.key} 템플릿 미리보기`} onClick={() => setPreview(item)}>미리보기</button>
       </article>)}
     </div>
-    {value && <form className={`${card} grid gap-5 md:grid-cols-2`} onSubmit={submit}>
-      <div className={`${panelHead} md:col-span-2`}>
-        <div><b className="text-[13px]">{value.key} 템플릿 설정</b><small className="mt-[3px] block text-[10px] font-normal text-[#91a0a9]">저장하면 이 템플릿이 사용자 사이트에 적용됩니다.</small></div>
-        <button type="button" className={secondary} onClick={() => setPreview(value)}>현재 입력값 미리보기</button>
+    {value && <form className={panel} onSubmit={submit}>
+      <PanelTitle title={`${value.key} 템플릿 설정`} sub="저장하면 이 템플릿이 사용자 사이트에 적용됩니다.">
+        <button type="button" className={smallButton} onClick={() => setPreview(value)}>현재 입력값 미리보기</button>
+      </PanelTitle>
+      <div className="grid gap-4 p-4 md:grid-cols-2">
+        <TemplateField label="레이아웃" description="Header와 메인 영역의 배치·여백·강조 방식을 선택합니다.">
+          <select className={control} value={value.layout} onChange={(e) => setValue({ ...value, layout: e.target.value })}><option value="CLASSIC">Corporate</option><option value="MINIMAL">Minimal</option><option value="BOLD">Bold</option></select>
+        </TemplateField>
+        <TemplateField label="대표 색상" description="버튼, 링크, 강조 요소에 공통 적용되는 브랜드 색상입니다.">
+          <input className={`${control} p-1`} type="color" value={value.primaryColor} onChange={(e) => setValue({ ...value, primaryColor: e.target.value })} />
+        </TemplateField>
+        <TemplateField label="사이트명" description="사용자 화면 Header와 Footer에 표시되는 사이트 이름입니다.">
+          <input className={control} value={value.siteName} onChange={(e) => setValue({ ...value, siteName: e.target.value })} required />
+        </TemplateField>
+        <TemplateField label="Header 보조 문구" description="사용자 화면 맨 위 안내 영역에 표시되는 짧은 문구입니다.">
+          <input className={control} value={value.headerText} onChange={(e) => setValue({ ...value, headerText: e.target.value })} />
+        </TemplateField>
+        <TemplateField wide label="메인 대표 이미지 URL" description="메인 첫 화면의 배경 이미지 주소입니다. /images/... 형식을 사용할 수 있습니다.">
+          <input className={`${control} font-mono`} value={value.heroImageUrl} onChange={(e) => setValue({ ...value, heroImageUrl: e.target.value })} required />
+        </TemplateField>
+        <TemplateField wide label="메인 대표 문구" description="메인 대표 이미지 위에 가장 크게 표시되는 제목입니다.">
+          <input className={control} value={value.heroTitle} onChange={(e) => setValue({ ...value, heroTitle: e.target.value })} required />
+        </TemplateField>
+        <TemplateField wide label="메인 설명" description="대표 문구 아래에 표시되는 소개 문장입니다.">
+          <textarea className={textarea} value={value.heroSubtitle} onChange={(e) => setValue({ ...value, heroSubtitle: e.target.value })} />
+        </TemplateField>
+        <TemplateField label="메인 버튼 문구" description="메인 버튼에 표시되는 텍스트입니다.">
+          <input className={control} value={value.heroButtonLabel} onChange={(e) => setValue({ ...value, heroButtonLabel: e.target.value })} />
+        </TemplateField>
+        <TemplateField label="메인 버튼 URL" description="메인 버튼 클릭 시 이동할 메뉴 경로입니다.">
+          <input className={`${control} font-mono`} value={value.heroButtonUrl} onChange={(e) => setValue({ ...value, heroButtonUrl: e.target.value })} />
+        </TemplateField>
+        <TemplateField wide label="Footer 문구" description="사용자 화면 하단 공통 영역에 표시되는 안내 문구입니다.">
+          <input className={control} value={value.footerText} onChange={(e) => setValue({ ...value, footerText: e.target.value })} />
+        </TemplateField>
+        <div className="md:col-span-2 flex justify-end">
+          <button className={primaryButton}>저장하고 사용자 사이트에 적용</button>
+        </div>
       </div>
-      <TemplateField label="레이아웃" description="Header와 메인 영역의 배치·여백·강조 방식을 선택합니다.">
-        <select className={input} value={value.layout} onChange={(e) => setValue({ ...value, layout: e.target.value })}><option value="CLASSIC">Corporate</option><option value="MINIMAL">Minimal</option><option value="BOLD">Bold</option></select>
-      </TemplateField>
-      <TemplateField label="대표 색상" description="버튼, 링크, 강조 요소에 공통 적용되는 브랜드 색상입니다.">
-        <input className={`${input} h-[44px]`} type="color" value={value.primaryColor} onChange={(e) => setValue({ ...value, primaryColor: e.target.value })} />
-      </TemplateField>
-      <TemplateField label="사이트명" description="사용자 화면 Header와 Footer에 표시되는 사이트 이름입니다.">
-        <input className={input} value={value.siteName} onChange={(e) => setValue({ ...value, siteName: e.target.value })} required />
-      </TemplateField>
-      <TemplateField label="Header 보조 문구" description="사용자 화면 맨 위 안내 영역에 표시되는 짧은 문구입니다.">
-        <input className={input} value={value.headerText} onChange={(e) => setValue({ ...value, headerText: e.target.value })} />
-      </TemplateField>
-      <TemplateField wide label="메인 대표 이미지 URL" description="메인 첫 화면의 배경 이미지 주소입니다. /images/... 형식을 사용할 수 있습니다.">
-        <input className={input} value={value.heroImageUrl} onChange={(e) => setValue({ ...value, heroImageUrl: e.target.value })} required />
-      </TemplateField>
-      <TemplateField wide label="메인 대표 문구" description="메인 대표 이미지 위에 가장 크게 표시되는 제목입니다.">
-        <input className={input} value={value.heroTitle} onChange={(e) => setValue({ ...value, heroTitle: e.target.value })} required />
-      </TemplateField>
-      <TemplateField wide label="메인 설명" description="대표 문구 아래에 표시되는 소개 문장입니다.">
-        <textarea className={input} value={value.heroSubtitle} onChange={(e) => setValue({ ...value, heroSubtitle: e.target.value })} />
-      </TemplateField>
-      <TemplateField label="메인 버튼 문구" description="메인 버튼에 표시되는 텍스트입니다.">
-        <input className={input} value={value.heroButtonLabel} onChange={(e) => setValue({ ...value, heroButtonLabel: e.target.value })} />
-      </TemplateField>
-      <TemplateField label="메인 버튼 URL" description="메인 버튼 클릭 시 이동할 메뉴 경로입니다.">
-        <input className={input} value={value.heroButtonUrl} onChange={(e) => setValue({ ...value, heroButtonUrl: e.target.value })} />
-      </TemplateField>
-      <TemplateField wide label="Footer 문구" description="사용자 화면 하단 공통 영역에 표시되는 안내 문구입니다.">
-        <input className={input} value={value.footerText} onChange={(e) => setValue({ ...value, footerText: e.target.value })} />
-      </TemplateField>
-      <button className={`${primary} md:col-span-2`}>저장하고 사용자 사이트에 적용</button>
     </form>}
     {preview && <TemplatePreview value={preview} onClose={() => setPreview(null)} />}
   </>
 }
 
 function TemplateField({ label, description, wide = false, children }: { label: string; description: string; wide?: boolean; children: ReactNode }) {
-  return <label className={`grid content-start gap-[7px] text-[10px] font-bold text-[#607783] ${wide ? 'md:col-span-2' : ''}`}><span>{label}</span>{children}<span className="font-normal leading-5 text-[#91a0a9]">{description}</span></label>
+  return <label className={`block text-[11.5px] font-semibold text-body ${wide ? 'md:col-span-2' : ''}`}><span>{label}</span>{children}<span className="mt-[6px] block font-normal leading-[1.6] text-muted-2">{description}</span></label>
 }
 
 function TemplatePreview({ value, onClose }: { value: SiteTemplate; onClose: () => void }) {
   const style = { '--preview-brand': value.primaryColor } as CSSProperties
   const minimal = value.layout === 'MINIMAL'
   const bold = value.layout === 'BOLD'
-  return <div className="fixed inset-0 z-50 grid place-items-center bg-[#173149]/70 p-4" role="presentation" onMouseDown={(event) => { if (event.currentTarget === event.target) onClose() }}>
-    <section className="max-h-[92vh] w-[min(980px,96vw)] overflow-auto rounded-[7px] bg-white shadow-2xl" role="dialog" aria-modal="true" aria-label={`${value.key} 템플릿 미리보기`} style={style}>
-      <div className="sticky top-0 z-10 flex items-center border-b border-line bg-white px-5 py-4"><div className="mr-auto"><b className="block text-[13px]">{value.key} 템플릿 미리보기</b><small className="mt-[3px] block text-[10px] text-[#91a0a9]">저장 전 화면 구성 예시입니다.</small></div><button type="button" className={secondary} onClick={onClose}>닫기</button></div>
+  return <div className="fixed inset-0 z-50 grid place-items-center bg-[#16293c]/70 p-4" role="presentation" onMouseDown={(event) => { if (event.currentTarget === event.target) onClose() }}>
+    <section className="max-h-[92vh] w-[min(980px,96vw)] overflow-auto rounded-md bg-white shadow-2xl" role="dialog" aria-modal="true" aria-label={`${value.key} 템플릿 미리보기`} style={style}>
+      <div className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-line-soft bg-white px-4 py-[14px]"><div><b className="block text-[13.5px] font-semibold">{value.key} 템플릿 미리보기</b><small className="mt-[2px] block text-[11px] text-muted-2">저장 전 화면 구성 예시입니다.</small></div><button type="button" className={smallButton} onClick={onClose}>닫기</button></div>
       <div className={`overflow-hidden ${minimal ? 'bg-white' : 'bg-[#f5f7f6]'}`}>
         <div className="border-b border-[#e5e9e7] bg-white px-7 py-3 text-[10px] text-[#64716c]">{value.headerText}</div>
         <header className={`flex items-center gap-6 bg-white px-7 ${bold ? 'py-6' : 'py-4'}`}><span className="grid h-10 w-10 place-items-center rounded-full text-xs font-black text-white" style={{ background: value.primaryColor }}>AX</span><strong className={`${bold ? 'text-xl uppercase tracking-tight' : 'text-lg'}`}>{value.siteName}</strong><nav className="ml-auto hidden gap-5 text-xs font-bold sm:flex"><span>소개</span><span>Products</span><span>Service</span><span>고객지원</span></nav></header>
@@ -241,20 +417,8 @@ function targetLabel(menu: Menu, contents: Article[], boards: Board[]) {
   if (menu.targetType === 'BOARD') return `게시판 · ${boards.find((item) => item.id === menu.targetId)?.name ?? '미지정'}`
   return '연결 없음'
 }
-function Detail({ label, value }: { label: string; value: string }) { return <div><span className="block text-[10px] font-bold text-[#84939a]">{label}</span><span className="mt-1 block break-all text-[13px] text-[#4c6471]">{value}</span></div> }
-
-const badgeTones = {
-  gray: 'bg-[#eef1f3] text-[#6b7c86] [--dot:#96a3aa]',
-  teal: 'bg-accent-soft text-accent-ink [--dot:#5ec3c8]',
-  mint: 'bg-mint-soft text-mint [--dot:#60b982]',
-  amber: 'bg-amber-soft text-amber [--dot:#dda14e]',
-  red: 'bg-red-soft text-red [--dot:#d97973]',
-}
-function Badge({ tone = 'gray', children }: { tone?: keyof typeof badgeTones; children: ReactNode }) {
-  return <span className={`inline-flex items-center gap-[5px] whitespace-nowrap rounded-xl px-2 py-[3px] text-[9px] ${badgeTones[tone]}`}><i className="h-[5px] w-[5px] rounded-full bg-[var(--dot)]" aria-hidden="true" />{children}</span>
-}
-function EmptyState({ children }: { children: ReactNode }) {
-  return <p className="m-0 px-[10px] py-[70px] text-center text-[11px] text-[#98a6ae]">{children}</p>
-}
+function Detail({ label, value }: { label: string; value: string }) { return <div><span className="block text-[10.5px] text-muted-3">{label}</span><span className="mt-[5px] block break-all text-[12.5px] font-semibold">{value}</span></div> }
 function roleLabel(role: string) { return role === 'SUPER_ADMIN' ? '최고관리자' : role === 'GENERAL_ADMIN' ? '일반관리자' : '일반사용자' }
 function date(value: string) { return new Intl.DateTimeFormat('ko-KR', { dateStyle: 'medium' }).format(new Date(value)) }
+
+export type { Tone }
