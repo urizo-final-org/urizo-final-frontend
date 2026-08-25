@@ -41,13 +41,17 @@
   --primary: #173b5b;
   --accent: #62c7cd;
 
-  /* Navy sidebar. Every foreground here clears 7:1 on --sb-bg, so nothing reads as dark-on-dark. */
+  /*
+   * Navy sidebar. Foregrounds are near-white so nothing can read as dark-on-dark; --sb-item is also
+   * the base colour set on the sidebar element itself, so a child that forgets a colour inherits a
+   * light one instead of the page's near-black --ink.
+   */
   --sb-bg: #16293c;
   --sb-border: #33526f;
   --sb-card: #1d3450;
   --sb-strong: #ffffff;   /* 14.8:1 */
-  --sb-muted: #adc0d0;    /*  7.9:1 */
-  --sb-item: #d3dfe9;     /* 10.9:1 */
+  --sb-muted: #c4d3e0;    /* 10.1:1 */
+  --sb-item: #eaf1f7;     /* 13.5:1 */
   --sb-active-bg: #22405d;
 
   /* Status tones: fill / text / dot */

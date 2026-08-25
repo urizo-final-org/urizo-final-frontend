@@ -32,7 +32,7 @@ export default function LoginScreen({ notice, onSignedIn }: LoginScreenProps) {
   }
 
   return (
-    <div className="grid min-h-screen place-items-center bg-[linear-gradient(160deg,var(--sb-bg)_0%,#1d3450_55%,#22405d_100%)] px-5 py-8">
+    <div className="grid min-h-screen place-items-center bg-[linear-gradient(160deg,var(--sb-bg)_0%,#1d3450_55%,#22405d_100%)] px-5 py-8 text-white">
       <form
         className="grid w-full max-w-[25.75rem] gap-4 rounded-lg bg-panel px-[1.875rem] pb-[1.625rem] pt-[1.875rem] shadow-[0_24px_60px_rgba(11,17,30,0.42)]"
         onSubmit={onSubmit}

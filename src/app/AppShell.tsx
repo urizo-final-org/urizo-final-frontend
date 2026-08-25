@@ -81,7 +81,8 @@ function AuthenticatedAdmin({ session, onRefresh, onExpired, onSignOut }: {
   const onMockScreen = routes.find((item) => item.id === visible)?.mock === true
 
   return <div className="flex min-h-screen bg-page">
-    <aside className={`sticky top-0 z-30 flex h-screen w-[14.75rem] shrink-0 flex-col border-r border-sb-border bg-sb-bg transition-transform max-[900px]:fixed max-[900px]:inset-y-0 max-[900px]:left-0 ${menuOpen ? 'max-[900px]:translate-x-0' : 'max-[900px]:-translate-x-full'}`}>
+    {/* text-sb-item is the sidebar's base colour: anything inside inherits light-on-navy by default. */}
+    <aside className={`sticky top-0 z-30 flex h-screen w-[14.75rem] shrink-0 flex-col border-r border-sb-border bg-sb-bg text-sb-item transition-transform max-[900px]:fixed max-[900px]:inset-y-0 max-[900px]:left-0 ${menuOpen ? 'max-[900px]:translate-x-0' : 'max-[900px]:-translate-x-full'}`}>
       <div className="flex items-center gap-[0.5625rem] px-4 pb-[0.875rem] pt-4">
         {/* Canvas draws this navy-on-white; on the navy sidebar the pair is flipped so it stays visible. */}
         <div className="grid h-[1.625rem] w-[1.625rem] shrink-0 place-items-center rounded-[0.3125rem] bg-accent text-sb-bg" aria-hidden="true">
