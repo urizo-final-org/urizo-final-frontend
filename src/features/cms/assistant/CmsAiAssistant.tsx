@@ -1,5 +1,5 @@
 import { type FormEvent, useId, useState } from 'react'
-import type { RouteId } from '../../app/routes'
+import type { RouteId } from '../../../app/routes'
 
 type AssistedRoute = Exclude<RouteId, 'members'>
 

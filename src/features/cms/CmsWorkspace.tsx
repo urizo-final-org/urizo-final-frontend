@@ -2,7 +2,7 @@ import { type CSSProperties, type FormEvent, type ReactNode, useEffect, useState
 import type { RouteId } from '../../app/routes'
 import { describeFailure } from '../../shared/api/error'
 import { SITE_UPDATE_EVENT, CmsApi, type Article, type Board, type Member, type Menu, type MenuTargetType, type Post, type SiteTemplate } from './api'
-import CmsAiAssistant from './CmsAiAssistant'
+import CmsAiAssistant from './assistant/CmsAiAssistant'
 
 const card = 'rounded-xl border border-line bg-white p-5 shadow-[0_8px_30px_rgba(17,24,39,0.05)]'
 const input = 'w-full rounded-lg border border-[#d6dce5] bg-white px-3 py-2.5 text-sm'
