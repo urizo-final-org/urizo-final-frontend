@@ -67,29 +67,52 @@ function AuthenticatedAdmin({ session, onRefresh, onExpired, onSignOut }: {
 }) {
   const navigate = useNavigate()
   const location = useLocation()
+  const [menuOpen, setMenuOpen] = useState(false)
   const fallback = defaultRouteForRole(session.actor.role)
   const visible = routeIdForPath(location.pathname) ?? fallback
   const permitted = routesForRole(session.actor.role)
   const api = useMemo(() => new CmsApi(session.sessionToken, onRefresh, onExpired), [session.sessionToken, onRefresh, onExpired])
 
-  function go(route: RouteId) { navigate(pathForRoute(route)) }
+  function go(route: RouteId) { navigate(pathForRoute(route)); setMenuOpen(false) }
 
-  return <div className="grid min-h-screen grid-cols-[250px_minmax(0,1fr)] max-[820px]:grid-cols-1">
-    <aside className="sticky top-0 flex h-screen flex-col border-r border-[#202a3a] bg-[radial-gradient(circle_at_20%_-10%,rgba(105,87,232,0.36),transparent_18rem),var(--navy)] px-[18px] pb-[18px] pt-[26px] text-[#d7deea] max-[820px]:static max-[820px]:h-auto max-[820px]:p-3">
-      <div className="flex items-center gap-3 border-b border-white/[0.08] px-2 pb-6">
-        <span className="flex h-[38px] w-[38px] items-center justify-center rounded-[10px] bg-[linear-gradient(135deg,#7d6bf1,#4b39cc)] font-mono text-[13px] font-extrabold text-white">AX</span>
-        <div><strong className="block text-[13px] tracking-[0.1em]">MODULE STUDIO</strong><span className="text-[9px] tracking-[0.08em] text-[#7e8ba0]">LOCAL DEMO CMS</span></div>
+  const initials = session.actor.name.replace(/\s+/g, '').slice(0, 2)
+
+  return <div className="flex min-h-screen bg-page">
+    <aside className={`sticky top-0 flex h-screen w-[250px] shrink-0 flex-col bg-navy px-[14px] py-5 text-[#dce7ed] transition-transform max-[720px]:fixed max-[720px]:inset-y-0 max-[720px]:left-0 max-[720px]:z-20 ${menuOpen ? 'max-[720px]:translate-x-0' : 'max-[720px]:-translate-x-full'}`}>
+      <div className="flex items-center gap-[10px] px-2 pb-6">
+        <span className="grid h-[31px] w-[31px] shrink-0 place-items-center rounded-lg bg-accent font-mono text-[11px] font-extrabold text-navy" aria-hidden="true">AX</span>
+        <div className="min-w-0">
+          <strong className="block text-sm text-white">AX Module Studio</strong>
+          <span className="block text-[10px] text-[#8fa6b5]">LOCAL DEMO CMS</span>
+        </div>
+        <button type="button" className="ml-auto text-lg leading-none text-[#b8ccd5] min-[721px]:hidden" onClick={() => setMenuOpen(false)} aria-label="메뉴 닫기">✕</button>
       </div>
       <AppNavigation activeRoute={visible} role={session.actor.role} onNavigate={go} />
-      <a className="mt-auto rounded-lg border border-white/10 p-3 text-center text-xs font-bold text-[#c8d0dd] hover:bg-white/5 max-[820px]:mt-3" href="/" target="_blank" rel="noreferrer">사용자 사이트 열기 ↗</a>
+      <div className="mt-auto">
+        <a className="flex items-center gap-2 rounded-md p-[10px] text-[11px] text-[#b8cbd6] hover:bg-navy-active hover:text-white" href="/" target="_blank" rel="noreferrer">
+          <svg className="h-[15px] w-[15px] shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10" /><path d="M2 12h20" /><path d="M12 2a15.3 15.3 0 0 1 0 20 15.3 15.3 0 0 1 0-20Z" /></svg>
+          사용자 사이트 열기<span className="ml-auto" aria-hidden="true">↗</span>
+        </a>
+        <div className="mt-[15px] flex items-center gap-[9px] border-t border-navy-line px-[7px] pt-[15px]">
+          <span className="grid h-[29px] w-[29px] shrink-0 place-items-center rounded-full bg-accent-soft text-[10px] font-bold text-accent-ink" aria-hidden="true">{initials}</span>
+          <div className="min-w-0">
+            <strong className="block truncate text-[11px] text-white">{session.actor.name}</strong>
+            <span className="block text-[10px] text-[#8fa6b5]">{ROLE_LABELS[session.actor.role]}</span>
+          </div>
+        </div>
+      </div>
     </aside>
-    <div className="min-w-0">
-      <header className="flex min-h-[66px] items-center gap-4 border-b border-line bg-white/95 px-8 max-[560px]:px-4">
-        <div className="mr-auto"><span className="block text-[9px] uppercase tracking-[.12em] text-muted">AX Module Studio</span><strong className="text-xs">CMS 관리자</strong></div>
-        <div className="text-right"><strong className="block text-xs">{session.actor.name}</strong><span className="text-[10px] text-muted">{ROLE_LABELS[session.actor.role]}</span></div>
-        <button className="rounded-lg border border-line bg-[#f7f8fa] px-3 py-2 text-xs font-bold" onClick={onSignOut}>로그아웃</button>
+    {/* The sidebar's own ✕ closes the drawer for keyboard users, so the scrim stays presentational. */}
+    {menuOpen && <div className="fixed inset-0 z-10 bg-[#17314966] min-[721px]:hidden" onClick={() => setMenuOpen(false)} aria-hidden="true" />}
+    <div className="flex min-w-0 flex-1 flex-col">
+      <header className="flex h-[78px] shrink-0 items-center gap-4 border-b border-line bg-panel px-[38px] max-[720px]:px-4">
+        <button type="button" className="text-xl leading-none text-[#526b78] min-[721px]:hidden" onClick={() => setMenuOpen(true)} aria-label="메뉴 열기">☰</button>
+        <div className="mr-auto"><span className="block text-[10px] text-[#7d909d]">AX Module Studio</span><strong className="mt-1 block text-sm">CMS 관리자</strong></div>
+        <div className="text-right max-[560px]:hidden"><strong className="block text-[11px]">{session.actor.name}</strong><span className="text-[10px] text-muted">{ROLE_LABELS[session.actor.role]}</span></div>
+        <span className="grid h-[29px] w-[29px] shrink-0 place-items-center rounded-full bg-accent-soft text-[10px] font-bold text-accent-ink max-[560px]:hidden" aria-hidden="true">{initials}</span>
+        <button className="shrink-0 rounded-md border border-line bg-[#f7f9fa] px-3 py-2 text-[11px] font-bold text-[#496272] hover:bg-[#eef2f4]" onClick={onSignOut}>로그아웃</button>
       </header>
-      <main className={`mx-auto w-full p-8 max-[820px]:p-4 ${visible === 'members' ? 'max-w-[1450px]' : 'max-w-[1680px]'}`}>
+      <main className={`mx-auto w-full px-[38px] pb-14 pt-[30px] max-[720px]:px-4 max-[720px]:pt-[22px] ${visible === 'members' ? 'max-w-[1450px]' : 'max-w-[1680px]'}`}>
         <Routes>
           <Route path="/admin" element={<Navigate to={pathForRoute(fallback)} replace />} />
           {permitted.map((route) => <Route key={route.id} path={route.path} element={<CmsWorkspace route={route.id} api={api} />} />)}

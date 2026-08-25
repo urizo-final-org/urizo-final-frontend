@@ -32,26 +32,26 @@ export default function LoginScreen({ notice, onSignedIn }: LoginScreenProps) {
   }
 
   return (
-    <div className="grid min-h-screen place-items-center bg-[linear-gradient(160deg,var(--navy)_0%,var(--navy-soft)_55%,#232f45_100%)] px-5 py-8">
+    <div className="grid min-h-screen place-items-center bg-[linear-gradient(160deg,var(--navy)_0%,var(--navy-soft)_55%,#2a4660_100%)] px-5 py-8">
       <form
         className="grid w-full max-w-[412px] gap-4 rounded-2xl bg-panel px-[30px] pb-[26px] pt-[30px] shadow-[0_24px_60px_rgba(11,17,30,0.42)]"
         onSubmit={onSubmit}
       >
         <div className="flex items-center gap-3 border-b border-line pb-[18px]">
           <span
-            className="flex h-[38px] w-[38px] flex-none items-center justify-center rounded-[10px] bg-[linear-gradient(135deg,#7d6bf1,#4b39cc)] font-mono text-[13px] font-extrabold leading-none tracking-[-0.08em] text-white shadow-[0_8px_22px_rgba(86,65,213,0.35)]"
+            className="flex h-[38px] w-[38px] flex-none items-center justify-center rounded-[10px] bg-accent font-mono text-[13px] font-extrabold leading-none tracking-[-0.08em] text-navy shadow-[0_8px_22px_rgba(54,127,135,0.28)]"
             aria-hidden="true"
           >
             AX
           </span>
           <div className="grid gap-1">
-            <strong className="text-[13px] tracking-[0.1em] text-[#151b27]">MODULE STUDIO</strong>
-            <span className="text-[9px] tracking-[0.08em] text-[#7e8ba0]">LOCAL DEMO CMS</span>
+            <strong className="text-sm text-[#151b27]">AX Module Studio</strong>
+            <span className="text-[10px] text-[#7e8ba0]">LOCAL DEMO CMS</span>
           </div>
         </div>
 
         <div className="grid gap-[5px]">
-          <p className="m-0 font-mono text-[10px] font-extrabold uppercase leading-[1.4] tracking-[0.13em] text-purple">SIGN IN</p>
+          <p className="m-0 font-mono text-[10px] font-extrabold uppercase leading-[1.4] tracking-[0.13em] text-accent-ink">SIGN IN</p>
           <h1 className="mt-[2px] mb-0 text-[25px] leading-[1.2] tracking-[-0.03em] text-[#151b27]">CMS 로그인</h1>
           <p className="m-0 text-xs leading-[1.65] text-muted">사이트 운영을 위한 관리자 전용 화면입니다.</p>
         </div>
@@ -61,7 +61,7 @@ export default function LoginScreen({ notice, onSignedIn }: LoginScreenProps) {
             ['최고관리자', 'super-admin', 'axms-super-admin-demo'],
             ['일반관리자', 'general-admin', 'axms-general-admin-demo'],
           ].map(([label, id, password]) => (
-            <button key={id} className="rounded-lg border border-[#ddd8ff] bg-[#f7f5ff] p-2 text-[10px] font-bold text-purple" type="button" onClick={() => { setLoginId(id); setPasswordValue(password) }}>
+            <button key={id} className="rounded-lg border border-[#cfe8ea] bg-[#eef7f7] p-2 text-[10px] font-bold text-accent-ink" type="button" onClick={() => { setLoginId(id); setPasswordValue(password) }}>
               {label}
             </button>
           ))}
@@ -70,7 +70,7 @@ export default function LoginScreen({ notice, onSignedIn }: LoginScreenProps) {
         <label className="grid min-w-0 gap-[7px]">
           <span className="text-[10px] font-bold text-[#667085]">아이디</span>
           <input
-            className="w-full min-w-0 rounded-lg border border-[#d6dce5] bg-white px-[11px] py-[10px] text-[#252b38]"
+            className="w-full min-w-0 rounded-lg border border-[#dce5e9] bg-white px-[11px] py-[10px] text-[#252b38]"
             name="loginId"
             value={loginId}
             onChange={(event) => setLoginId(event.target.value)}
@@ -83,7 +83,7 @@ export default function LoginScreen({ notice, onSignedIn }: LoginScreenProps) {
         <label className="grid min-w-0 gap-[7px]">
           <span className="text-[10px] font-bold text-[#667085]">비밀번호</span>
           <input
-            className="w-full min-w-0 rounded-lg border border-[#d6dce5] bg-white px-[11px] py-[10px] text-[#252b38]"
+            className="w-full min-w-0 rounded-lg border border-[#dce5e9] bg-white px-[11px] py-[10px] text-[#252b38]"
             name="passwordValue"
             type="password"
             value={passwordValue}
@@ -94,18 +94,18 @@ export default function LoginScreen({ notice, onSignedIn }: LoginScreenProps) {
         </label>
 
         {notice && !failure ? (
-          <p className="m-0 rounded-[9px] border border-[#e8d5a8] bg-[#fffaf0] px-3 py-[10px] text-[11px] leading-[1.55] text-[#7a5b12]" role="status">
+          <p className="m-0 rounded-[9px] border border-[#ead9be] bg-amber-soft px-3 py-[10px] text-[11px] leading-[1.55] text-amber" role="status">
             {notice}
           </p>
         ) : null}
         {failure ? (
-          <p className="m-0 rounded-[9px] border border-[#e6b8c0] bg-[#fff7f8] px-3 py-[10px] text-[11px] leading-[1.55] text-[#a93242]" role="alert">
+          <p className="m-0 rounded-[9px] border border-[#f2d5d3] bg-red-soft px-3 py-[10px] text-[11px] leading-[1.55] text-red" role="alert">
             {failure}
           </p>
         ) : null}
 
         <button
-          className="min-h-[38px] rounded-lg border border-transparent bg-purple px-[13px] text-[10px] font-extrabold whitespace-nowrap text-white shadow-[0_4px_12px_rgba(105,87,232,0.18)] enabled:hover:bg-purple-dark"
+          className="min-h-[38px] rounded-lg border border-transparent bg-primary px-[13px] text-[10px] font-extrabold whitespace-nowrap text-white shadow-[0_4px_12px_rgba(23,59,91,0.18)] enabled:hover:bg-primary-dark"
           type="submit"
           disabled={submitting || loginId.trim() === '' || passwordValue === ''}
         >
