@@ -1,7 +1,7 @@
 import { type FormEvent, useId, useState } from 'react'
-import type { CmsRouteId } from '../../app/routes'
-import { Icon } from '../../shared/ui/icons'
-import { Badge, panel, primaryButton, secondaryButton, textarea } from '../../shared/ui/primitives'
+import type { CmsRouteId } from '../../../app/routes'
+import { Icon } from '../../../shared/ui/icons'
+import { Badge, panel, primaryButton, secondaryButton, textarea } from '../../../shared/ui/primitives'
 
 type AssistedRoute = Exclude<CmsRouteId, 'members'>
 

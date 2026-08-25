@@ -7,7 +7,7 @@ import {
   control, fieldLabel, panel, primaryButton, secondaryButton, smallButton, textarea, type Tone,
 } from '../../shared/ui/primitives'
 import { SITE_UPDATE_EVENT, CmsApi, type Article, type Board, type Member, type Menu, type MenuTargetType, type Post, type SiteTemplate } from './api'
-import CmsAiAssistant from './CmsAiAssistant'
+import CmsAiAssistant from './assistant/CmsAiAssistant'
 
 const dangerButton = 'inline-flex h-8 items-center gap-[0.375rem] rounded-[0.3125rem] border border-[#f0d5d1] bg-fail-bg px-[0.6875rem] text-xs font-semibold text-fail-fg enabled:hover:bg-[#f8e0dc]'
 const recordRow = 'flex w-full items-center gap-[0.625rem] border-b border-row-line px-4 py-[0.625rem] text-left text-body hover:bg-sub'
