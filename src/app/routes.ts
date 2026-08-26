@@ -17,6 +17,8 @@ export interface RouteDefinition {
   allowedRoles: AdminRole[]
   /** Static mockup with no backing API. */
   mock?: true
+  /** Route remains available but is omitted from the sidebar. */
+  hiddenFromNavigation?: true
   /** Count shown on the right of the nav item. */
   count?: string
 }
@@ -29,8 +31,8 @@ export const routes: RouteDefinition[] = [
   { id: 'contents', path: '/admin/contents', group: '개요', label: '컨텐츠 관리', glyph: '▤', icon: 'file-text', allowedRoles: admins },
   { id: 'boards', path: '/admin/boards', group: '개요', label: '게시판 관리', glyph: '▦', icon: 'message-square', allowedRoles: admins },
   { id: 'templates', path: '/admin/templates', group: '개요', label: '템플릿 관리', glyph: '◇', icon: 'layout-template', allowedRoles: admins },
-  { id: 'agents', path: '/admin/agents', group: 'AI 운영', label: 'Agent 관리', glyph: '◈', icon: 'bot', allowedRoles: admins, mock: true },
-  { id: 'models', path: '/admin/models', group: 'AI 운영', label: '모델 및 Provider 관리', glyph: '◧', icon: 'boxes', allowedRoles: admins, mock: true },
+  { id: 'agents', path: '/admin/agents', group: 'AI 운영', label: 'Agent 관리', glyph: '◈', icon: 'bot', allowedRoles: admins, mock: true, hiddenFromNavigation: true },
+  { id: 'models', path: '/admin/models', group: 'AI 운영', label: 'Agent 설정', glyph: '◧', icon: 'boxes', allowedRoles: admins, mock: true },
   { id: 'rag', path: '/admin/rag', group: 'AI 운영', label: 'RAG 관리', glyph: '▩', icon: 'database', allowedRoles: admins, mock: true },
   { id: 'devops', path: '/admin/llm-devops', group: 'AI 운영', label: 'LLM DevOps', glyph: '◑', icon: 'code-2', allowedRoles: admins, mock: true },
   { id: 'approvals', path: '/admin/approvals', group: '거버넌스', label: '승인 관리', glyph: '◍', icon: 'shield-check', allowedRoles: admins, mock: true, count: '3' },
@@ -45,6 +47,7 @@ const cmsRouteIds: CmsRouteId[] = ['members', 'menus', 'contents', 'boards', 'te
 export function isCmsRouteId(route: RouteId): route is CmsRouteId { return (cmsRouteIds as RouteId[]).includes(route) }
 
 export function routesForRole(role: AdminRole) { return routes.filter((route) => route.allowedRoles.includes(role)) }
+export function navigationRoutesForRole(role: AdminRole) { return routesForRole(role).filter((route) => !route.hiddenFromNavigation) }
 export function defaultRouteForRole(_role: AdminRole): RouteId { return 'members' }
 export function pathForRoute(route: RouteId) { return routes.find((item) => item.id === route)?.path ?? '/admin/members' }
 export function routeIdForPath(pathname: string) { return routes.find((item) => item.path === pathname)?.id }

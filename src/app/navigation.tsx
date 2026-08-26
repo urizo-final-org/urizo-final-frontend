@@ -1,7 +1,7 @@
 import { Fragment, useState } from 'react'
 import type { AdminRole } from '../shared/api/session'
 import { Icon } from '../shared/ui/icons'
-import { foldableGroups, routesForRole, type RouteId } from './routes'
+import { foldableGroups, navigationRoutesForRole, type RouteId } from './routes'
 
 export function AppNavigation({
   activeRoute,
@@ -21,7 +21,7 @@ export function AppNavigation({
 
   return (
     <nav className="flex flex-1 flex-col gap-[0.125rem] overflow-y-auto px-2 pb-2" aria-label="관리자 메뉴">
-      {routesForRole(role).map((route) => {
+      {navigationRoutesForRole(role).map((route) => {
         const groupHeading = route.group === renderedGroup ? null : route.group
         renderedGroup = route.group
         const foldable = foldableGroups.includes(route.group)
