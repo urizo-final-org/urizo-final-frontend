@@ -23,6 +23,7 @@ export interface RouteDefinition {
   count?: string
 }
 const admins: AdminRole[] = ['SUPER_ADMIN', 'GENERAL_ADMIN']
+const superAdmins: AdminRole[] = ['SUPER_ADMIN']
 
 export const routes: RouteDefinition[] = [
   { id: 'home', path: '/admin/home', group: '개요', label: '홈', glyph: '⬚', icon: 'layout-dashboard', allowedRoles: admins, mock: true },
@@ -32,7 +33,7 @@ export const routes: RouteDefinition[] = [
   { id: 'boards', path: '/admin/boards', group: '개요', label: '게시판 관리', glyph: '▦', icon: 'message-square', allowedRoles: admins },
   { id: 'templates', path: '/admin/templates', group: '개요', label: '템플릿 관리', glyph: '◇', icon: 'layout-template', allowedRoles: admins },
   { id: 'agents', path: '/admin/agents', group: 'AI 운영', label: 'Agent 관리', glyph: '◈', icon: 'bot', allowedRoles: admins, mock: true, hiddenFromNavigation: true },
-  { id: 'models', path: '/admin/models', group: 'AI 운영', label: 'Agent 설정', glyph: '◧', icon: 'boxes', allowedRoles: admins, mock: true },
+  { id: 'models', path: '/admin/models', group: 'AI 운영', label: 'Agent 설정', glyph: '◧', icon: 'boxes', allowedRoles: superAdmins, mock: true },
   { id: 'rag', path: '/admin/rag', group: 'AI 운영', label: 'RAG 관리', glyph: '▩', icon: 'database', allowedRoles: admins, mock: true },
   { id: 'devops', path: '/admin/llm-devops', group: 'AI 운영', label: 'LLM DevOps', glyph: '◑', icon: 'code-2', allowedRoles: admins, mock: true },
   { id: 'approvals', path: '/admin/approvals', group: '거버넌스', label: '승인 관리', glyph: '◍', icon: 'shield-check', allowedRoles: admins, mock: true, count: '3' },
