@@ -1,17 +1,22 @@
 import { fireEvent, render, screen, within } from '@testing-library/react'
-import { expect, test } from 'vitest'
+import { afterEach, expect, test, vi } from 'vitest'
 import AgentSettingsWorkspace from './AgentSettingsWorkspace'
 
-test('the four Agent settings tabs expose only mock and collaboration boundaries', () => {
+afterEach(() => vi.unstubAllGlobals())
+
+test('the five Agent settings tabs expose only mock and collaboration boundaries', () => {
   render(<AgentSettingsWorkspace />)
 
   expect(screen.getByRole('heading', { name: 'Agent 설정' })).toBeInTheDocument()
   expect(screen.getByText('최고관리자 전용')).toBeInTheDocument()
   expect(screen.getByText(/저장·검증·실행 API를 호출하지 않습니다/)).toBeInTheDocument()
 
-  for (const tab of ['Provider·Model', 'Agent·Workflow', 'Tool·실행 정책', '사용량·평가']) {
-    expect(screen.getByRole('tab', { name: tab })).toBeInTheDocument()
-  }
+  const tabs = within(screen.getByRole('tablist', { name: 'Agent 설정 영역' })).getAllByRole('tab')
+  expect(tabs.map((tab) => tab.textContent)).toEqual(['Provider·Model', 'Agent·Workflow', '자연어 기능 Profile', 'Tool·실행 정책', '사용량·평가'])
+  expect(tabs.map((tab) => tab.tabIndex)).toEqual([-1, 0, -1, -1, -1])
+  fireEvent.keyDown(tabs[1], { key: 'ArrowRight' })
+  expect(tabs[2]).toHaveFocus()
+  expect(tabs[2]).toHaveAttribute('aria-selected', 'true')
 
   fireEvent.click(screen.getByRole('tab', { name: 'Tool·실행 정책' }))
   expect(screen.getByRole('checkbox', { name: 'OmniRoute 비활성 목업' })).toBeDisabled()
@@ -27,6 +32,34 @@ test('the four Agent settings tabs expose only mock and collaboration boundaries
   expect(screen.getByText('Langfuse Monitoring')).toBeInTheDocument()
   expect(screen.getByText('AgentGoalAccuracy')).toBeInTheDocument()
   expect(screen.getByText('ToolCallAccuracy')).toBeInTheDocument()
+})
+
+test('natural feature profiles keep LLM Ops and Natural CMS settings separate in local state', () => {
+  const fetcher = vi.fn()
+  vi.stubGlobal('fetch', fetcher)
+  render(<AgentSettingsWorkspace />)
+
+  fireEvent.click(screen.getByRole('tab', { name: '자연어 기능 Profile' }))
+  expect(screen.getByText(/Profile Version 저장·활성화·검증/)).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: 'LLM_OPS Profile 선택' })).toHaveAttribute('aria-pressed', 'true')
+  expect(screen.getByLabelText('LLM_OPS apply_patch 허용')).not.toBeChecked()
+  fireEvent.click(screen.getByLabelText('LLM_OPS apply_patch 허용'))
+  fireEvent.change(screen.getByLabelText('LLM_OPS 기본 Model'), { target: { value: 'Gemini Pro' } })
+
+  fireEvent.click(screen.getByRole('button', { name: 'NATURAL_CMS Profile 선택' }))
+  expect(screen.queryByLabelText('LLM_OPS apply_patch 허용')).not.toBeInTheDocument()
+  expect(screen.getByLabelText('NATURAL_CMS create_cms_preview 허용')).toBeChecked()
+  fireEvent.click(screen.getByLabelText('NATURAL_CMS create_cms_preview 허용'))
+  expect(screen.getByLabelText('NATURAL_CMS create_cms_preview 허용')).not.toBeChecked()
+
+  fireEvent.click(screen.getByRole('button', { name: 'LLM_OPS Profile 선택' }))
+  expect(screen.getByLabelText('LLM_OPS 기본 Model')).toHaveValue('Gemini Pro')
+  expect(screen.getByLabelText('LLM_OPS apply_patch 허용')).toBeChecked()
+  fireEvent.click(screen.getByRole('tab', { name: 'Tool·실행 정책' }))
+  fireEvent.click(screen.getByRole('tab', { name: '자연어 기능 Profile' }))
+  expect(screen.getByLabelText('LLM_OPS 기본 Model')).toHaveValue('Gemini Pro')
+  expect(screen.getByLabelText('LLM_OPS apply_patch 허용')).toBeChecked()
+  expect(fetcher).not.toHaveBeenCalled()
 })
 
 test('the Node Palette adds and deletes every supported kind through local state', () => {

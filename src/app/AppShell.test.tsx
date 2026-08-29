@@ -106,6 +106,60 @@ test('a general administrator is redirected away from Agent settings', async () 
   expect(within(screen.getByRole('navigation', { name: '관리자 메뉴' })).queryByRole('button', { name: 'Agent 설정' })).not.toBeInTheDocument()
 })
 
+test('only a super administrator can open system settings', async () => {
+  window.history.pushState({}, '', '/admin/system-settings')
+  vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => {
+    if (String(input) === '/api/auth/refresh') return Promise.resolve(json(session('SUPER_ADMIN', '최고 관리자')))
+    return Promise.resolve(json([]))
+  }))
+
+  render(<AppShell />)
+  expect(await screen.findByRole('heading', { name: '시스템 설정' })).toBeInTheDocument()
+  const navigation = screen.getByRole('navigation', { name: '관리자 메뉴' })
+  expect(within(navigation).getByRole('button', { name: '시스템 설정' })).toBeInTheDocument()
+  expect(screen.getByText('최고관리자 전용')).toBeInTheDocument()
+})
+
+test('a general administrator is redirected away from system settings', async () => {
+  window.history.pushState({}, '', '/admin/system-settings')
+  vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => {
+    if (String(input) === '/api/auth/refresh') return Promise.resolve(json(session()))
+    return Promise.resolve(json([]))
+  }))
+
+  render(<AppShell />)
+  expect(await screen.findByRole('heading', { name: '회원 관리' })).toBeInTheDocument()
+  const navigation = screen.getByRole('navigation', { name: '관리자 메뉴' })
+  expect(within(navigation).queryByRole('button', { name: '시스템 설정' })).not.toBeInTheDocument()
+})
+
+test('only a super administrator can open site management', async () => {
+  window.history.pushState({}, '', '/admin/sites')
+  vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => {
+    if (String(input) === '/api/auth/refresh') return Promise.resolve(json(session('SUPER_ADMIN', '최고 관리자')))
+    return Promise.resolve(json([]))
+  }))
+
+  render(<AppShell />)
+  expect(await screen.findByRole('heading', { name: '사이트 관리' })).toBeInTheDocument()
+  const navigation = screen.getByRole('navigation', { name: '관리자 메뉴' })
+  expect(within(navigation).getByRole('button', { name: '사이트 관리' })).toBeInTheDocument()
+  expect(screen.getByText('최고관리자 전용')).toBeInTheDocument()
+})
+
+test('a general administrator is redirected away from site management', async () => {
+  window.history.pushState({}, '', '/admin/sites')
+  vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => {
+    if (String(input) === '/api/auth/refresh') return Promise.resolve(json(session()))
+    return Promise.resolve(json([]))
+  }))
+
+  render(<AppShell />)
+  expect(await screen.findByRole('heading', { name: '회원 관리' })).toBeInTheDocument()
+  const navigation = screen.getByRole('navigation', { name: '관리자 메뉴' })
+  expect(within(navigation).queryByRole('button', { name: '사이트 관리' })).not.toBeInTheDocument()
+})
+
 test.each([
   ['/admin/menus', '메뉴 관리', '메뉴 AI', '컨텐츠 본문, 게시글, 템플릿은 변경하지 않아요.'],
   ['/admin/contents', '컨텐츠 관리', '컨텐츠 AI', '메뉴 구조, 게시판·게시글, 템플릿은 변경하지 않아요.'],
