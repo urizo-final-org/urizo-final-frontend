@@ -4,6 +4,7 @@ import LoginScreen from '../features/auth/LoginScreen'
 import { clearExplicitSignOut, clearStoredToken, hasExplicitSignOutMarker, markExplicitSignOut, readStoredToken, storeToken } from '../features/auth/session-store'
 import CmsWorkspace from '../features/cms/CmsWorkspace'
 import OpsWorkspace from '../features/ops/OpsWorkspace'
+import AgentSettingsWorkspace from '../features/orchestration/AgentSettingsWorkspace'
 import PublicSite from '../features/site/PublicSite'
 import { CmsApi } from '../features/cms/api'
 import { fetchCurrentSession, logout, refreshSession, ROLE_LABELS, type AdminSession } from '../shared/api/session'
@@ -152,6 +153,8 @@ function AuthenticatedAdmin({ session, onRefresh, onExpired, onSignOut }: {
             path={route.path}
             element={isCmsRouteId(route.id)
               ? <CmsWorkspace route={route.id} api={api} />
+              : route.id === 'models'
+                ? <AgentSettingsWorkspace />
               : <OpsWorkspace route={route.id} actorName={session.actor.name} roleLabel={ROLE_LABELS[session.actor.role]} />}
           />)}
           <Route path="/admin/*" element={<Navigate to={pathForRoute(fallback)} replace />} />

@@ -70,7 +70,7 @@ test('an administrator reaches all five CMS sections', async () => {
 test('the sidebar consolidates AI model assignment under Agent settings', async () => {
   window.history.pushState({}, '', '/admin/agents')
   vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => {
-    if (String(input) === '/api/auth/refresh') return Promise.resolve(json(session()))
+    if (String(input) === '/api/auth/refresh') return Promise.resolve(json(session('SUPER_ADMIN', '최고 관리자')))
     return Promise.resolve(json([]))
   }))
 
@@ -79,6 +79,31 @@ test('the sidebar consolidates AI model assignment under Agent settings', async 
   const navigation = screen.getByRole('navigation', { name: '관리자 메뉴' })
   expect(within(navigation).queryByRole('button', { name: 'Agent 관리' })).not.toBeInTheDocument()
   expect(within(navigation).getByRole('button', { name: 'Agent 설정' })).toBeInTheDocument()
+})
+
+test('only a super administrator can open Agent settings', async () => {
+  window.history.pushState({}, '', '/admin/models')
+  vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => {
+    if (String(input) === '/api/auth/refresh') return Promise.resolve(json(session('SUPER_ADMIN', '최고 관리자')))
+    return Promise.resolve(json([]))
+  }))
+
+  render(<AppShell />)
+  expect(await screen.findByRole('heading', { name: 'Agent 설정' })).toBeInTheDocument()
+  expect(screen.getByText('최고관리자 전용')).toBeInTheDocument()
+  expect(screen.getByRole('tab', { name: 'Agent·Workflow' })).toHaveAttribute('aria-selected', 'true')
+})
+
+test('a general administrator is redirected away from Agent settings', async () => {
+  window.history.pushState({}, '', '/admin/models')
+  vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => {
+    if (String(input) === '/api/auth/refresh') return Promise.resolve(json(session()))
+    return Promise.resolve(json([]))
+  }))
+
+  render(<AppShell />)
+  expect(await screen.findByRole('heading', { name: '회원 관리' })).toBeInTheDocument()
+  expect(within(screen.getByRole('navigation', { name: '관리자 메뉴' })).queryByRole('button', { name: 'Agent 설정' })).not.toBeInTheDocument()
 })
 
 test.each([
@@ -208,8 +233,8 @@ function siteTemplate() {
   }
 }
 
-function session() {
-  return { sessionToken: 'signed-access-jwt-value', expiresAt: new Date(Date.now() + 60_000).toISOString(), actor: { actorId, name: '일반 관리자', role: 'GENERAL_ADMIN' } }
+function session(role: 'SUPER_ADMIN' | 'GENERAL_ADMIN' = 'GENERAL_ADMIN', name = '일반 관리자') {
+  return { sessionToken: 'signed-access-jwt-value', expiresAt: new Date(Date.now() + 60_000).toISOString(), actor: { actorId, name, role } }
 }
 
 function json(body: unknown, status = 200) {
