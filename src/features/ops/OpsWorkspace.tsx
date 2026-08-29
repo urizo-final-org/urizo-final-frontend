@@ -1,3 +1,4 @@
+import { useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import type { OpsRouteId } from '../../app/routes'
 import { Icon, type IconName } from '../../shared/ui/icons'
 import {
@@ -17,6 +18,8 @@ export default function OpsWorkspace({ route, actorName, roleLabel }: { route: O
   if (route === 'devops') return <Devops />
   if (route === 'approvals') return <Approvals />
   if (route === 'runs') return <Runs />
+  if (route === 'system-settings') return <SystemSettings />
+  if (route === 'sites') return <Sites />
   return <Settings roleLabel={roleLabel} />
 }
 
@@ -698,6 +701,164 @@ function Runs() {
   </>
 }
 
+/* ------------------------------------------------------------------ 사이트 관리 */
+
+function Sites() {
+  const [siteName, setSiteName] = useState('기본 사용자 사이트')
+
+  return <>
+    <PageHead title="사이트 관리" description="기본 사용자 사이트의 표시 정보를 검토합니다.">
+      <Badge tone="run" dot={false}>최고관리자 전용</Badge>
+    </PageHead>
+    <MockNote>UI/UX Mock입니다. 변경 내용은 현재 화면에서만 유지되며 실제 사용자 사이트나 CMS 저장 API에 반영되지 않습니다.</MockNote>
+
+    <div className="grid items-start gap-[0.875rem] xl:grid-cols-[18rem_minmax(0,1fr)]">
+      <aside className={panel} aria-label="관리 사이트 목록">
+        <PanelTitle title="사이트" sub="현재 CMS의 기본 사용자 사이트" />
+        <div className="p-3">
+          <button type="button" aria-label="기본 사용자 사이트 선택" aria-pressed="true" className="w-full rounded-md border border-primary bg-run-bg p-3 text-left">
+            <span className="flex items-center gap-2"><Icon name="globe-2" className="text-run-fg" /><b className="text-[0.8125rem] font-semibold">{siteName || '이름 없는 사이트'}</b></span>
+            <small className="mt-2 block font-mono text-[0.6875rem] text-muted-2">/</small>
+          </button>
+        </div>
+      </aside>
+
+      <article className={panel}>
+        <PanelTitle title="기본 사용자 사이트" sub="사이트 한 곳의 로컬 표시 설정">
+          <Badge tone="idle" dot={false}>저장 안 함</Badge>
+        </PanelTitle>
+        <div className="grid gap-4 p-4 lg:grid-cols-2">
+          <div>
+            <label className={fieldLabel}>사이트명
+              <input aria-label="관리 사이트명" className={control} value={siteName} onChange={(event) => setSiteName(event.target.value)} />
+            </label>
+            <label className={`${fieldLabel} mt-[0.875rem]`}>공개 경로
+              <input aria-label="관리 사이트 공개 경로" className={`${control} font-mono`} defaultValue="/" />
+            </label>
+          </div>
+          <div>
+            <Callout tone="warn" icon="triangle-alert">
+              사이드바의 사용자 사이트 열기 링크와 별도인 관리 목업입니다. 추가·삭제·Version·실제 게시 기능은 포함하지 않습니다.
+            </Callout>
+            <div className="mt-3 rounded-md border border-line-soft bg-sub p-3 text-[0.71875rem] leading-6 text-muted-2">
+              실제 사이트별 저장·조회와 CMS 반영은 5번 CMS Domain의 후속 Work에서 연결합니다.
+            </div>
+          </div>
+        </div>
+      </article>
+    </div>
+  </>
+}
+
+/* ------------------------------------------------------------------ 시스템 설정 */
+
+type SystemSettingsTabId = 'cms' | 'guardrail'
+
+const systemSettingsTabs: { id: SystemSettingsTabId; label: string }[] = [
+  { id: 'cms', label: 'CMS 기본 설정' },
+  { id: 'guardrail', label: 'Guardrail Profile' },
+]
+
+const lockedGuardrails = [
+  { label: '작업 경로 제한', description: '허용 경로 밖의 파일 접근을 항상 차단합니다.' },
+  { label: 'Agent별 Tool Allowlist', description: '등록된 Tool 범위 밖의 호출을 항상 차단합니다.' },
+  { label: 'Prompt·Source·Diff 원문 전송 차단', description: '원문은 기본 전송하지 않으며 별도 결정 없이는 해제할 수 없습니다.' },
+  { label: 'Secret 노출 차단', description: 'Key·Token·인증정보 원문을 항상 차단합니다.' },
+  { label: '인증·Migration 보호', description: '인증 파일과 Migration 경로 변경을 항상 차단합니다.' },
+]
+
+function SystemSettings() {
+  const [activeTab, setActiveTab] = useState<SystemSettingsTabId>('cms')
+  const [siteName, setSiteName] = useState('AX Module Studio')
+  const [allowedPath, setAllowedPath] = useState('src/**')
+
+  function moveTabFocus(event: ReactKeyboardEvent<HTMLButtonElement>, index: number) {
+    let next = index
+    if (event.key === 'ArrowRight') next = (index + 1) % systemSettingsTabs.length
+    else if (event.key === 'ArrowLeft') next = (index - 1 + systemSettingsTabs.length) % systemSettingsTabs.length
+    else if (event.key === 'Home') next = 0
+    else if (event.key === 'End') next = systemSettingsTabs.length - 1
+    else return
+    event.preventDefault()
+    setActiveTab(systemSettingsTabs[next].id)
+    event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>('[role="tab"]')[next]?.focus()
+  }
+
+  return <>
+    <PageHead title="시스템 설정" description="CMS 기본값과 중앙 Guardrail Profile을 검토합니다.">
+      <Badge tone="run" dot={false}>최고관리자 전용</Badge>
+    </PageHead>
+    <MockNote>UI/UX Mock입니다. 변경 내용은 현재 화면의 로컬 상태이며 저장 API를 호출하지 않습니다.</MockNote>
+
+    <div className="mb-[1.125rem] flex gap-[1.375rem] overflow-x-auto border-b border-line" role="tablist" aria-label="시스템 설정 영역">
+      {systemSettingsTabs.map((tab, index) => <button
+        key={tab.id}
+        type="button"
+        role="tab"
+        id={`system-settings-tab-${tab.id}`}
+        aria-selected={activeTab === tab.id}
+        tabIndex={activeTab === tab.id ? 0 : -1}
+        className={`shrink-0 whitespace-nowrap bg-transparent px-[0.125rem] pb-[0.625rem] text-[0.8125rem] ${activeTab === tab.id ? 'font-semibold text-ink shadow-[inset_0_-2px_var(--primary)]' : 'font-medium text-muted'}`}
+        onClick={() => setActiveTab(tab.id)}
+        onKeyDown={(event) => moveTabFocus(event, index)}
+      >{tab.label}</button>)}
+    </div>
+
+    {activeTab === 'cms' && <section id="system-settings-panel-cms" role="tabpanel" aria-labelledby="system-settings-tab-cms" className="grid items-start gap-[0.875rem] xl:grid-cols-2">
+      <article className={panel}>
+        <PanelTitle title="CMS 기본값" sub="신규 CMS Resource에 적용할 로컬 예시" />
+        <div className="p-4">
+          <label className={fieldLabel}>기본 사이트명
+            <input aria-label="CMS 기본 사이트명" className={control} value={siteName} onChange={(event) => setSiteName(event.target.value)} />
+          </label>
+          <label className={`${fieldLabel} mt-[0.875rem]`}>기본 공개 경로
+            <input aria-label="CMS 기본 공개 경로" className={`${control} font-mono`} defaultValue="/" />
+          </label>
+          <label className={`${fieldLabel} mt-[0.875rem]`}>삭제 방식
+            <input aria-label="CMS 삭제 방식" className={control} value="소프트 삭제" readOnly />
+          </label>
+        </div>
+      </article>
+      <article className={panel}>
+        <PanelTitle title="CMS 저장 경계"><Badge tone="wait" dot={false}>후속 연결</Badge></PanelTitle>
+        <div className="p-4 text-[0.71875rem] leading-6 text-muted-2">
+          <p>삭제는 소프트 삭제를 기본으로 표시하며 복원 기능은 만들지 않습니다.</p>
+          <p className="mt-3">사이트별 실제 저장·조회는 5번 CMS Domain의 후속 API에서 연결합니다. 공통 Profile Version에는 저장하지 않습니다.</p>
+        </div>
+      </article>
+    </section>}
+
+    {activeTab === 'guardrail' && <section id="system-settings-panel-guardrail" role="tabpanel" aria-labelledby="system-settings-tab-guardrail">
+      <Callout tone="warn" icon="triangle-alert">
+        이 화면은 중앙 Guardrail Profile 목업입니다. Agent 설정의 로컬 최소 Guardrail 토글과는 별개이며 실제 정책 저장·강제 적용은 하지 않습니다.
+      </Callout>
+      <div className="mt-3 grid items-start gap-[0.875rem] xl:grid-cols-2">
+        <article className={panel}>
+          <PanelTitle title="CENTRAL_DEFAULT" sub="모든 실행 Profile에 연결되는 중앙 예시">
+            <Badge tone="wait" dot={false}>로컬 상태</Badge>
+          </PanelTitle>
+          <div className="p-4">
+            <label className={fieldLabel}>허용 작업 경로 예시
+              <input aria-label="중앙 Guardrail 허용 작업 경로" className={`${control} font-mono`} value={allowedPath} onChange={(event) => setAllowedPath(event.target.value)} />
+            </label>
+            <p className="mt-3 text-[0.6875rem] leading-5 text-muted-2">Guardrail 적용 자체는 끌 수 없으며, Profile에서는 허용 범위 예시만 로컬로 검토합니다.</p>
+          </div>
+        </article>
+        <article className={panel}>
+          <PanelTitle title="잠금 보안 규칙" sub="UI에서도 비활성화할 수 없는 고정 항목" />
+          <div className="p-4">
+            {lockedGuardrails.map((rule) => <label key={rule.label} className="flex items-center gap-3 border-b border-row-line py-3">
+              <input aria-label={`잠금 Guardrail ${rule.label}`} type="checkbox" checked disabled readOnly />
+              <span className="min-w-0 flex-1"><b className="block text-[0.78125rem] font-semibold">{rule.label}</b><small className="mt-1 block text-[0.6875rem] text-muted-2">{rule.description}</small></span>
+              <Badge tone="idle" dot={false}>잠금</Badge>
+            </label>)}
+          </div>
+        </article>
+      </div>
+    </section>}
+  </>
+}
+
 /* ------------------------------------------------------------------ 설정 */
 
 const keys: { name: string; value: string; at: string; tone: Tone; state: string }[] = [
@@ -718,7 +879,9 @@ function Settings({ roleLabel }: { roleLabel: string }) {
     <PageHead title="설정" description="조직 정보, 권한, API Key, 알림 정책을 관리합니다." />
     <MockNote>정적 데모 화면입니다. 저장 버튼은 아직 연결되지 않았습니다.</MockNote>
 
-    <Tabs items={[{ label: '일반' }, { label: '권한' }, { label: 'API Key' }, { label: '알림' }]} active={0} />
+    <div aria-label="일반 설정 탭">
+      <Tabs items={[{ label: '일반' }, { label: '권한' }, { label: 'API Key' }, { label: '알림' }]} active={0} />
+    </div>
 
     <div className="grid items-start gap-[0.875rem] xl:grid-cols-2">
       <section className={panel}>

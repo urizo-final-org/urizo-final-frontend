@@ -1,11 +1,12 @@
-import { useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
+import { useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react'
 import { Icon, type IconName } from '../../shared/ui/icons'
 import {
   Badge, Callout, PageHead, PanelTitle, Tag, control, dangerButton, panel, primaryButton, secondaryButton,
 } from '../../shared/ui/primitives'
 
-type TabId = 'provider' | 'workflow' | 'policy' | 'usage'
+type TabId = 'provider' | 'workflow' | 'profile' | 'policy' | 'usage'
 type NodeType = 'start' | 'agent' | 'tool' | 'approval' | 'check' | 'end'
+type ProfileKey = 'LLM_OPS' | 'NATURAL_CMS'
 
 interface WorkflowNode {
   id: string
@@ -25,6 +26,7 @@ interface WorkflowEdge {
 const tabs: { id: TabId; label: string }[] = [
   { id: 'provider', label: 'Provider·Model' },
   { id: 'workflow', label: 'Agent·Workflow' },
+  { id: 'profile', label: '자연어 기능 Profile' },
   { id: 'policy', label: 'Tool·실행 정책' },
   { id: 'usage', label: '사용량·평가' },
 ]
@@ -40,6 +42,33 @@ const nodeTypes: Record<NodeType, { label: string; icon: IconName; meta: string;
 
 const models = ['GPT-4o', 'Claude Sonnet', 'Gemini Pro', 'GPT-4o mini']
 const fixedTools = ['read_file', 'search_code', 'apply_patch', 'read_diff', 'run_check']
+const profileCatalog: Record<ProfileKey, {
+  title: string
+  owner: string
+  queue: string
+  target: string
+  tools: string[]
+}> = {
+  LLM_OPS: {
+    title: 'LLM Ops',
+    owner: '4번 · 제한형 LLM DevOps',
+    queue: 'Coding',
+    target: '승인된 Source Repository',
+    tools: ['read_file', 'search_code', 'read_diff', 'apply_patch', 'run_check', 'check_package_allowlist', 'scan_changed_files'],
+  },
+  NATURAL_CMS: {
+    title: 'Natural CMS',
+    owner: '5번 · 자연어 CMS 관리',
+    queue: 'Natural CMS',
+    target: '기존 CMS Resource',
+    tools: ['resolve_cms_target', 'validate_cms_command', 'create_cms_preview', 'discard_cms_preview', 'revalidate_cms_preview', 'apply_cms_preview'],
+  },
+}
+
+const initialProfileSettings: Record<ProfileKey, { model: string; tools: string[] }> = {
+  LLM_OPS: { model: 'Claude Sonnet', tools: ['read_file', 'search_code', 'read_diff', 'run_check'] },
+  NATURAL_CMS: { model: 'GPT-4o', tools: ['resolve_cms_target', 'validate_cms_command', 'create_cms_preview', 'revalidate_cms_preview'] },
+}
 
 const initialNodes: WorkflowNode[] = [
   { id: 'n1', type: 'start', name: 'Start', x: 24, y: 48, model: models[0], tools: [] },
@@ -78,6 +107,37 @@ const usage = [
 
 export default function AgentSettingsWorkspace() {
   const [activeTab, setActiveTab] = useState<TabId>('workflow')
+  const [selectedProfileKey, setSelectedProfileKey] = useState<ProfileKey>('LLM_OPS')
+  const [profileSettings, setProfileSettings] = useState(initialProfileSettings)
+
+  function moveTabFocus(event: ReactKeyboardEvent<HTMLButtonElement>, index: number) {
+    let next = index
+    if (event.key === 'ArrowRight') next = (index + 1) % tabs.length
+    else if (event.key === 'ArrowLeft') next = (index - 1 + tabs.length) % tabs.length
+    else if (event.key === 'Home') next = 0
+    else if (event.key === 'End') next = tabs.length - 1
+    else return
+    event.preventDefault()
+    setActiveTab(tabs[next].id)
+    event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>('[role="tab"]')[next]?.focus()
+  }
+
+  function updateProfileModel(key: ProfileKey, model: string) {
+    setProfileSettings((current) => ({ ...current, [key]: { ...current[key], model } }))
+  }
+
+  function toggleProfileTool(key: ProfileKey, tool: string) {
+    setProfileSettings((current) => {
+      const profile = current[key]
+      return {
+        ...current,
+        [key]: {
+          ...profile,
+          tools: profile.tools.includes(tool) ? profile.tools.filter((item) => item !== tool) : [...profile.tools, tool],
+        },
+      }
+    })
+  }
 
   return <>
     <PageHead title="Agent 설정" description="Provider·Model, Agent Workflow와 실행 정책을 설정합니다.">
@@ -89,23 +149,117 @@ export default function AgentSettingsWorkspace() {
     </div>
 
     <div className="mb-[1.125rem] flex gap-[1.375rem] overflow-x-auto border-b border-line" role="tablist" aria-label="Agent 설정 영역">
-      {tabs.map((tab) => <button
+      {tabs.map((tab, index) => <button
         key={tab.id}
         type="button"
         role="tab"
         id={`agent-settings-tab-${tab.id}`}
-        aria-controls={`agent-settings-panel-${tab.id}`}
         aria-selected={activeTab === tab.id}
+        tabIndex={activeTab === tab.id ? 0 : -1}
         className={`shrink-0 whitespace-nowrap bg-transparent px-[0.125rem] pb-[0.625rem] text-[0.8125rem] ${activeTab === tab.id ? 'font-semibold text-ink shadow-[inset_0_-2px_var(--primary)]' : 'font-medium text-muted'}`}
         onClick={() => setActiveTab(tab.id)}
+        onKeyDown={(event) => moveTabFocus(event, index)}
       >{tab.label}</button>)}
     </div>
 
     {activeTab === 'provider' && <ProviderModelPanel />}
     {activeTab === 'workflow' && <WorkflowPanel />}
+    {activeTab === 'profile' && <NaturalFeatureProfilePanel
+      selectedKey={selectedProfileKey}
+      settings={profileSettings}
+      onSelect={setSelectedProfileKey}
+      onModelChange={updateProfileModel}
+      onToolToggle={toggleProfileTool}
+    />}
     {activeTab === 'policy' && <PolicyPanel />}
     {activeTab === 'usage' && <UsagePanel />}
   </>
+}
+
+function NaturalFeatureProfilePanel({ selectedKey, settings, onSelect, onModelChange, onToolToggle }: {
+  selectedKey: ProfileKey
+  settings: Record<ProfileKey, { model: string; tools: string[] }>
+  onSelect: (key: ProfileKey) => void
+  onModelChange: (key: ProfileKey, model: string) => void
+  onToolToggle: (key: ProfileKey, tool: string) => void
+}) {
+  const selected = profileCatalog[selectedKey]
+  const selectedSettings = settings[selectedKey]
+
+  return <section id="agent-settings-panel-profile" role="tabpanel" aria-labelledby="agent-settings-tab-profile">
+    <Callout tone="warn" icon="triangle-alert">
+      로컬 UI 목업이며 Profile Version 저장·활성화·검증, Spring API, LangGraph·MCP 실행을 하지 않습니다.
+    </Callout>
+    <div className="mt-3 grid items-start gap-[0.875rem] xl:grid-cols-[18rem_minmax(0,1fr)]">
+      <aside className={`${panel} overflow-hidden`} aria-label="자연어 기능 Profile 목록">
+        <PanelTitle title="Profile" sub="기능 소유 영역별 로컬 설정" />
+        <div className="grid gap-2 p-3">
+          {(Object.keys(profileCatalog) as ProfileKey[]).map((key) => {
+            const profile = profileCatalog[key]
+            const active = selectedKey === key
+            return <button
+              key={key}
+              type="button"
+              aria-label={`${key} Profile 선택`}
+              aria-pressed={active}
+              className={`rounded-md border p-3 text-left ${active ? 'border-primary bg-run-bg' : 'border-line bg-white hover:bg-page'}`}
+              onClick={() => onSelect(key)}
+            >
+              <span className="flex items-center gap-2">
+                <b className="text-[0.8125rem] font-semibold">{profile.title}</b>
+                <Tag>{key}</Tag>
+              </span>
+              <small className="mt-2 block text-[0.6875rem] text-muted-2">{profile.owner}</small>
+            </button>
+          })}
+        </div>
+      </aside>
+
+      <article className={panel}>
+        <PanelTitle title={`${selected.title} Profile`} sub={`${selectedKey} · ${selected.owner}`}>
+          <Badge tone="run" dot={false}>로컬 상태</Badge>
+        </PanelTitle>
+        <div className="grid gap-4 p-4 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,.8fr)]">
+          <div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <ProfileFact label="Queue Lane" value={selected.queue} />
+              <ProfileFact label="작업 대상" value={selected.target} />
+            </div>
+            <label className="mt-4 block text-[0.71875rem] font-semibold text-body">기본 Model
+              <select aria-label={`${selectedKey} 기본 Model`} className={control} value={selectedSettings.model} onChange={(event) => onModelChange(selectedKey, event.target.value)}>
+                {models.map((model) => <option key={model}>{model}</option>)}
+              </select>
+            </label>
+            <p className="mt-3 text-[0.6875rem] leading-5 text-muted-2">
+              LLM_OPS는 Coding Tool만, NATURAL_CMS는 CMS Tool만 구성합니다. 중앙 Guardrail Profile은 시스템 설정에서 별도로 검토합니다.
+            </p>
+          </div>
+
+          <fieldset className="rounded-md border border-line-soft bg-sub p-3">
+            <legend className="px-1 text-[0.71875rem] font-semibold text-body">허용 Tool</legend>
+            <div className="space-y-1">
+              {selected.tools.map((tool) => <label key={tool} className="flex items-center justify-between gap-3 border-b border-row-line py-2 text-[0.6875rem] last:border-b-0">
+                <code className="min-w-0 break-all font-semibold text-body">{tool}</code>
+                <input
+                  type="checkbox"
+                  aria-label={`${selectedKey} ${tool} 허용`}
+                  checked={selectedSettings.tools.includes(tool)}
+                  onChange={() => onToolToggle(selectedKey, tool)}
+                />
+              </label>)}
+            </div>
+          </fieldset>
+        </div>
+      </article>
+    </div>
+  </section>
+}
+
+function ProfileFact({ label, value }: { label: string; value: string }) {
+  return <div className="rounded-md border border-line-soft bg-sub p-3">
+    <small className="block text-[0.6875rem] text-muted-2">{label}</small>
+    <b className="mt-1 block text-[0.78125rem] font-semibold text-body">{value}</b>
+  </div>
 }
 
 function ProviderModelPanel() {
