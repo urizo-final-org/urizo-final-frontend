@@ -78,7 +78,7 @@ test('the sidebar consolidates AI model assignment under Agent settings', async 
   expect(await screen.findByRole('heading', { name: 'Agent 관리' })).toBeInTheDocument()
   const navigation = screen.getByRole('navigation', { name: '관리자 메뉴' })
   expect(within(navigation).queryByRole('button', { name: 'Agent 관리' })).not.toBeInTheDocument()
-  expect(within(navigation).getByRole('button', { name: 'Agent 설정' })).toBeInTheDocument()
+  expect(within(navigation).getByRole('button', { name: /Agent 설정/ })).toBeInTheDocument()
 })
 
 test('only a super administrator can open Agent settings', async () => {
@@ -92,6 +92,9 @@ test('only a super administrator can open Agent settings', async () => {
   expect(await screen.findByRole('heading', { name: 'Agent 설정' })).toBeInTheDocument()
   expect(screen.getByText('최고관리자 전용')).toBeInTheDocument()
   expect(screen.getByRole('tab', { name: 'Agent·Workflow' })).toHaveAttribute('aria-selected', 'true')
+  const agentSettingsItem = within(screen.getByRole('navigation', { name: '관리자 메뉴' })).getByRole('button', { name: /Agent 설정/ })
+  expect(within(agentSettingsItem).getByText('임시')).toHaveAttribute('title', '임시 목업 · 향후 필요 시 현재 Runtime 계약 기준으로 구현')
+  expect(screen.getAllByText('임시 목업').length).toBeGreaterThan(0)
 })
 
 test('a general administrator is redirected away from Agent settings', async () => {
@@ -103,7 +106,7 @@ test('a general administrator is redirected away from Agent settings', async () 
 
   render(<AppShell />)
   expect(await screen.findByRole('heading', { name: '회원 관리' })).toBeInTheDocument()
-  expect(within(screen.getByRole('navigation', { name: '관리자 메뉴' })).queryByRole('button', { name: 'Agent 설정' })).not.toBeInTheDocument()
+  expect(within(screen.getByRole('navigation', { name: '관리자 메뉴' })).queryByRole('button', { name: /Agent 설정/ })).not.toBeInTheDocument()
 })
 
 test('only a super administrator can open system settings', async () => {
@@ -116,8 +119,8 @@ test('only a super administrator can open system settings', async () => {
   render(<AppShell />)
   expect(await screen.findByRole('heading', { name: '시스템 설정' })).toBeInTheDocument()
   const navigation = screen.getByRole('navigation', { name: '관리자 메뉴' })
-  expect(within(navigation).getByRole('button', { name: '시스템 설정' })).toBeInTheDocument()
-  expect(screen.getByText('최고관리자 전용')).toBeInTheDocument()
+  expect(within(navigation).getByRole('button', { name: /시스템 설정/ })).toBeInTheDocument()
+  expect(screen.getAllByText('임시 목업').length).toBeGreaterThan(0)
 })
 
 test('a general administrator is redirected away from system settings', async () => {
@@ -130,7 +133,7 @@ test('a general administrator is redirected away from system settings', async ()
   render(<AppShell />)
   expect(await screen.findByRole('heading', { name: '회원 관리' })).toBeInTheDocument()
   const navigation = screen.getByRole('navigation', { name: '관리자 메뉴' })
-  expect(within(navigation).queryByRole('button', { name: '시스템 설정' })).not.toBeInTheDocument()
+  expect(within(navigation).queryByRole('button', { name: /시스템 설정/ })).not.toBeInTheDocument()
 })
 
 test('only a super administrator can open site management', async () => {
@@ -143,8 +146,8 @@ test('only a super administrator can open site management', async () => {
   render(<AppShell />)
   expect(await screen.findByRole('heading', { name: '사이트 관리' })).toBeInTheDocument()
   const navigation = screen.getByRole('navigation', { name: '관리자 메뉴' })
-  expect(within(navigation).getByRole('button', { name: '사이트 관리' })).toBeInTheDocument()
-  expect(screen.getByText('최고관리자 전용')).toBeInTheDocument()
+  expect(within(navigation).getByRole('button', { name: /사이트 관리/ })).toBeInTheDocument()
+  expect(screen.getAllByText('임시 목업').length).toBeGreaterThan(0)
 })
 
 test('a general administrator is redirected away from site management', async () => {
@@ -157,7 +160,7 @@ test('a general administrator is redirected away from site management', async ()
   render(<AppShell />)
   expect(await screen.findByRole('heading', { name: '회원 관리' })).toBeInTheDocument()
   const navigation = screen.getByRole('navigation', { name: '관리자 메뉴' })
-  expect(within(navigation).queryByRole('button', { name: '사이트 관리' })).not.toBeInTheDocument()
+  expect(within(navigation).queryByRole('button', { name: /사이트 관리/ })).not.toBeInTheDocument()
 })
 
 test.each([

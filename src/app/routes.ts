@@ -19,8 +19,6 @@ export interface RouteDefinition {
   mock?: true
   /** Route remains available but is omitted from the sidebar. */
   hiddenFromNavigation?: true
-  /** Count shown on the right of the nav item. */
-  count?: string
 }
 const admins: AdminRole[] = ['SUPER_ADMIN', 'GENERAL_ADMIN']
 const superAdmins: AdminRole[] = ['SUPER_ADMIN']
@@ -36,7 +34,7 @@ export const routes: RouteDefinition[] = [
   { id: 'models', path: '/admin/models', group: 'AI 운영', label: 'Agent 설정', glyph: '◧', icon: 'boxes', allowedRoles: superAdmins, mock: true },
   { id: 'rag', path: '/admin/rag', group: 'AI 운영', label: 'RAG 관리', glyph: '▩', icon: 'database', allowedRoles: admins, mock: true },
   { id: 'devops', path: '/admin/llm-devops', group: 'AI 운영', label: 'LLM DevOps', glyph: '◑', icon: 'code-2', allowedRoles: admins, mock: true },
-  { id: 'approvals', path: '/admin/approvals', group: '거버넌스', label: '승인 관리', glyph: '◍', icon: 'shield-check', allowedRoles: admins, mock: true, count: '3' },
+  { id: 'approvals', path: '/admin/approvals', group: '거버넌스', label: '승인 관리', glyph: '◍', icon: 'shield-check', allowedRoles: admins, mock: true },
   { id: 'runs', path: '/admin/runs', group: '거버넌스', label: '실행 이력', glyph: '◌', icon: 'history', allowedRoles: admins, mock: true },
   { id: 'settings', path: '/admin/settings', group: '환경', label: '설정', glyph: '⚙', icon: 'settings', allowedRoles: admins, mock: true },
   { id: 'system-settings', path: '/admin/system-settings', group: '환경', label: '시스템 설정', glyph: '◫', icon: 'sliders-horizontal', allowedRoles: superAdmins, mock: true },

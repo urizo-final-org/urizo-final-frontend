@@ -5,8 +5,10 @@ import {
 } from '../../shared/ui/primitives'
 
 type TabId = 'provider' | 'workflow' | 'profile' | 'policy' | 'usage'
-type NodeType = 'start' | 'agent' | 'tool' | 'approval' | 'check' | 'end'
+type NodeType = 'start' | 'agent' | 'tool' | 'guardrail' | 'approval' | 'check' | 'end'
 type ProfileKey = 'LLM_OPS' | 'NATURAL_CMS'
+
+const temporaryMockTitle = '임시 목업 · 향후 필요 시 현재 Runtime 계약 기준으로 구현'
 
 interface WorkflowNode {
   id: string
@@ -23,20 +25,21 @@ interface WorkflowEdge {
   to: string
 }
 
-const tabs: { id: TabId; label: string }[] = [
+const tabs: { id: TabId; label: string; temporary?: true }[] = [
   { id: 'provider', label: 'Provider·Model' },
   { id: 'workflow', label: 'Agent·Workflow' },
-  { id: 'profile', label: '자연어 기능 Profile' },
-  { id: 'policy', label: 'Tool·실행 정책' },
-  { id: 'usage', label: '사용량·평가' },
+  { id: 'profile', label: '자연어 기능 Profile', temporary: true },
+  { id: 'policy', label: 'Tool·실행 정책', temporary: true },
+  { id: 'usage', label: '사용량·평가', temporary: true },
 ]
 
 const nodeTypes: Record<NodeType, { label: string; icon: IconName; meta: string; skin: string }> = {
   start: { label: 'Start', icon: 'play', meta: '요청 시작', skin: 'bg-ok-bg text-ok-fg' },
   agent: { label: 'Agent', icon: 'bot', meta: 'Model · Tool Mapping', skin: 'bg-run-bg text-run-fg' },
-  tool: { label: 'MCP Tool', icon: 'plug', meta: '고정 Tool 실행', skin: 'bg-wait-bg text-wait-fg' },
-  approval: { label: 'Approval', icon: 'shield-check', meta: '4번과 협의 필요', skin: 'bg-[#f2ecf8] text-[#765a91]' },
-  check: { label: 'Check', icon: 'check-check', meta: '4번과 협의 필요', skin: 'bg-[#f2ecf8] text-[#765a91]' },
+  tool: { label: 'MCP Tool', icon: 'plug', meta: '실행 계약 미연결', skin: 'bg-wait-bg text-wait-fg' },
+  guardrail: { label: 'Guardrail', icon: 'shield-check', meta: 'Snapshot 잠금 계약', skin: 'bg-[#f2ecf8] text-[#765a91]' },
+  approval: { label: 'Approval', icon: 'shield-check', meta: '공통 Handler 연결 전', skin: 'bg-[#f2ecf8] text-[#765a91]' },
+  check: { label: 'Check', icon: 'check-check', meta: '공통 Handler 연결 전', skin: 'bg-[#f2ecf8] text-[#765a91]' },
   end: { label: 'End', icon: 'inbox', meta: '결과 종료', skin: 'bg-idle-bg text-idle-fg' },
 }
 
@@ -47,68 +50,45 @@ const profileCatalog: Record<ProfileKey, {
   owner: string
   queue: string
   target: string
-  tools: string[]
+  runtime: string
 }> = {
   LLM_OPS: {
     title: 'LLM Ops',
     owner: '4번 · 제한형 LLM DevOps',
     queue: 'Coding',
     target: '승인된 Source Repository',
-    tools: ['read_file', 'search_code', 'read_diff', 'apply_patch', 'run_check', 'check_package_allowlist', 'scan_changed_files'],
+    runtime: 'Profile Version 조회·Job 고정 바인딩 구현',
   },
   NATURAL_CMS: {
     title: 'Natural CMS',
     owner: '5번 · 자연어 CMS 관리',
     queue: 'Natural CMS',
     target: '기존 CMS Resource',
-    tools: ['resolve_cms_target', 'validate_cms_command', 'create_cms_preview', 'discard_cms_preview', 'revalidate_cms_preview', 'apply_cms_preview'],
+    runtime: '공통 Profile 계약만 정의 · 기능 연결 전',
   },
-}
-
-const initialProfileSettings: Record<ProfileKey, { model: string; tools: string[] }> = {
-  LLM_OPS: { model: 'Claude Sonnet', tools: ['read_file', 'search_code', 'read_diff', 'run_check'] },
-  NATURAL_CMS: { model: 'GPT-4o', tools: ['resolve_cms_target', 'validate_cms_command', 'create_cms_preview', 'revalidate_cms_preview'] },
 }
 
 const initialNodes: WorkflowNode[] = [
   { id: 'n1', type: 'start', name: 'Start', x: 24, y: 48, model: models[0], tools: [] },
-  { id: 'n2', type: 'agent', name: '요구사항 분석', x: 210, y: 48, model: 'GPT-4o', tools: ['read_file', 'search_code'] },
-  { id: 'n3', type: 'agent', name: '코드 작성', x: 396, y: 48, model: 'Claude Sonnet', tools: ['read_file', 'search_code', 'apply_patch'] },
-  { id: 'n4', type: 'tool', name: 'run_check', x: 582, y: 48, model: models[0], tools: ['run_check'] },
-  { id: 'n5', type: 'agent', name: '코드 리뷰', x: 210, y: 218, model: 'Gemini Pro', tools: ['read_diff', 'run_check'] },
-  { id: 'n6', type: 'approval', name: 'PR 승인', x: 396, y: 218, model: models[0], tools: [] },
-  { id: 'n7', type: 'check', name: '결과 점검', x: 582, y: 218, model: models[0], tools: [] },
-  { id: 'n8', type: 'end', name: 'End', x: 396, y: 388, model: models[0], tools: [] },
+  { id: 'n2', type: 'guardrail', name: '잠금 Guardrail', x: 200, y: 48, model: models[0], tools: [] },
+  { id: 'n3', type: 'check', name: '결과 Check', x: 376, y: 48, model: models[0], tools: [] },
+  { id: 'n4', type: 'approval', name: 'Approval', x: 552, y: 48, model: models[0], tools: [] },
+  { id: 'n5', type: 'end', name: 'End', x: 376, y: 218, model: models[0], tools: [] },
 ]
 
 const initialEdges: WorkflowEdge[] = [
-  { from: 'n1', to: 'n2' }, { from: 'n2', to: 'n3' }, { from: 'n3', to: 'n4' },
-  { from: 'n4', to: 'n5' }, { from: 'n5', to: 'n6' }, { from: 'n6', to: 'n7' },
-  { from: 'n7', to: 'n8' },
+  { from: 'n1', to: 'n2' }, { from: 'n2', to: 'n3' }, { from: 'n3', to: 'n4' }, { from: 'n4', to: 'n5' },
 ]
 
 const providerCards = [
-  { initial: 'O', name: 'OpenAI', model: 'GPT-4o', role: '기본 모델', key: '•••• 9A2F', skin: 'bg-run-bg text-run-fg' },
-  { initial: 'A', name: 'Anthropic', model: 'Claude Sonnet', role: '대체 모델', key: '•••• 4C71', skin: 'bg-[#f8f1ea] text-[#9a633a]' },
-  { initial: 'G', name: 'Google', model: 'Gemini Pro', role: '리뷰 모델', key: '•••• B0D3', skin: 'bg-[#f1f4f9] text-[#4a5f8a]' },
-]
-
-const initialMappings = [
-  { agent: '요구사항 분석', primary: 'GPT-4o', fallback: 'Claude Sonnet', tier: 'Balanced' },
-  { agent: '코드 작성', primary: 'Claude Sonnet', fallback: 'GPT-4o', tier: 'Quality' },
-  { agent: '코드 리뷰', primary: 'Gemini Pro', fallback: 'GPT-4o mini', tier: 'Balanced' },
-]
-
-const usage = [
-  { agent: '요구사항 분석', model: 'GPT-4o', tokens: '12.4K', calls: '42', reason: '요구 분석 기본 Model' },
-  { agent: '코드 작성', model: 'Claude Sonnet', tokens: '28.1K', calls: '31', reason: '코드 품질 우선' },
-  { agent: '코드 리뷰', model: 'Gemini Pro', tokens: '8.7K', calls: '28', reason: '리뷰 기본 Model' },
+  { initial: 'O', name: 'OpenAI', model: '모델 배치 예시', skin: 'bg-run-bg text-run-fg' },
+  { initial: 'A', name: 'Anthropic', model: '모델 배치 예시', skin: 'bg-[#f8f1ea] text-[#9a633a]' },
+  { initial: 'G', name: 'Google', model: '모델 배치 예시', skin: 'bg-[#f1f4f9] text-[#4a5f8a]' },
 ]
 
 export default function AgentSettingsWorkspace() {
   const [activeTab, setActiveTab] = useState<TabId>('workflow')
   const [selectedProfileKey, setSelectedProfileKey] = useState<ProfileKey>('LLM_OPS')
-  const [profileSettings, setProfileSettings] = useState(initialProfileSettings)
 
   function moveTabFocus(event: ReactKeyboardEvent<HTMLButtonElement>, index: number) {
     let next = index
@@ -122,30 +102,13 @@ export default function AgentSettingsWorkspace() {
     event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>('[role="tab"]')[next]?.focus()
   }
 
-  function updateProfileModel(key: ProfileKey, model: string) {
-    setProfileSettings((current) => ({ ...current, [key]: { ...current[key], model } }))
-  }
-
-  function toggleProfileTool(key: ProfileKey, tool: string) {
-    setProfileSettings((current) => {
-      const profile = current[key]
-      return {
-        ...current,
-        [key]: {
-          ...profile,
-          tools: profile.tools.includes(tool) ? profile.tools.filter((item) => item !== tool) : [...profile.tools, tool],
-        },
-      }
-    })
-  }
-
   return <>
-    <PageHead title="Agent 설정" description="Provider·Model, Agent Workflow와 실행 정책을 설정합니다.">
+    <PageHead title="Agent 설정" description="현재 Runtime 계약을 기준으로 향후 Agent 설정 화면의 범위를 확인합니다.">
       <Badge tone="run" dot={false}>최고관리자 전용</Badge>
     </PageHead>
     <div className="mb-4 flex flex-wrap items-center gap-2 rounded-md border border-[#d9e6ef] bg-[#f4f9fc] px-3 py-2 text-[0.71875rem] text-run-fg">
-      <Badge tone="run">UI/UX Mock</Badge>
-      <span>화면 편집 내용은 브라우저 로컬 상태에만 유지되며 저장·검증·실행 API를 호출하지 않습니다.</span>
+      <Badge tone="run">임시 목업</Badge>
+      <span>{temporaryMockTitle}. 저장·검증·실행 API는 호출하지 않습니다.</span>
     </div>
 
     <div className="mb-[1.125rem] flex gap-[1.375rem] overflow-x-auto border-b border-line" role="tablist" aria-label="Agent 설정 영역">
@@ -159,40 +122,36 @@ export default function AgentSettingsWorkspace() {
         className={`shrink-0 whitespace-nowrap bg-transparent px-[0.125rem] pb-[0.625rem] text-[0.8125rem] ${activeTab === tab.id ? 'font-semibold text-ink shadow-[inset_0_-2px_var(--primary)]' : 'font-medium text-muted'}`}
         onClick={() => setActiveTab(tab.id)}
         onKeyDown={(event) => moveTabFocus(event, index)}
-      >{tab.label}</button>)}
+      >
+        {tab.label}
+        {tab.temporary && <span className="ml-2 rounded border border-line bg-sub px-1 py-[0.0625rem] text-[0.5625rem] font-semibold text-muted-2" title={temporaryMockTitle}>임시</span>}
+      </button>)}
     </div>
 
     {activeTab === 'provider' && <ProviderModelPanel />}
     {activeTab === 'workflow' && <WorkflowPanel />}
     {activeTab === 'profile' && <NaturalFeatureProfilePanel
       selectedKey={selectedProfileKey}
-      settings={profileSettings}
       onSelect={setSelectedProfileKey}
-      onModelChange={updateProfileModel}
-      onToolToggle={toggleProfileTool}
     />}
     {activeTab === 'policy' && <PolicyPanel />}
     {activeTab === 'usage' && <UsagePanel />}
   </>
 }
 
-function NaturalFeatureProfilePanel({ selectedKey, settings, onSelect, onModelChange, onToolToggle }: {
+function NaturalFeatureProfilePanel({ selectedKey, onSelect }: {
   selectedKey: ProfileKey
-  settings: Record<ProfileKey, { model: string; tools: string[] }>
   onSelect: (key: ProfileKey) => void
-  onModelChange: (key: ProfileKey, model: string) => void
-  onToolToggle: (key: ProfileKey, tool: string) => void
 }) {
   const selected = profileCatalog[selectedKey]
-  const selectedSettings = settings[selectedKey]
 
   return <section id="agent-settings-panel-profile" role="tabpanel" aria-labelledby="agent-settings-tab-profile">
     <Callout tone="warn" icon="triangle-alert">
-      로컬 UI 목업이며 Profile Version 저장·활성화·검증, Spring API, LangGraph·MCP 실행을 하지 않습니다.
+      현재 구현된 Queue Lane과 Job–Profile Version 바인딩 경계만 읽기 전용으로 표시합니다. 기능별 상세 설정과 Tool은 각 담당 범위가 확정된 뒤 연결합니다.
     </Callout>
     <div className="mt-3 grid items-start gap-[0.875rem] xl:grid-cols-[18rem_minmax(0,1fr)]">
       <aside className={`${panel} overflow-hidden`} aria-label="자연어 기능 Profile 목록">
-        <PanelTitle title="Profile" sub="기능 소유 영역별 로컬 설정" />
+        <PanelTitle title="Profile" sub="기능 소유 영역별 Runtime 경계" />
         <div className="grid gap-2 p-3">
           {(Object.keys(profileCatalog) as ProfileKey[]).map((key) => {
             const profile = profileCatalog[key]
@@ -217,39 +176,14 @@ function NaturalFeatureProfilePanel({ selectedKey, settings, onSelect, onModelCh
 
       <article className={panel}>
         <PanelTitle title={`${selected.title} Profile`} sub={`${selectedKey} · ${selected.owner}`}>
-          <Badge tone="run" dot={false}>로컬 상태</Badge>
+          <Badge tone="idle" dot={false}>읽기 전용 목업</Badge>
         </PanelTitle>
-        <div className="grid gap-4 p-4 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,.8fr)]">
-          <div>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <ProfileFact label="Queue Lane" value={selected.queue} />
-              <ProfileFact label="작업 대상" value={selected.target} />
-            </div>
-            <label className="mt-4 block text-[0.71875rem] font-semibold text-body">기본 Model
-              <select aria-label={`${selectedKey} 기본 Model`} className={control} value={selectedSettings.model} onChange={(event) => onModelChange(selectedKey, event.target.value)}>
-                {models.map((model) => <option key={model}>{model}</option>)}
-              </select>
-            </label>
-            <p className="mt-3 text-[0.6875rem] leading-5 text-muted-2">
-              LLM_OPS는 Coding Tool만, NATURAL_CMS는 CMS Tool만 구성합니다. 중앙 Guardrail Profile은 시스템 설정에서 별도로 검토합니다.
-            </p>
-          </div>
-
-          <fieldset className="rounded-md border border-line-soft bg-sub p-3">
-            <legend className="px-1 text-[0.71875rem] font-semibold text-body">허용 Tool</legend>
-            <div className="space-y-1">
-              {selected.tools.map((tool) => <label key={tool} className="flex items-center justify-between gap-3 border-b border-row-line py-2 text-[0.6875rem] last:border-b-0">
-                <code className="min-w-0 break-all font-semibold text-body">{tool}</code>
-                <input
-                  type="checkbox"
-                  aria-label={`${selectedKey} ${tool} 허용`}
-                  checked={selectedSettings.tools.includes(tool)}
-                  onChange={() => onToolToggle(selectedKey, tool)}
-                />
-              </label>)}
-            </div>
-          </fieldset>
+        <div className="grid gap-3 p-4 sm:grid-cols-2 xl:grid-cols-3">
+          <ProfileFact label="Queue Lane" value={selected.queue} />
+          <ProfileFact label="작업 대상" value={selected.target} />
+          <ProfileFact label="현재 Runtime" value={selected.runtime} />
         </div>
+        <p className="border-t border-row-line px-4 py-3 text-[0.6875rem] leading-5 text-muted-2">Model·Tool·업무 규칙은 이 공통 목업에서 저장하지 않습니다.</p>
       </article>
     </div>
   </section>
@@ -263,12 +197,6 @@ function ProfileFact({ label, value }: { label: string; value: string }) {
 }
 
 function ProviderModelPanel() {
-  const [mappings, setMappings] = useState(initialMappings)
-
-  function updateMapping(index: number, key: 'primary' | 'fallback' | 'tier', value: string) {
-    setMappings((current) => current.map((mapping, mappingIndex) => mappingIndex === index ? { ...mapping, [key]: value } : mapping))
-  }
-
   return <section id="agent-settings-panel-provider" role="tabpanel" aria-labelledby="agent-settings-tab-provider">
     <div className="mb-[0.875rem] grid gap-3 md:grid-cols-3">
       {providerCards.map((provider) => <article key={provider.name} className={`${panel} p-4`}>
@@ -276,36 +204,19 @@ function ProviderModelPanel() {
           <span className={`grid h-8 w-8 place-items-center rounded-md text-xs font-bold ${provider.skin}`}>{provider.initial}</span>
           <span className="min-w-0 flex-1">
             <b className="block text-[0.8125rem] font-semibold">{provider.name}</b>
-            <small className="block text-[0.6875rem] text-muted-2">{provider.model} · {provider.role}</small>
+            <small className="block text-[0.6875rem] text-muted-2">{provider.model}</small>
           </span>
-          <Badge tone="ok">연결됨</Badge>
-        </div>
-        <div className="mt-3 flex items-center justify-between border-t border-row-line pt-3 text-[0.71875rem] text-muted">
-          <span>API Key</span><b className="font-mono font-medium text-body">{provider.key}</b>
+          <Badge tone="idle" dot={false}>임시</Badge>
         </div>
       </article>)}
     </div>
 
     <section className={panel}>
-      <PanelTitle title="3-Agent Model Mapping" sub="변경값은 현재 화면의 로컬 상태에만 반영됩니다." />
-      <div className="overflow-x-auto">
-        <div className="min-w-[47rem]">
-          <div className="grid grid-cols-[1.2fr_1fr_1fr_.8fr] gap-3 border-b border-line-soft bg-sub px-4 py-2 text-[0.6875rem] font-semibold text-muted-2">
-            <span>Agent</span><span>기본 Model</span><span>대체 Model</span><span>Tier</span>
-          </div>
-          {mappings.map((mapping, index) => <div key={mapping.agent} className="grid grid-cols-[1.2fr_1fr_1fr_.8fr] items-center gap-3 border-b border-row-line px-4 py-3">
-            <b className="text-[0.78125rem] font-semibold">{mapping.agent}</b>
-            <select aria-label={`${mapping.agent} 기본 Model`} className={`${control} mt-0`} value={mapping.primary} onChange={(event) => updateMapping(index, 'primary', event.target.value)}>
-              {models.map((model) => <option key={model}>{model}</option>)}
-            </select>
-            <select aria-label={`${mapping.agent} 대체 Model`} className={`${control} mt-0`} value={mapping.fallback} onChange={(event) => updateMapping(index, 'fallback', event.target.value)}>
-              {models.map((model) => <option key={model}>{model}</option>)}
-            </select>
-            <select aria-label={`${mapping.agent} Model Tier`} className={`${control} mt-0`} value={mapping.tier} onChange={(event) => updateMapping(index, 'tier', event.target.value)}>
-              {['Balanced', 'Quality', 'Fast'].map((tier) => <option key={tier}>{tier}</option>)}
-            </select>
-          </div>)}
-        </div>
+      <PanelTitle title="Provider·Model 연결" sub="실제 연결 상태 API는 아직 없습니다.">
+        <Badge tone="wait" dot={false}>Runtime 연결 전</Badge>
+      </PanelTitle>
+      <div className="p-4 text-[0.71875rem] leading-6 text-muted-2">
+        Provider Key, 연결 상태, Agent별 Model 배치는 실제 Backend 계약이 생긴 뒤 구현합니다. 이 화면은 Provider 후보를 인지하기 위한 임시 목업입니다.
       </div>
     </section>
   </section>
@@ -317,7 +228,7 @@ function WorkflowPanel() {
   const [selectedId, setSelectedId] = useState('n2')
   const [connectFrom, setConnectFrom] = useState<string | null>(null)
   const [status, setStatus] = useState('Node를 선택하거나 Palette에서 추가하세요.')
-  const nextId = useRef(9)
+  const nextId = useRef(6)
   const drag = useRef<{ id: string; pointerX: number; pointerY: number; x: number; y: number; moved: boolean } | null>(null)
   const ignoreClick = useRef<string | null>(null)
   const selected = nodes.find((node) => node.id === selectedId) ?? null
@@ -406,7 +317,7 @@ function WorkflowPanel() {
 
   return <section id="agent-settings-panel-workflow" role="tabpanel" aria-labelledby="agent-settings-tab-workflow">
     <Callout tone="warn" icon="triangle-alert">
-      Pipeline 단계 의미와 Approval·Check·Guardrail 적용 시점은 <b>4번과 협의 필요</b>합니다. 편집 결과는 저장하거나 실행하지 않습니다.
+      현재 Snapshot Node 유형을 기준으로 한 공통 실행 골격입니다. Approval·Check 공통 Handler와 MCP 실행은 아직 production Runtime에 연결되지 않았으며, 편집 결과는 저장하거나 실행하지 않습니다.
     </Callout>
     <div className={`${panel} mt-3 grid min-h-[39rem] overflow-hidden xl:grid-cols-[13rem_minmax(0,1fr)_17rem]`}>
       <aside className="border-b border-line-soft bg-sub p-4 xl:border-b-0 xl:border-r" aria-label="Node Palette">
@@ -421,12 +332,12 @@ function WorkflowPanel() {
             </button>
           })}
         </div>
-        <div className="mt-4"><Badge tone="wait" dot={false}>4번과 협의 필요</Badge></div>
+        <div className="mt-4"><Badge tone="wait" dot={false}>임시 목업</Badge></div>
       </aside>
 
       <div className="min-w-0 bg-[#f8fafc]">
         <div className="flex flex-wrap items-center gap-2 border-b border-line-soft bg-white px-4 py-3">
-          <b className="text-[0.8125rem] font-semibold">LLM DevOps Pipeline</b>
+          <b className="text-[0.8125rem] font-semibold">공통 Runtime 골격</b>
           <Tag>Drag &amp; Drop</Tag><Tag>로컬 상태</Tag>
           <span className="ml-auto text-[0.6875rem] text-muted-2">Node {nodes.length} · 연결 {edges.length}</span>
         </div>
@@ -517,7 +428,8 @@ function WorkflowPanel() {
             </select>
           </label>}
 
-          {(selected.type === 'approval' || selected.type === 'check') && <div className="mt-3"><Badge tone="wait" dot={false}>4번과 협의 필요</Badge></div>}
+          {(selected.type === 'approval' || selected.type === 'check') && <div className="mt-3"><Badge tone="wait" dot={false}>공통 Handler 연결 전</Badge></div>}
+          {selected.type === 'guardrail' && <div className="mt-3"><Badge tone="idle" dot={false}>Snapshot 잠금 계약</Badge></div>}
 
           <div className="mt-4 grid gap-2">
             <button type="button" className={connectFrom === selected.id ? secondaryButton : primaryButton} onClick={() => {
@@ -553,80 +465,54 @@ function WorkflowPanel() {
 }
 
 function PolicyPanel() {
-  const [tools, setTools] = useState<Record<string, boolean>>({ read_file: true, search_code: true, apply_patch: false, read_diff: true, run_check: true })
-  const [guardrails, setGuardrails] = useState<Record<string, boolean>>({ '작업 경로 제한': true, '보호 파일 제한': true, 'Package 허용 목록': false, 'Agent별 Tool 허용 목록': true, 'Secret 노출 차단': true })
-
   return <section id="agent-settings-panel-policy" role="tabpanel" aria-labelledby="agent-settings-tab-policy">
-    <div className="grid items-start gap-[0.875rem] xl:grid-cols-3">
-      <article className={panel}>
-        <PanelTitle title="OmniRoute"><Badge tone="wait" dot={false}>향후 적용 예정</Badge></PanelTitle>
-        <div className="p-4">
-          <label className="flex items-center justify-between gap-3 text-xs font-semibold text-body">Routing ON/OFF
-            <input type="checkbox" disabled aria-label="OmniRoute 비활성 목업" />
-          </label>
-          <p className="mt-3 text-[0.71875rem] leading-6 text-muted-2">실제 Model Switching·Token 압축은 연결하지 않습니다.</p>
-        </div>
-      </article>
-
-      <article className={panel}>
-        <PanelTitle title="고정 MCP Tool" sub="Agent별 허용 여부의 로컬 목업" />
-        <div className="p-4">
-          {fixedTools.map((tool) => <label key={tool} className="flex items-center justify-between gap-3 border-b border-row-line py-[0.625rem] text-xs">
-            <code className="font-semibold text-body">{tool}</code>
-            <input type="checkbox" checked={tools[tool]} onChange={() => setTools((current) => ({ ...current, [tool]: !current[tool] }))} />
-          </label>)}
-          <div className="mt-3"><Badge tone="wait" dot={false}>실행 조건은 4번과 협의 필요</Badge></div>
-        </div>
-      </article>
-
-      <div className="flex flex-col gap-[0.875rem]">
-        <article className={panel}>
-          <PanelTitle title="최소 Guardrail"><Badge tone="wait" dot={false}>4번과 협의 필요</Badge></PanelTitle>
-          <div className="p-4">
-            {Object.entries(guardrails).map(([name, enabled]) => <label key={name} className="flex items-center justify-between gap-3 border-b border-row-line py-[0.625rem] text-xs text-body">
-              <span>{name}</span><input type="checkbox" checked={enabled} onChange={() => setGuardrails((current) => ({ ...current, [name]: !current[name] }))} />
-            </label>)}
-          </div>
-        </article>
-        <article className={panel}>
-          <PanelTitle title="Local Executor" />
-          <div className="flex items-center justify-between gap-3 p-4 text-xs"><span>Coding Executor Container</span><Badge tone="ok">Mock 정상</Badge></div>
-          <p className="px-4 pb-4 text-[0.6875rem] text-muted-2">실제 Container 상태 조회와 LangGraph 실행은 연결하지 않습니다.</p>
-        </article>
-      </div>
+    <Callout tone="warn" icon="triangle-alert">
+      상세 Tool·보안 정책 편집 화면을 제공하지 않습니다. 현재 production Runtime에서 확인되는 공통 계약과 미연결 범위만 표시합니다.
+    </Callout>
+    <div className="mt-3 grid items-stretch gap-[0.875rem] xl:grid-cols-3">
+      <RuntimeStatusCard
+        title="Job·Queue·Snapshot"
+        tone="ok"
+        state="구현됨"
+        description="Spring Job이 Profile Version을 고정하고 Queue에는 jobId만 전달합니다. Runner는 고정 Snapshot을 조회합니다."
+      />
+      <RuntimeStatusCard
+        title="Approval·Check·Guardrail"
+        tone="wait"
+        state="연결 전"
+        description="Snapshot 유형과 잠금 Guardrail 계약은 있으나 공통 production Handler 연결은 후속 작업입니다."
+      />
+      <RuntimeStatusCard
+        title="MCP Tool 실행"
+        tone="idle"
+        state="미구현"
+        description="Repository·Tool 실연동과 실행 정책 UI는 기능 담당 계약이 확정된 뒤 구현합니다."
+      />
     </div>
   </section>
+}
+
+function RuntimeStatusCard({ title, tone, state, description }: {
+  title: string
+  tone: 'ok' | 'wait' | 'idle'
+  state: string
+  description: string
+}) {
+  return <article className={panel}>
+    <PanelTitle title={title}><Badge tone={tone} dot={tone !== 'idle'}>{state}</Badge></PanelTitle>
+    <p className="p-4 text-[0.71875rem] leading-6 text-muted-2">{description}</p>
+  </article>
 }
 
 function UsagePanel() {
   return <section id="agent-settings-panel-usage" role="tabpanel" aria-labelledby="agent-settings-tab-usage">
-    <div className="mb-[0.875rem] grid gap-3 md:grid-cols-3">
-      {usage.map((item) => <article key={item.agent} className={`${panel} p-4`}>
-        <div className="flex items-center gap-2"><Icon name="bot" className="text-run-fg" /><b className="text-[0.8125rem] font-semibold">{item.agent}</b><Badge tone="ok">정상</Badge></div>
-        <p className="mt-3 text-xs font-semibold">{item.model} · {item.tokens} Token</p>
-        <p className="mt-1 text-[0.6875rem] text-muted-2">호출 {item.calls}회 · {item.reason}</p>
-      </article>)}
-    </div>
-    <div className="grid gap-[0.875rem] xl:grid-cols-2">
-      <article className={panel}>
-        <PanelTitle title="RAGAS 참고 평가" sub="Pipeline Gate로 사용하지 않는 Mock 점수" />
-        <div className="grid grid-cols-2 gap-3 p-4">
-          <Metric label="AgentGoalAccuracy" value="0.86" />
-          <Metric label="ToolCallAccuracy" value="0.92" />
-        </div>
-        <div className="px-4 pb-4"><Badge tone="wait" dot={false}>Gate 전환은 4번과 협의 필요</Badge></div>
-      </article>
-      <article className={panel}>
-        <PanelTitle title="Langfuse Monitoring"><Badge tone="wait" dot={false}>향후 적용 예정</Badge></PanelTitle>
-        <div className="p-4 text-[0.71875rem] leading-6 text-muted-2">Trace, 비용, 지연시간 Monitoring은 현재 연결하지 않습니다. 향후 FOSS Self-host PoC 후보로만 표시합니다.</div>
-      </article>
+    <Callout tone="warn" icon="triangle-alert">
+      현재 사용량·평가·Trace 조회 API가 없어 수치나 품질 점수를 표시하지 않습니다.
+    </Callout>
+    <div className="grid items-start gap-[0.875rem] xl:grid-cols-3">
+      <RuntimeStatusCard title="사용량" tone="idle" state="API 없음" description="Token·호출 횟수 집계 계약이 생기면 실제 Job 기준으로 연결합니다." />
+      <RuntimeStatusCard title="평가" tone="idle" state="API 없음" description="품질 지표와 Gate는 기능 담당 요구가 확정된 뒤 별도 Work로 정의합니다." />
+      <RuntimeStatusCard title="관측" tone="idle" state="API 없음" description="Trace·비용·지연시간 도구는 현재 공통 Runtime 범위에 포함하지 않습니다." />
     </div>
   </section>
-}
-
-function Metric({ label, value }: { label: string; value: string }) {
-  return <div className="rounded-md border border-line-soft bg-sub p-3">
-    <small className="block text-[0.6875rem] text-muted-2">{label}</small>
-    <b className="mt-1 block text-xl font-semibold tracking-[-.02em]">{value}</b>
-  </div>
 }
