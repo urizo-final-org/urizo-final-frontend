@@ -96,7 +96,7 @@ function Home({ template, notices }: { template: SiteTemplate; notices: Post[] }
   </main>
 }
 
-function Hero({ template }: { template: SiteTemplate }) {
+export function Hero({ template }: { template: SiteTemplate }) {
   if (template.layout === 'MINIMAL') return <section className="bg-[#fbfcfa]" aria-label="MINIMAL 템플릿 메인">
     <div className="mx-auto grid max-w-[77.5rem] items-center gap-[3.75rem] px-5 pb-20 pt-[4.6875rem] md:grid-cols-2">
       <div className="max-w-[33.75rem]"><p className="mb-3 text-[0.625rem] font-bold tracking-[.14em] text-[var(--brand)]">MINIMAL TEMPLATE</p><h1 className="m-0 text-[clamp(2.1rem,4.2vw,2.875rem)] font-medium leading-[1.2] tracking-[-.07em]">{template.heroTitle}</h1><p className="mb-6 mt-4 text-[0.8125rem] leading-[1.8] text-[#789094]">{template.heroSubtitle}</p><Link className="inline-flex items-center gap-2 rounded-[0.3125rem] px-5 py-3 text-xs font-bold text-white no-underline" style={{ background: template.primaryColor }} to={template.heroButtonUrl}>{template.heroButtonLabel}<span>→</span></Link></div>
@@ -117,13 +117,13 @@ function Hero({ template }: { template: SiteTemplate }) {
   </section>
 }
 
-function SubPage({ menu, menus, board, content, posts, post, failure }: { menu?: Menu; menus: Menu[]; board: Board | null | undefined; content: Article | null; posts: Post[]; post: Post | null; failure: string | null }) {
+export function SubPage({ menu, menus, board, content, posts, post, failure }: { menu?: Menu; menus: Menu[]; board: Board | null | undefined; content: Article | null; posts: Post[]; post: Post | null; failure: string | null }) {
   const title = post?.title ?? content?.title ?? board?.name ?? menu?.name ?? '페이지를 찾을 수 없습니다'
   const children = menu ? menus.filter((item) => item.parentId === menu.id) : []
   return <main><section className="bg-[linear-gradient(135deg,#2a5f61,#4d9997)] px-5 py-[3.75rem] text-white"><div className="mx-auto max-w-[68.75rem]"><p className="mb-2 text-[0.625rem] font-bold tracking-[.14em] text-white/55">AX BIO STUDIO</p><h1 className="m-0 text-[clamp(1.9rem,4vw,2.5rem)] font-medium tracking-[-.06em]">{title}</h1></div></section><div className="mx-auto min-h-[30rem] max-w-[68.75rem] px-5 py-14">{failure && <p className="flex items-start gap-2 rounded-[0.3125rem] border border-[#f2d5d3] bg-[#fdebea] p-4 text-xs leading-5 text-[#b4615d]" role="alert"><span aria-hidden="true">⚠</span>{failure}</p>}{content && <article className="mx-auto max-w-[53.125rem]"><RichText body={content.body} /></article>}{post && <article className="mx-auto max-w-[53.125rem]"><p className="border-b border-[#e4ece9] pb-4 text-[0.6875rem] text-[#849597]">{date(post.createdAt)} · {post.authorName}</p><RichText body={post.body} /></article>}{board && <section><p className="mb-7 text-[0.8125rem] leading-[1.8] text-[#6a8184]">{board.description}</p><div className="border-t-2 border-[#2a5f61]">{posts.map((item, index) => <Link className="grid grid-cols-[3.75rem_1fr_auto] items-center gap-4 border-b border-[#e4ece9] px-3 py-[1.125rem] text-inherit no-underline hover:bg-[#f7fbfa]" key={item.id} to={`/posts/${item.id}`}><span className="text-center text-[0.6875rem] text-[#9aa8a9]">{posts.length - index}</span><strong className="text-[0.8125rem]">{item.title}</strong><span className="text-[0.6875rem] text-[#9aa8a9]">{date(item.createdAt)}</span></Link>)}{posts.length === 0 && <p className="border-b border-[#e4ece9] py-14 text-center text-[0.6875rem] text-[#9aa8a9]">등록된 게시물이 없습니다.</p>}</div></section>}{children.length > 0 && <div className="grid gap-[1.125rem] md:grid-cols-2">{children.map((child) => <Link className="border border-[#e2ebe8] bg-white p-6 text-inherit no-underline hover:border-[var(--brand)]" key={child.id} to={child.path}><span className="text-[0.625rem] font-bold tracking-[.14em] text-[var(--brand)]">{child.targetType === 'BOARD' ? 'BOARD' : 'PAGE'}</span><h2 className="mb-2 mt-3 text-lg tracking-[-.03em]">{child.name}</h2><p className="m-0 text-[0.6875rem] text-[#599793]">자세히 보기 →</p></Link>)}</div>}{!content && !board && !post && children.length === 0 && !failure && <p className="py-16 text-center text-[0.6875rem] text-[#9aa8a9]">연결된 페이지가 없습니다.</p>}</div></main>
 }
 
-function RichText({ body }: { body: string }) {
+export function RichText({ body }: { body: string }) {
   return <div className="text-[1rem] leading-8 text-[#4a6167]">{body.split('\n').map((line, index) => {
     if (line.startsWith('## ')) return <h2 className="mb-4 mt-9 text-[1.5625rem] tracking-[-.05em] text-[#263e48]" key={index}>{inline(line.slice(3))}</h2>
     if (line.startsWith('- ')) return <div className="my-2 flex gap-3" key={index}><span className="text-[var(--brand)]">●</span><span>{inline(line.slice(2))}</span></div>
