@@ -12,6 +12,8 @@ import { Icon } from '../shared/ui/icons'
 import { AppNavigation } from './navigation'
 import { defaultRouteForRole, groupForRoute, isCmsRouteId, labelForRoute, pathForRoute, routeIdForPath, routes, routesForRole, type RouteId } from './routes'
 
+const temporaryMockTitle = '임시 목업 · 향후 필요 시 현재 Runtime 계약 기준으로 구현'
+
 export default function AppShell() {
   return <BrowserRouter><AppEntry /></BrowserRouter>
 }
@@ -134,8 +136,8 @@ function AuthenticatedAdmin({ session, onRefresh, onExpired, onSignOut }: {
           />
           <span className="rounded-[0.1875rem] border border-[#e2e7ed] bg-white px-1 text-[0.625rem] text-muted-4">⌘K</span>
         </div>
-        {onMockScreen && <span className="inline-flex items-center gap-[0.3125rem] rounded border border-[#d9e6ef] bg-[#f2f8fc] px-2 py-[0.1875rem] text-[0.65625rem] font-semibold text-[#2c6d94] max-[720px]:hidden">
-          <i className="block h-[0.3125rem] w-[0.3125rem] rounded-full bg-run-dot" aria-hidden="true" />MOCK 데이터
+        {onMockScreen && <span className="inline-flex items-center gap-[0.3125rem] rounded border border-[#d9e6ef] bg-[#f2f8fc] px-2 py-[0.1875rem] text-[0.65625rem] font-semibold text-[#2c6d94] max-[720px]:hidden" title={temporaryMockTitle}>
+          <i className="block h-[0.3125rem] w-[0.3125rem] rounded-full bg-run-dot" aria-hidden="true" />임시 목업
         </span>}
         <div className="flex items-center gap-3 text-muted max-[720px]:hidden">
           <Icon name="bell" size={16} />

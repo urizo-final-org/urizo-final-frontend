@@ -2,8 +2,8 @@ import { useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import type { OpsRouteId } from '../../app/routes'
 import { Icon, type IconName } from '../../shared/ui/icons'
 import {
-  Badge, Callout, EmptyState, FilterChip, PageHead, Pagination, PanelTitle, SearchField, Tabs, Tag,
-  control, fieldLabel, panel, primaryButton, secondaryButton, smallButton, type Tone,
+  Badge, Callout, FilterChip, PageHead, Pagination, PanelTitle, SearchField, Tabs, Tag,
+  control, panel, primaryButton, secondaryButton, smallButton, type Tone,
 } from '../../shared/ui/primitives'
 
 /**
@@ -33,136 +33,21 @@ function MockNote({ children }: { children: string }) {
 
 /* ------------------------------------------------------------------ 홈 */
 
-const stats: { icon: IconName; label: string; value: string; unit: string; delta: string; deltaClass: string }[] = [
-  { icon: 'activity', label: '오늘 실행', value: '14', unit: '건', delta: '성공 11 · 진행 2 · 실패 1', deltaClass: 'text-muted' },
-  { icon: 'shield-check', label: '승인 대기', value: '3', unit: '건', delta: '가장 오래된 요청 · 2시간 전', deltaClass: 'text-wait-fg' },
-  { icon: 'database', label: 'RAG 활성 버전', value: 'v3', unit: 'Tour-RAG', delta: 'Recall@5 91.3% · 실패 질문 4', deltaClass: 'text-ok-fg' },
-  { icon: 'boxes', label: '등록 모델', value: '18', unit: '개', delta: 'Provider 3곳 · Agent 배치 3개', deltaClass: 'text-muted' },
-]
-
-const recentRuns: { icon: IconName; title: string; id: string; agent: string; dur: string; at: string; tone: Tone; state: string }[] = [
-  { icon: 'code-2', title: '관광지 목록 필터 기능 추가', id: 'TOUR-2026-031', agent: 'Agent 1 · OpenAI', dur: '00:04:12', at: '14:32', tone: 'wait', state: '승인 대기' },
-  { icon: 'database', title: 'Tour-RAG v3 임베딩 빌드', id: 'RAG-2026-118', agent: 'Build · pgvector', dur: '00:21:47', at: '13:05', tone: 'ok', state: '성공' },
-  { icon: 'file-text', title: '서울 전통문화 명소 메뉴 추가', id: 'CMS-2026-402', agent: 'Natural CMS', dur: '00:00:38', at: '11:49', tone: 'ok', state: '완료' },
-  { icon: 'network', title: '축제·행사 상세 레이아웃 개선', id: 'TOUR-2026-030', agent: 'Agent 2 · Anthropic', dur: '00:07:02', at: '10:11', tone: 'run', state: '진행' },
-  { icon: 'code-2', title: '음식점 목록 정렬 오류 수정', id: 'TOUR-2026-029', agent: 'Agent 3 · Google', dur: '00:02:55', at: '09:26', tone: 'fail', state: '실패' },
-]
-
-const chart = [['월', 62, 10, 0], ['화', 78, 14, 8], ['수', 54, 8, 0], ['목', 92, 12, 6], ['금', 70, 18, 0], ['토', 34, 6, 0], ['일', 46, 10, 5]] as const
-
-const pending = [
-  { title: '관광지 목록 필터 기능 추가', meta: 'LLM DevOps · Agent 1 분석 결과', at: '2시간 전' },
-  { title: '서울 전통문화 명소 메뉴 추가', meta: '자연어 CMS · 메뉴 관리', at: '4시간 전' },
-  { title: 'Tour-RAG v3 활성 버전 전환', meta: 'RAG 관리 · 버전 전환', at: '어제' },
-]
-
-const summary: { icon: IconName; label: string; value: string }[] = [
-  { icon: 'bot', label: '활성 Agent', value: '3 / 4' },
-  { icon: 'boxes', label: '연결된 Provider', value: '3곳' },
-  { icon: 'file-text', label: '이번 주 CMS 변경', value: '12건' },
-  { icon: 'repeat', label: '재작업 발생', value: '1 / 3회' },
-]
-
-const runsColumns = 'grid-cols-[1.7fr_1fr_.9fr_.9fr_.8fr]'
-
 function Home({ actorName }: { actorName: string }) {
   return <>
-    <PageHead title={`안녕하세요, ${actorName}님`} description="AX Module Studio의 Agent, RAG, 자연어 CMS, LLM DevOps 운영 현황입니다.">
-      <button className={secondaryButton}><Icon name="history" />실행 이력</button>
-      <button className={primaryButton}><Icon name="plus" />새 작업 요청</button>
+    <PageHead title={`안녕하세요, ${actorName}님`} description="현재 CMS와 AI Runtime의 연결 범위를 확인합니다.">
+      <Badge tone="run" dot={false}>임시 목업</Badge>
     </PageHead>
-    <MockNote>이 화면의 모든 수치는 정적 데모 데이터입니다. 실제 API를 호출하지 않습니다.</MockNote>
+    <RuntimeMockNotice>운영 통계·승인 목록·최근 실행 조회 API가 없어 가짜 수치를 표시하지 않습니다.</RuntimeMockNotice>
 
-    <div className={`${grid} mb-[0.875rem] sm:grid-cols-2 xl:grid-cols-4`}>
-      {stats.map((stat) => <div key={stat.label} className={`${panel} px-4 py-[0.9375rem]`}>
-        <div className="flex items-center gap-[0.4375rem] text-[0.71875rem] font-semibold text-muted">
-          <Icon name={stat.icon} className="text-muted-2" />{stat.label}
-        </div>
-        <div className="mt-[0.6875rem] flex items-end gap-[0.4375rem]">
-          <b className="text-[1.5625rem] font-semibold leading-none tracking-[-.03em]">{stat.value}</b>
-          <span className="pb-[0.125rem] text-[0.6875rem] text-muted-2">{stat.unit}</span>
-        </div>
-        <div className={`mt-[0.625rem] border-t border-[#f0f2f5] pt-[0.625rem] text-[0.6875rem] ${stat.deltaClass}`}>{stat.delta}</div>
-      </div>)}
-    </div>
-
-    <div className="grid items-start gap-[0.875rem] xl:grid-cols-[minmax(0,1fr)_21.25rem]">
-      <div className="flex min-w-0 flex-col gap-[0.875rem]">
-        <section className={panel}>
-          <PanelTitle title="최근 실행" sub="오케스트레이션 · LLM DevOps · RAG Build">
-            <button className="bg-transparent text-[0.71875rem] font-semibold text-link">전체 보기</button>
-          </PanelTitle>
-          <div className="overflow-x-auto">
-            <div className="min-w-[42.5rem]">
-              <div className={`${headRow} ${runsColumns}`}>
-                <span>작업</span><span>Agent · 모델</span><span>상태</span><span>소요</span><span className="text-right">시작</span>
-              </div>
-              {recentRuns.map((run) => <div key={run.id} className={`${bodyRow} ${runsColumns}`}>
-                <span className="flex min-w-0 items-center gap-2">
-                  <Icon name={run.icon} className="text-muted-2" />
-                  <span className="min-w-0">
-                    <b className="block truncate text-[0.78125rem] font-semibold text-ink">{run.title}</b>
-                    <small className="block font-mono text-[0.65625rem] text-muted-3">{run.id}</small>
-                  </span>
-                </span>
-                <span className="truncate">{run.agent}</span>
-                <span><Badge tone={run.tone}>{run.state}</Badge></span>
-                <span className="font-mono text-[0.71875rem]">{run.dur}</span>
-                <span className="text-right text-[0.71875rem] text-muted-2">{run.at}</span>
-              </div>)}
-            </div>
-          </div>
-        </section>
-
-        <section className={panel}>
-          <PanelTitle title="주간 실행 현황" sub="최근 7일 · 정적 Mock 데이터">
-            <div className="flex items-center gap-3 text-[0.6875rem] text-muted max-[560px]:hidden">
-              <span className="inline-flex items-center gap-[0.3125rem]"><i className="block h-2 w-2 rounded-sm bg-run-fg" />성공</span>
-              <span className="inline-flex items-center gap-[0.3125rem]"><i className="block h-2 w-2 rounded-sm bg-wait-dot" />대기</span>
-              <span className="inline-flex items-center gap-[0.3125rem]"><i className="block h-2 w-2 rounded-sm bg-[#d18d86]" />실패</span>
-            </div>
-          </PanelTitle>
-          <div className="flex h-[10.625rem] items-end gap-[1.125rem] px-[1.125rem] pb-[0.625rem] pt-5">
-            {chart.map(([day, ok, wait, fail]) => <div key={day} className="flex h-full flex-1 flex-col items-center justify-end gap-2">
-              <div className="flex h-full w-full max-w-[2.75rem] flex-col justify-end gap-[0.125rem]">
-                <div className="rounded-t-sm bg-[#d18d86]" style={{ height: `${fail}%` }} />
-                <div className="bg-wait-dot" style={{ height: `${wait}%` }} />
-                <div className="rounded-b-sm bg-run-fg" style={{ height: `${ok}%` }} />
-              </div>
-              <small className="text-[0.65625rem] text-muted-3">{day}</small>
-            </div>)}
-          </div>
-        </section>
+    <section className={panel}>
+      <PanelTitle title="현재 연결 상태" sub="실제 저장·실행 계약 기준" />
+      <div className="grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-3">
+        <RuntimeFact label="CMS 관리 API" state="연결됨" tone="ok" description="회원·메뉴·컨텐츠·게시판·템플릿은 실제 CMS API를 사용합니다." />
+        <RuntimeFact label="AI Job Runtime" state="Backend 구현" tone="ok" description="Job·Queue·Profile Version·Snapshot Runner 계약이 구현되어 있습니다." />
+        <RuntimeFact label="운영 현황 조회" state="API 없음" tone="idle" description="통계·최근 실행·승인 목록은 조회 계약이 생긴 뒤 실제 데이터로 구현합니다." />
       </div>
-
-      <div className="flex flex-col gap-[0.875rem]">
-        <section className={panel}>
-          <PanelTitle title="승인 대기" sub="일반관리자 확인이 필요한 항목" />
-          {pending.map((item) => <div key={item.title} className="border-b border-row-line px-4 py-3">
-            <div className="flex items-center gap-[0.4375rem]">
-              <Badge tone="wait">승인 대기</Badge>
-              <small className="ml-auto text-[0.65625rem] text-muted-3">{item.at}</small>
-            </div>
-            <b className="mt-[0.4375rem] block text-[0.78125rem] font-semibold">{item.title}</b>
-            <small className="mt-[0.1875rem] block text-[0.6875rem] text-muted-2">{item.meta}</small>
-          </div>)}
-          <div className="px-4 py-3">
-            <button className={`${secondaryButton} h-[1.875rem] w-full justify-center text-[0.71875rem]`}>승인 관리로 이동</button>
-          </div>
-        </section>
-
-        <section className={panel}>
-          <PanelTitle title="운영 요약" />
-          <div className="px-4 pb-[0.875rem] pt-[0.375rem]">
-            {summary.map((item) => <div key={item.label} className="flex items-center gap-[0.625rem] border-b border-row-line py-[0.625rem] text-xs">
-              <Icon name={item.icon} className="text-muted-2" />
-              <span className="flex-1 text-body">{item.label}</span>
-              <b className="font-semibold">{item.value}</b>
-            </div>)}
-          </div>
-        </section>
-      </div>
-    </div>
+    </section>
   </>
 }
 
@@ -561,142 +446,64 @@ function Devops() {
 
 /* ------------------------------------------------------------------ 승인 관리 */
 
-const approvals = [
-  { title: '관광지 목록 필터 기능 추가', id: 'TOUR-2026-031', kind: 'LLM DevOps', by: '이은지', at: '오늘 14:32' },
-  { title: '서울 전통문화 명소 메뉴 추가', id: 'CMS-2026-402', kind: '자연어 CMS', by: '이은지', at: '오늘 11:49' },
-  { title: 'Tour-RAG v3 활성 버전 전환', id: 'RAG-2026-118', kind: 'RAG 관리', by: '김한빛', at: '어제 17:20' },
-  { title: '음식점 목록 정렬 오류 수정 재작업', id: 'TOUR-2026-029', kind: 'LLM DevOps', by: '이은지', at: '어제 09:26' },
-]
+const temporaryMockTitle = '임시 목업 · 향후 필요 시 현재 Runtime 계약 기준으로 구현'
 
-const approvalColumns = 'grid-cols-[1.8fr_1fr_.9fr_.9fr_10rem]'
+function RuntimeMockNotice({ children }: { children: string }) {
+  return <div className="mb-4 flex flex-wrap items-center gap-2 rounded-md border border-[#d9e6ef] bg-[#f4f9fc] px-3 py-2 text-[0.71875rem] text-run-fg">
+    <Badge tone="run">임시 목업</Badge>
+    <span>{children}</span>
+  </div>
+}
+
+function RuntimeFact({ label, state, tone, description }: {
+  label: string
+  state: string
+  tone: 'ok' | 'wait' | 'idle'
+  description: string
+}) {
+  return <article className="rounded-md border border-line-soft bg-sub p-4">
+    <div className="flex items-start gap-3">
+      <b className="min-w-0 flex-1 text-[0.78125rem] font-semibold text-body">{label}</b>
+      <Badge tone={tone} dot={tone !== 'idle'}>{state}</Badge>
+    </div>
+    <p className="mt-3 text-[0.6875rem] leading-5 text-muted-2">{description}</p>
+  </article>
+}
 
 function Approvals() {
   return <>
-    <PageHead title="승인 관리" description="Agent 실행과 CMS 변경 요청의 승인·반려 이력을 확인합니다." />
-    <MockNote>정적 데모 화면입니다. 승인·반려 버튼은 아직 동작하지 않습니다.</MockNote>
-
-    <Tabs items={[{ label: '승인 대기', count: '3' }, { label: '승인 완료', count: '24' }, { label: '반려', count: '0' }, { label: '전체', count: '27' }]} active={0} />
-
-    <section className={`${panel} mb-[0.875rem]`}>
-      <div className="flex flex-wrap items-center gap-[0.625rem] border-b border-line-soft px-4 py-3">
-        <SearchField placeholder="요청 제목, 요청자, 작업 ID 검색" className="min-w-[15rem] max-w-[25rem] flex-1" />
-        {['유형 전체', '요청자 전체', '최근 30일'].map((label, index) => <FilterChip key={label} label={label} active={index === 0} />)}
-      </div>
-      <div className="overflow-x-auto">
-        <div className="min-w-[52.5rem]">
-          <div className={`${headRow} ${approvalColumns}`}>
-            <span>요청</span><span>유형</span><span>요청자</span><span>요청일</span><span className="text-right">처리</span>
-          </div>
-          {approvals.map((item) => <div key={item.id} className={`${bodyRow} ${approvalColumns}`}>
-            <span className="min-w-0">
-              <b className="block truncate text-[0.78125rem] font-semibold text-ink">{item.title}</b>
-              <small className="block font-mono text-[0.65625rem] text-muted-3">{item.id}</small>
-            </span>
-            <span><Tag>{item.kind}</Tag></span>
-            <span>{item.by}</span>
-            <span className="text-[0.71875rem] text-muted-2">{item.at}</span>
-            <span className="flex justify-end gap-[0.4375rem]">
-              <button className={smallButton}>반려</button>
-              <button className="inline-flex h-7 items-center rounded-[0.3125rem] bg-primary px-3 text-[0.71875rem] font-semibold text-white">승인</button>
-            </span>
-          </div>)}
-        </div>
-      </div>
-    </section>
+    <PageHead title="승인 관리" description="현재 Runtime의 승인 대기 경계와 향후 연결 범위를 확인합니다.">
+      <Badge tone="run" dot={false}>임시 목업</Badge>
+    </PageHead>
+    <RuntimeMockNotice>승인·반려 목록과 처리 이력 API가 없어 가짜 요청·건수·처리 버튼을 표시하지 않습니다.</RuntimeMockNotice>
 
     <section className={panel}>
-      <PanelTitle title="반려 이력" sub="현재 필터 조건 · 최근 30일" />
-      <EmptyState
-        title="반려된 요청이 없습니다"
-        description={<>선택한 기간에 반려 처리된 요청이 없습니다.<br />기간이나 필터 조건을 변경해 다시 확인해 보세요.</>}
-      >
-        <button className={secondaryButton}>필터 초기화</button>
-        <button className={secondaryButton}>기간 90일로 변경</button>
-      </EmptyState>
+      <PanelTitle title="현재 Runtime 연결 상태" sub="실제 Job 계약 기준" />
+      <div className="grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-3">
+        <RuntimeFact label="Spring Job 상태" state="구현됨" tone="ok" description="Job 상태에 WAITING_APPROVAL 경계가 있습니다." />
+        <RuntimeFact label="Checkpoint 대기·재개" state="기반 있음" tone="wait" description="Runner의 checkpoint 경로는 있으나 공통 Approval Handler 연결은 후속 작업입니다." />
+        <RuntimeFact label="승인 처리·이력 API" state="미연결" tone="idle" description="승인·반려 callback과 운영 이력 화면 계약은 아직 없습니다." />
+      </div>
     </section>
   </>
 }
 
 /* ------------------------------------------------------------------ 실행 이력 */
 
-const runRows: { icon: IconName; title: string; id: string; step: string; agent: string; dur: string; at: string; tone: Tone; state: string }[] = [
-  { icon: 'code-2', title: '관광지 목록 필터 기능 추가', id: 'TOUR-2026-031', step: 'Agent 1 분석', agent: 'OpenAI · GPT-4o', dur: '00:04:12', at: '08.25 14:32', tone: 'wait', state: '승인 대기' },
-  { icon: 'database', title: 'Tour-RAG v3 임베딩 빌드', id: 'RAG-2026-118', step: '임베딩', agent: 'Build · pgvector', dur: '00:21:47', at: '08.25 13:05', tone: 'run', state: '진행' },
-  { icon: 'file-text', title: '서울 전통문화 명소 메뉴 추가', id: 'CMS-2026-402', step: '변경 반영', agent: 'Natural CMS', dur: '00:00:38', at: '08.25 11:49', tone: 'ok', state: '성공' },
-  { icon: 'network', title: '축제·행사 상세 레이아웃 개선', id: 'TOUR-2026-030', step: 'Agent 2 작성', agent: 'Anthropic · Sonnet', dur: '00:07:02', at: '08.25 10:11', tone: 'run', state: '진행' },
-  { icon: 'code-2', title: '음식점 목록 정렬 오류 수정', id: 'TOUR-2026-029', step: 'Agent 3 리뷰', agent: 'Google · Gemini', dur: '00:02:55', at: '08.25 09:26', tone: 'fail', state: '실패' },
-  { icon: 'file-text', title: '공지사항 상단 고정 변경', id: 'CMS-2026-401', step: '변경 반영', agent: 'Natural CMS', dur: '00:00:44', at: '08.24 17:38', tone: 'ok', state: '성공' },
-  { icon: 'database', title: 'Tour-RAG v2 품질 재측정', id: 'RAG-2026-117', step: '평가', agent: 'Build · eval', dur: '00:12:09', at: '08.24 15:02', tone: 'ok', state: '성공' },
-  { icon: 'code-2', title: '숙박 상세 이미지 슬라이더 추가', id: 'TOUR-2026-028', step: 'PR 요청', agent: 'Google · Gemini', dur: '00:05:31', at: '08.24 11:15', tone: 'ok', state: '성공' },
-]
-
-const legend = [
-  { label: '성공', dot: 'bg-ok-dot' }, { label: '진행', dot: 'bg-run-dot' },
-  { label: '대기', dot: 'bg-wait-dot' }, { label: '실패', dot: 'bg-fail-dot' },
-]
-const runHistoryColumns = 'grid-cols-[1.7fr_1fr_1fr_.8fr_.8fr_.9fr]'
-
 function Runs() {
   return <>
-    <PageHead title="실행 이력" description="오케스트레이션, RAG Build, 자연어 CMS 실행 기록을 조회합니다.">
-      <button className={secondaryButton}><Icon name="download" />CSV 내보내기</button>
+    <PageHead title="실행 이력" description="현재 Runtime의 Job 실행 경계와 향후 조회 범위를 확인합니다.">
+      <Badge tone="run" dot={false}>임시 목업</Badge>
     </PageHead>
-    <MockNote>정적 데모 화면입니다. 아래 통계 카드는 Loading State를 보여주기 위한 예시입니다.</MockNote>
-
-    <section className={`${panel} mb-[0.875rem]`}>
-      <div className="flex flex-wrap items-center gap-[0.625rem] px-4 py-3">
-        <SearchField placeholder="작업명, 실행 ID, Agent 검색" className="min-w-[17.5rem] max-w-[26.25rem] flex-1" />
-        <span className="flex h-[1.875rem] overflow-hidden rounded-[0.3125rem] border border-field-line">
-          {['24시간', '7일', '30일', '사용자 지정'].map((label, index) => <span
-            key={label}
-            className={`grid place-items-center border-l border-field-line px-[0.6875rem] text-[0.71875rem] font-semibold first:border-l-0 ${index === 1 ? 'bg-primary text-white' : 'bg-white text-body'}`}
-          >{label}</span>)}
-        </span>
-        {['상태 전체', '유형 전체', 'Agent 전체'].map((label, index) => <FilterChip key={label} label={label} active={index === 0} />)}
-        <div className="ml-auto flex items-center gap-3 text-[0.6875rem] text-muted">
-          {legend.map((item) => <span key={item.label} className="inline-flex items-center gap-[0.3125rem]">
-            <i className={`block h-[0.4375rem] w-[0.4375rem] rounded-full ${item.dot}`} />{item.label}
-          </span>)}
-        </div>
-      </div>
-    </section>
-
-    <section className={`${panel} mb-[0.875rem]`}>
-      <PanelTitle title="실행 통계" sub="데이터를 불러오는 중입니다 · Loading State">
-        <Badge tone="run" dot={false}><Icon name="loader-circle" size={12} />불러오는 중</Badge>
-      </PanelTitle>
-      <div className={`${grid} p-4 sm:grid-cols-2 xl:grid-cols-4`} aria-hidden="true">
-        {[1, 2, 3, 4].map((key) => <div key={key} className="rounded-md border border-line-soft p-[0.875rem]">
-          <div className="h-[0.5625rem] w-[44%] rounded-[0.1875rem] bg-line-soft" />
-          <div className="mt-3 h-5 w-[64%] rounded bg-row-line" />
-          <div className="mt-3 h-[0.5625rem] w-[80%] rounded-[0.1875rem] bg-[#f4f6f8]" />
-        </div>)}
-      </div>
-    </section>
+    <RuntimeMockNotice>Job 조회·검색·통계 API가 없어 가짜 실행 기록, 로딩 수치, CSV 버튼을 표시하지 않습니다.</RuntimeMockNotice>
 
     <section className={panel}>
-      <div className="overflow-x-auto">
-        <div className="min-w-[56.25rem]">
-          <div className={`${headRow} ${runHistoryColumns}`}>
-            <span>실행</span><span>단계</span><span>Agent · 모델</span><span>상태</span><span>소요</span><span className="text-right">시작 시각</span>
-          </div>
-          {runRows.map((run) => <div key={run.id} className={`${bodyRow} ${runHistoryColumns}`}>
-            <span className="flex min-w-0 items-center gap-2">
-              <Icon name={run.icon} className="text-muted-2" />
-              <span className="min-w-0">
-                <b className="block truncate text-[0.78125rem] font-semibold text-ink">{run.title}</b>
-                <small className="block font-mono text-[0.65625rem] text-muted-3">{run.id}</small>
-              </span>
-            </span>
-            <span>{run.step}</span>
-            <span className="truncate">{run.agent}</span>
-            <span><Badge tone={run.tone}>{run.state}</Badge></span>
-            <span className="font-mono text-[0.71875rem]">{run.dur}</span>
-            <span className="text-right text-[0.71875rem] text-muted-2">{run.at}</span>
-          </div>)}
-        </div>
+      <PanelTitle title="현재 Runtime 연결 상태" sub="Spring 소유 Job 기준" />
+      <div className="grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-3">
+        <RuntimeFact label="Job 상태 저장" state="구현됨" tone="ok" description="PostgreSQL Job이 실행 상태와 고정된 Profile Version을 소유합니다." />
+        <RuntimeFact label="Queue·Runner 연결" state="구현됨" tone="ok" description="Queue는 jobId만 전달하고 Runner는 Claim Context로 Snapshot을 조회합니다." />
+        <RuntimeFact label="이력 조회·통계 API" state="미연결" tone="idle" description="목록·필터·기간 통계·내보내기는 별도 조회 계약이 생긴 뒤 구현합니다." />
       </div>
-      <Pagination summary="전체 126건 중 1–8건" />
     </section>
   </>
 }
@@ -704,49 +511,19 @@ function Runs() {
 /* ------------------------------------------------------------------ 사이트 관리 */
 
 function Sites() {
-  const [siteName, setSiteName] = useState('기본 사용자 사이트')
-
   return <>
-    <PageHead title="사이트 관리" description="기본 사용자 사이트의 표시 정보를 검토합니다.">
-      <Badge tone="run" dot={false}>최고관리자 전용</Badge>
+    <PageHead title="사이트 관리" description="현재 CMS의 사이트 경계와 향후 관리 범위를 확인합니다.">
+      <Badge tone="run" dot={false}>임시 목업</Badge>
     </PageHead>
-    <MockNote>UI/UX Mock입니다. 변경 내용은 현재 화면에서만 유지되며 실제 사용자 사이트나 CMS 저장 API에 반영되지 않습니다.</MockNote>
+    <RuntimeMockNotice>현재는 사용자 사이트 한 곳을 공개 경로 `/`로 제공합니다. 별도 사이트 관리 저장 API는 없습니다.</RuntimeMockNotice>
 
-    <div className="grid items-start gap-[0.875rem] xl:grid-cols-[18rem_minmax(0,1fr)]">
-      <aside className={panel} aria-label="관리 사이트 목록">
-        <PanelTitle title="사이트" sub="현재 CMS의 기본 사용자 사이트" />
-        <div className="p-3">
-          <button type="button" aria-label="기본 사용자 사이트 선택" aria-pressed="true" className="w-full rounded-md border border-primary bg-run-bg p-3 text-left">
-            <span className="flex items-center gap-2"><Icon name="globe-2" className="text-run-fg" /><b className="text-[0.8125rem] font-semibold">{siteName || '이름 없는 사이트'}</b></span>
-            <small className="mt-2 block font-mono text-[0.6875rem] text-muted-2">/</small>
-          </button>
-        </div>
-      </aside>
-
-      <article className={panel}>
-        <PanelTitle title="기본 사용자 사이트" sub="사이트 한 곳의 로컬 표시 설정">
-          <Badge tone="idle" dot={false}>저장 안 함</Badge>
-        </PanelTitle>
-        <div className="grid gap-4 p-4 lg:grid-cols-2">
-          <div>
-            <label className={fieldLabel}>사이트명
-              <input aria-label="관리 사이트명" className={control} value={siteName} onChange={(event) => setSiteName(event.target.value)} />
-            </label>
-            <label className={`${fieldLabel} mt-[0.875rem]`}>공개 경로
-              <input aria-label="관리 사이트 공개 경로" className={`${control} font-mono`} defaultValue="/" />
-            </label>
-          </div>
-          <div>
-            <Callout tone="warn" icon="triangle-alert">
-              사이드바의 사용자 사이트 열기 링크와 별도인 관리 목업입니다. 추가·삭제·Version·실제 게시 기능은 포함하지 않습니다.
-            </Callout>
-            <div className="mt-3 rounded-md border border-line-soft bg-sub p-3 text-[0.71875rem] leading-6 text-muted-2">
-              실제 사이트별 저장·조회와 CMS 반영은 5번 CMS Domain의 후속 Work에서 연결합니다.
-            </div>
-          </div>
-        </div>
-      </article>
-    </div>
+    <section className={panel}>
+      <PanelTitle title="현재 CMS 연결 상태" sub="5번 Natural CMS 소유 범위" />
+      <div className="grid gap-3 p-4 md:grid-cols-2">
+        <RuntimeFact label="기본 사용자 사이트" state="운영 중" tone="ok" description="사이드바의 사용자 사이트 열기 링크가 현재 공개 경로 `/`를 엽니다." />
+        <RuntimeFact label="사이트별 설정 API" state="미연결" tone="idle" description="추가·삭제·게시·도메인 설정은 5번 기능 요구가 확정될 때 별도 Work로 구현합니다." />
+      </div>
+    </section>
   </>
 }
 
@@ -759,18 +536,8 @@ const systemSettingsTabs: { id: SystemSettingsTabId; label: string }[] = [
   { id: 'guardrail', label: 'Guardrail Profile' },
 ]
 
-const lockedGuardrails = [
-  { label: '작업 경로 제한', description: '허용 경로 밖의 파일 접근을 항상 차단합니다.' },
-  { label: 'Agent별 Tool Allowlist', description: '등록된 Tool 범위 밖의 호출을 항상 차단합니다.' },
-  { label: 'Prompt·Source·Diff 원문 전송 차단', description: '원문은 기본 전송하지 않으며 별도 결정 없이는 해제할 수 없습니다.' },
-  { label: 'Secret 노출 차단', description: 'Key·Token·인증정보 원문을 항상 차단합니다.' },
-  { label: '인증·Migration 보호', description: '인증 파일과 Migration 경로 변경을 항상 차단합니다.' },
-]
-
 function SystemSettings() {
   const [activeTab, setActiveTab] = useState<SystemSettingsTabId>('cms')
-  const [siteName, setSiteName] = useState('AX Module Studio')
-  const [allowedPath, setAllowedPath] = useState('src/**')
 
   function moveTabFocus(event: ReactKeyboardEvent<HTMLButtonElement>, index: number) {
     let next = index
@@ -785,10 +552,10 @@ function SystemSettings() {
   }
 
   return <>
-    <PageHead title="시스템 설정" description="CMS 기본값과 중앙 Guardrail Profile을 검토합니다.">
-      <Badge tone="run" dot={false}>최고관리자 전용</Badge>
+    <PageHead title="시스템 설정" description="현재 CMS와 공통 Runtime의 설정 경계만 확인합니다.">
+      <Badge tone="run" dot={false}>임시 목업</Badge>
     </PageHead>
-    <MockNote>UI/UX Mock입니다. 변경 내용은 현재 화면의 로컬 상태이며 저장 API를 호출하지 않습니다.</MockNote>
+    <RuntimeMockNotice>상세 정책을 편집하는 화면이 아닙니다. 실제 저장 API가 생기기 전까지 구현 상태만 읽기 전용으로 표시합니다.</RuntimeMockNotice>
 
     <div className="mb-[1.125rem] flex gap-[1.375rem] overflow-x-auto border-b border-line" role="tablist" aria-label="시스템 설정 영역">
       {systemSettingsTabs.map((tab, index) => <button
@@ -801,144 +568,59 @@ function SystemSettings() {
         className={`shrink-0 whitespace-nowrap bg-transparent px-[0.125rem] pb-[0.625rem] text-[0.8125rem] ${activeTab === tab.id ? 'font-semibold text-ink shadow-[inset_0_-2px_var(--primary)]' : 'font-medium text-muted'}`}
         onClick={() => setActiveTab(tab.id)}
         onKeyDown={(event) => moveTabFocus(event, index)}
-      >{tab.label}</button>)}
+      >
+        {tab.label}
+        <span className="ml-2 rounded border border-line bg-sub px-1 py-[0.0625rem] text-[0.5625rem] font-semibold text-muted-2" title={temporaryMockTitle}>임시</span>
+      </button>)}
     </div>
 
     {activeTab === 'cms' && <section id="system-settings-panel-cms" role="tabpanel" aria-labelledby="system-settings-tab-cms" className="grid items-start gap-[0.875rem] xl:grid-cols-2">
       <article className={panel}>
-        <PanelTitle title="CMS 기본값" sub="신규 CMS Resource에 적용할 로컬 예시" />
-        <div className="p-4">
-          <label className={fieldLabel}>기본 사이트명
-            <input aria-label="CMS 기본 사이트명" className={control} value={siteName} onChange={(event) => setSiteName(event.target.value)} />
-          </label>
-          <label className={`${fieldLabel} mt-[0.875rem]`}>기본 공개 경로
-            <input aria-label="CMS 기본 공개 경로" className={`${control} font-mono`} defaultValue="/" />
-          </label>
-          <label className={`${fieldLabel} mt-[0.875rem]`}>삭제 방식
-            <input aria-label="CMS 삭제 방식" className={control} value="소프트 삭제" readOnly />
-          </label>
+        <PanelTitle title="현재 CMS" sub="실제 제공 범위" />
+        <div className="grid gap-3 p-4">
+          <RuntimeFact label="공개 사이트" state="연결됨" tone="ok" description="현재 공개 경로 `/`와 CMS Resource API를 사용합니다." />
+          <RuntimeFact label="사이트 기본값 저장" state="API 없음" tone="idle" description="사이트명·공개 경로를 별도 설정으로 저장하는 계약은 없습니다." />
         </div>
       </article>
       <article className={panel}>
-        <PanelTitle title="CMS 저장 경계"><Badge tone="wait" dot={false}>후속 연결</Badge></PanelTitle>
+        <PanelTitle title="기능 소유 경계"><Badge tone="idle" dot={false}>5번 담당</Badge></PanelTitle>
         <div className="p-4 text-[0.71875rem] leading-6 text-muted-2">
-          <p>삭제는 소프트 삭제를 기본으로 표시하며 복원 기능은 만들지 않습니다.</p>
-          <p className="mt-3">사이트별 실제 저장·조회는 5번 CMS Domain의 후속 API에서 연결합니다. 공통 Profile Version에는 저장하지 않습니다.</p>
+          사이트·CMS의 상세 UX와 업무 규칙은 5번 Natural CMS 문서가 소유합니다. 공통 AI 화면에서 새 설정 규칙을 만들지 않습니다.
         </div>
       </article>
     </section>}
 
     {activeTab === 'guardrail' && <section id="system-settings-panel-guardrail" role="tabpanel" aria-labelledby="system-settings-tab-guardrail">
       <Callout tone="warn" icon="triangle-alert">
-        이 화면은 중앙 Guardrail Profile 목업입니다. Agent 설정의 로컬 최소 Guardrail 토글과는 별개이며 실제 정책 저장·강제 적용은 하지 않습니다.
+        Snapshot 계약에 잠금 Guardrail 구조는 있지만 중앙 정책 작성·저장 API는 없습니다. 세부 보안 설정처럼 보이던 토글과 경로 입력은 제거했습니다.
       </Callout>
-      <div className="mt-3 grid items-start gap-[0.875rem] xl:grid-cols-2">
-        <article className={panel}>
-          <PanelTitle title="CENTRAL_DEFAULT" sub="모든 실행 Profile에 연결되는 중앙 예시">
-            <Badge tone="wait" dot={false}>로컬 상태</Badge>
-          </PanelTitle>
-          <div className="p-4">
-            <label className={fieldLabel}>허용 작업 경로 예시
-              <input aria-label="중앙 Guardrail 허용 작업 경로" className={`${control} font-mono`} value={allowedPath} onChange={(event) => setAllowedPath(event.target.value)} />
-            </label>
-            <p className="mt-3 text-[0.6875rem] leading-5 text-muted-2">Guardrail 적용 자체는 끌 수 없으며, Profile에서는 허용 범위 예시만 로컬로 검토합니다.</p>
-          </div>
-        </article>
-        <article className={panel}>
-          <PanelTitle title="잠금 보안 규칙" sub="UI에서도 비활성화할 수 없는 고정 항목" />
-          <div className="p-4">
-            {lockedGuardrails.map((rule) => <label key={rule.label} className="flex items-center gap-3 border-b border-row-line py-3">
-              <input aria-label={`잠금 Guardrail ${rule.label}`} type="checkbox" checked disabled readOnly />
-              <span className="min-w-0 flex-1"><b className="block text-[0.78125rem] font-semibold">{rule.label}</b><small className="mt-1 block text-[0.6875rem] text-muted-2">{rule.description}</small></span>
-              <Badge tone="idle" dot={false}>잠금</Badge>
-            </label>)}
-          </div>
-        </article>
-      </div>
+      <article className={`${panel} mt-3`}>
+        <PanelTitle title="Guardrail Runtime 경계" sub="상세 정책 편집 없음" />
+        <div className="grid gap-3 p-4 md:grid-cols-2">
+          <RuntimeFact label="Snapshot 잠금 Guardrail" state="계약 있음" tone="ok" description="Versioned Snapshot이 잠금 Guardrail 구조를 포함합니다." />
+          <RuntimeFact label="중앙 정책 UI·저장 API" state="미구현" tone="idle" description="필요성이 확정되면 Runtime 계약과 함께 별도 Work로 구현합니다." />
+        </div>
+      </article>
     </section>}
   </>
 }
 
 /* ------------------------------------------------------------------ 설정 */
 
-const keys: { name: string; value: string; at: string; tone: Tone; state: string }[] = [
-  { name: '관광지 공공데이터 API', value: 'TOUR-••••-9A2F', at: '2026.08.20', tone: 'ok', state: '사용 중' },
-  { name: 'OpenAI Provider Key', value: 'SK-••••-31BC', at: '2026.08.14', tone: 'ok', state: '사용 중' },
-  { name: 'GitHub PR Token', value: 'GH-••••-77AE', at: '2026.07.30', tone: 'idle', state: '미사용' },
-]
-
-const toggles = [
-  { label: 'Agent 실행 결과 알림', desc: '실행 완료·실패 시 담당자에게 알림', on: true },
-  { label: '승인 요청 알림', desc: '승인 대기 발생 시 즉시 알림', on: true },
-  { label: 'RAG 품질 저하 경고', desc: 'Recall@5 85% 미만 시 경고', on: false },
-  { label: '최고관리자 이관 알림', desc: '재작업 한도 초과 시 알림', on: true },
-]
-
 function Settings({ roleLabel }: { roleLabel: string }) {
   return <>
-    <PageHead title="설정" description="조직 정보, 권한, API Key, 알림 정책을 관리합니다." />
-    <MockNote>정적 데모 화면입니다. 저장 버튼은 아직 연결되지 않았습니다.</MockNote>
+    <PageHead title="설정" description="현재 CMS 인증 범위와 향후 설정 확장 지점을 확인합니다.">
+      <Badge tone="run" dot={false}>임시 목업</Badge>
+    </PageHead>
+    <RuntimeMockNotice>조직·권한 정책·API Key·알림 저장 API가 없어 가짜 값과 저장 컨트롤을 표시하지 않습니다.</RuntimeMockNotice>
 
-    <div aria-label="일반 설정 탭">
-      <Tabs items={[{ label: '일반' }, { label: '권한' }, { label: 'API Key' }, { label: '알림' }]} active={0} />
-    </div>
-
-    <div className="grid items-start gap-[0.875rem] xl:grid-cols-2">
-      <section className={panel}>
-        <PanelTitle title="조직 정보" />
-        <div className="p-4">
-          <label className={fieldLabel}>고객사명
-            <input className={control} defaultValue="한빛관광공사" />
-          </label>
-          <label className={`${fieldLabel} mt-[0.875rem]`}>서비스 도메인
-            <input className={`${control} font-mono`} defaultValue="tour.hanbit.example" />
-          </label>
-          <label className={`${fieldLabel} mt-[0.875rem]`}>현재 로그인 역할
-            <input className={control} value={roleLabel} readOnly />
-          </label>
-          <div className={`${fieldLabel} mt-[0.875rem]`}>운영 환경
-            <span className="mt-[0.375rem] flex w-fit overflow-hidden rounded-[0.3125rem] border border-field-line">
-              {['Mock', 'Staging', 'Production'].map((env, index) => <span
-                key={env}
-                className={`px-[0.875rem] py-[0.375rem] text-[0.71875rem] font-semibold ${index === 0 ? 'bg-primary text-white' : 'bg-white text-muted'}`}
-              >{env}</span>)}
-            </span>
-          </div>
-          <div className="mt-[1.125rem] flex justify-end gap-2">
-            <button className={secondaryButton}>취소</button>
-            <button className={primaryButton}>저장하기</button>
-          </div>
-        </div>
-      </section>
-
-      <div className="flex flex-col gap-[0.875rem]">
-        <section className={panel}>
-          <PanelTitle title="API Key"><button className={smallButton}>키 발급</button></PanelTitle>
-          {keys.map((key) => <div key={key.name} className="flex items-center gap-3 border-b border-row-line px-4 py-[0.625rem] text-xs">
-            <span className="min-w-0 flex-1">
-              <b className="block truncate text-[0.78125rem] font-semibold">{key.name}</b>
-              <small className="block font-mono text-[0.6875rem] text-muted-3">{key.value}</small>
-            </span>
-            <span className="text-[0.71875rem] text-muted-2 max-[560px]:hidden">{key.at}</span>
-            <Badge tone={key.tone} dot={false}>{key.state}</Badge>
-          </div>)}
-        </section>
-
-        <section className={panel}>
-          <PanelTitle title="권한 · 알림" />
-          <div className="px-4 pb-4 pt-[0.375rem]">
-            {toggles.map((toggle) => <div key={toggle.label} className="flex items-center gap-3 border-b border-row-line py-3">
-              <span className="min-w-0 flex-1">
-                <b className="block text-[0.78125rem] font-semibold">{toggle.label}</b>
-                <small className="mt-[0.125rem] block text-[0.6875rem] text-muted-2">{toggle.desc}</small>
-              </span>
-              <span className={`flex h-[1.1875rem] w-[2.125rem] shrink-0 rounded-[0.625rem] p-[0.125rem] ${toggle.on ? 'justify-end bg-primary' : 'justify-start bg-btn-line'}`} aria-hidden="true">
-                <span className="block h-[0.9375rem] w-[0.9375rem] rounded-full bg-white shadow-[0_1px_2px_#10203426]" />
-              </span>
-            </div>)}
-          </div>
-        </section>
+    <section className={panel}>
+      <PanelTitle title="현재 연결 상태" sub={`현재 로그인 역할 · ${roleLabel}`} />
+      <div className="grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-3">
+        <RuntimeFact label="CMS 로그인·역할" state="구현됨" tone="ok" description="현재 세션과 CMS 역할에 따라 관리자 메뉴 접근을 제어합니다." />
+        <RuntimeFact label="조직·권한 정책 설정" state="API 없음" tone="idle" description="현재 CMS MVP에는 별도 조직·권한 정책 저장 계약이 없습니다." />
+        <RuntimeFact label="API Key·알림 설정" state="API 없음" tone="idle" description="필요성이 확정되면 해당 기능 소유 문서와 Runtime 계약을 먼저 정의합니다." />
       </div>
-    </div>
+    </section>
   </>
 }

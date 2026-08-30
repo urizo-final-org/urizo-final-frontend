@@ -3,6 +3,8 @@ import type { AdminRole } from '../shared/api/session'
 import { Icon } from '../shared/ui/icons'
 import { foldableGroups, navigationRoutesForRole, type RouteId } from './routes'
 
+const temporaryMockTitle = '임시 목업 · 향후 필요 시 현재 Runtime 계약 기준으로 구현'
+
 export function AppNavigation({
   activeRoute,
   role,
@@ -52,7 +54,10 @@ export function AppNavigation({
               >
                 <Icon name={route.icon} size={15} />
                 <span className="flex-1 truncate">{route.label}</span>
-                {route.count && <span className="rounded-[0.5625rem] bg-[#fdf1e0] px-[0.375rem] py-[0.0625rem] text-[0.59375rem] font-bold text-[#8a5a22]">{route.count}</span>}
+                {route.mock && <span
+                  className="shrink-0 rounded border border-[#49657d] bg-[#233b50] px-[0.3125rem] py-[0.0625rem] text-[0.53125rem] font-semibold text-[#cfe2ef]"
+                  title={temporaryMockTitle}
+                >임시</span>}
               </button>
             )}
           </Fragment>
