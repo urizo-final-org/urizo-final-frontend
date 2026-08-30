@@ -386,7 +386,7 @@ function TemplateField({ label, description, wide = false, children }: { label: 
   return <label className={`block text-[0.71875rem] font-semibold text-body ${wide ? 'md:col-span-2' : ''}`}><span>{label}</span>{children}<span className="mt-[0.375rem] block font-normal leading-[1.6] text-muted-2">{description}</span></label>
 }
 
-function TemplatePreview({ value, onClose }: { value: SiteTemplate; onClose: () => void }) {
+export function TemplatePreview({ value, onClose }: { value: SiteTemplate; onClose: () => void }) {
   const style = { '--preview-brand': value.primaryColor } as CSSProperties
   const minimal = value.layout === 'MINIMAL'
   const bold = value.layout === 'BOLD'
