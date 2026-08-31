@@ -5,17 +5,46 @@ import { Icon } from '../../../shared/ui/icons'
 import { Badge, control, panel, primaryButton, secondaryButton, textarea } from '../../../shared/ui/primitives'
 import AssistantPreviewModal from './AssistantPreviewModal'
 import type { NaturalCmsApi, NaturalCmsJob } from './api'
+import { hasChange, lineDiff } from './diff'
 
 /** 되묻기에 한 번에 보여줄 후보 최대 갯수. 더 많으면 목록에서 직접 고르게 한다. */
 const MAX_CANDIDATES = 5
 
+/** 한 필드의 변경 전후를 줄 단위로 보여준다. 바뀐 줄이 없으면 그대로임을 알린다. */
+function FieldDiff({ before, after }: { before: string; after: string }) {
+  const lines = lineDiff(before, after)
+  if (!hasChange(lines)) {
+    return <p className="m-0 rounded-[0.3125rem] border border-line-soft bg-sub px-[0.6875rem] py-[0.5rem] text-[0.75rem] text-muted-2">바뀌지 않습니다.</p>
+  }
+  return <div className="overflow-hidden rounded-[0.3125rem] border border-line-soft">
+    {lines.map((line, index) => <div
+      key={`${line.kind}-${index}`}
+      className={`grid grid-cols-[1.25rem_1fr] gap-2 px-[0.6875rem] py-[0.1875rem] text-[0.8125rem] leading-[1.7] ${
+        line.kind === 'added' ? 'bg-[#f0f8f3] text-[#2f6b4f]'
+          : line.kind === 'removed' ? 'bg-[#fdf1f0] text-[#a3564f]'
+            : 'text-body'}`}
+    >
+      <span aria-hidden="true" className="select-none text-center text-muted-3">
+        {line.kind === 'added' ? '+' : line.kind === 'removed' ? '−' : ''}
+      </span>
+      <span className="whitespace-pre-wrap break-words">{line.text || ' '}</span>
+    </div>)}
+  </div>
+}
+
 type AssistedRoute = Exclude<CmsRouteId, 'members'>
 
-/** 자연어 요청이 바꿀 대상. 화면에서 고른 항목을 그대로 전달한다. */
+/**
+ * 자연어 요청이 바꿀 대상. 화면에서 고른 항목을 그대로 전달한다.
+ *
+ * `fields`는 미리보기에서 변경 전으로 쓰는 현재 값이다. 화면이 이미 들고 있으므로
+ * 다시 조회하지 않는다.
+ */
 export type CmsAssistantTarget = {
   type: 'MENU' | 'BOARD' | 'CONTENT' | 'TEMPLATE'
   id: string
   label: string
+  fields: Record<string, string>
 }
 
 type AssistantProfile = {
@@ -336,11 +365,11 @@ export default function CmsAiAssistant({ route, target, candidates, onTarget, ap
         <small className="block text-[0.65625rem] text-muted-3">요청</small>
         <span className="mt-[0.1875rem] block text-[0.8125rem] text-body">{phase.job.requestText}</span>
       </div>
-      <div className="mt-3 grid gap-2">
-        {commandFields(phase.job).map(([name, value]) => <div key={name} className="rounded-[0.3125rem] border border-[#dceae2] bg-[#f5faf7] px-[0.6875rem] py-[0.625rem]">
-          <small className="block text-[0.65625rem] text-[#79a08c]">변경 후 · {name}</small>
-          <pre className="mt-[0.1875rem] mb-0 whitespace-pre-wrap break-words font-sans text-[0.8125rem] leading-[1.8] text-[#37725a]">{value}</pre>
-        </div>)}
+      <div className="mt-3 grid gap-3">
+        {commandFields(phase.job).map(([name, value]) => <section key={name}>
+          <small className="block text-[0.65625rem] font-semibold text-muted-2">{name}</small>
+          <FieldDiff before={target?.fields[name] ?? ''} after={value} />
+        </section>)}
         {commandFields(phase.job).length === 0 && <p className="m-0 text-[0.71875rem] text-muted-2">아직 변경 내용을 받지 못했습니다.</p>}
       </div>
     </AssistantPreviewModal>}
