@@ -31,7 +31,7 @@ test('an open public page refreshes when CMS data changes', async () => {
   let template = siteTemplate()
   vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => {
     const path = String(input)
-    if (path === '/api/site/template') return Promise.resolve(json(template))
+    if (path.startsWith('/api/site/context?path=')) return Promise.resolve(json(siteContext(template)))
     if (path === '/api/site/menus' || path === '/api/site/boards') return Promise.resolve(json([]))
     return Promise.resolve(json([]))
   }))
@@ -50,6 +50,16 @@ test('the admin URL shows the CMS login when no session exists', async () => {
   expect(await screen.findByRole('heading', { name: 'CMS 로그인' })).toBeInTheDocument()
   expect(screen.getByRole('button', { name: '최고관리자' })).toBeInTheDocument()
   expect(screen.queryByRole('button', { name: '일반사용자' })).not.toBeInTheDocument()
+})
+
+test('a configured public path renders that site home and keeps links inside it', async () => {
+  window.history.pushState({}, '', '/campaign')
+  vi.stubGlobal('fetch', publicFetch(siteTemplate(), '/campaign'))
+
+  render(<AppShell />)
+
+  expect(await screen.findByRole('heading', { name: 'Technology for a Better Tomorrow' })).toBeInTheDocument()
+  expect(screen.getByRole('link', { name: /01 AX Module Studio/ })).toHaveAttribute('href', '/campaign/products/ax-module-studio')
 })
 
 test('an administrator reaches all five CMS sections', async () => {
@@ -112,7 +122,11 @@ test('a general administrator is redirected away from Agent settings', async () 
 test('only a super administrator can open system settings', async () => {
   window.history.pushState({}, '', '/admin/system-settings')
   vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => {
-    if (String(input) === '/api/auth/refresh') return Promise.resolve(json(session('SUPER_ADMIN', '최고 관리자')))
+    const path = String(input)
+    if (path === '/api/auth/refresh') return Promise.resolve(json(session('SUPER_ADMIN', '최고 관리자')))
+    if (path === '/api/admin/cms/settings') return Promise.resolve(json({ defaultSiteKey: 'main', defaultTemplateKey: 'CLASSIC', updatedAt: new Date().toISOString() }))
+    if (path === '/api/admin/cms/sites') return Promise.resolve(json([cmsSite()]))
+    if (path === '/api/cms/templates') return Promise.resolve(json([siteTemplate()]))
     return Promise.resolve(json([]))
   }))
 
@@ -121,7 +135,8 @@ test('only a super administrator can open system settings', async () => {
   const navigation = screen.getByRole('navigation', { name: '관리자 메뉴' })
   const systemSettingsItem = within(navigation).getByRole('button', { name: /시스템 설정/ })
   expect(within(systemSettingsItem).queryByText('임시')).not.toBeInTheDocument()
-  expect(screen.getByText('부분 연결')).toBeInTheDocument()
+  expect(screen.getByText('API 연결')).toBeInTheDocument()
+  expect(await screen.findByLabelText('기본 사이트')).toHaveValue('main')
 })
 
 test('a general administrator is redirected away from system settings', async () => {
@@ -140,7 +155,10 @@ test('a general administrator is redirected away from system settings', async ()
 test('only a super administrator can open site management', async () => {
   window.history.pushState({}, '', '/admin/sites')
   vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => {
-    if (String(input) === '/api/auth/refresh') return Promise.resolve(json(session('SUPER_ADMIN', '최고 관리자')))
+    const path = String(input)
+    if (path === '/api/auth/refresh') return Promise.resolve(json(session('SUPER_ADMIN', '최고 관리자')))
+    if (path === '/api/admin/cms/sites') return Promise.resolve(json([cmsSite()]))
+    if (path === '/api/cms/templates') return Promise.resolve(json([siteTemplate()]))
     return Promise.resolve(json([]))
   }))
 
@@ -148,7 +166,8 @@ test('only a super administrator can open site management', async () => {
   expect(await screen.findByRole('heading', { name: '사이트 관리' })).toBeInTheDocument()
   const navigation = screen.getByRole('navigation', { name: '관리자 메뉴' })
   expect(within(navigation).getByRole('button', { name: /사이트 관리/ })).toBeInTheDocument()
-  expect(screen.getAllByText('임시 목업').length).toBeGreaterThan(0)
+  expect(screen.queryByText('임시 목업')).not.toBeInTheDocument()
+  expect(await screen.findByLabelText('사이트명')).toHaveValue('AX Bio Studio')
 })
 
 test('a general administrator is redirected away from site management', async () => {
@@ -265,10 +284,10 @@ test('a menu URL renders its mapped static content', async () => {
   expect(await screen.findByText('사람과 기술을 연결합니다')).toBeInTheDocument()
 })
 
-function publicFetch(template = siteTemplate()) {
+function publicFetch(template = siteTemplate(), publicPath = '/') {
   return vi.fn((input: RequestInfo | URL) => {
     const path = String(input)
-    if (path === '/api/site/template') return Promise.resolve(json(template))
+    if (path.startsWith('/api/site/context?path=')) return Promise.resolve(json(siteContext(template, publicPath)))
     if (path === '/api/site/menus') return Promise.resolve(json([
       { id: 1, name: '소개', path: '/about', parentId: null, displayOrder: 10, targetType: 'NONE', targetId: null },
       { id: 2, name: '회사 소개', path: '/about/company', parentId: 1, displayOrder: 11, targetType: 'CONTENT', targetId: 10 },
@@ -288,6 +307,17 @@ function siteTemplate() {
     heroImageUrl: '/images/cms/hero-bio.svg', heroTitle: 'Technology for a Better Tomorrow',
     heroSubtitle: '사람과 기술을 연결합니다.', heroButtonLabel: '회사 소개', heroButtonUrl: '/about/company',
     active: true, updatedAt: new Date().toISOString(),
+  }
+}
+
+function siteContext(template = siteTemplate(), publicPath = '/') {
+  return { key: 'main', name: template.siteName, publicPath, template }
+}
+
+function cmsSite() {
+  return {
+    key: 'main', name: 'AX Bio Studio', publicPath: '/', templateKey: 'CLASSIC',
+    enabled: true, defaultSite: true, updatedAt: new Date().toISOString(),
   }
 }
 
