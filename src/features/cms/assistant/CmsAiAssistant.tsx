@@ -1,9 +1,22 @@
 import { type FormEvent, useId, useState } from 'react'
 import type { CmsRouteId } from '../../../app/routes'
+import { describeFailure } from '../../../shared/api/error'
 import { Icon } from '../../../shared/ui/icons'
-import { Badge, panel, primaryButton, secondaryButton, textarea } from '../../../shared/ui/primitives'
+import { Badge, control, panel, primaryButton, secondaryButton, textarea } from '../../../shared/ui/primitives'
+import AssistantPreviewModal from './AssistantPreviewModal'
+import type { NaturalCmsApi, NaturalCmsJob } from './api'
+
+/** 되묻기에 한 번에 보여줄 후보 최대 갯수. 더 많으면 목록에서 직접 고르게 한다. */
+const MAX_CANDIDATES = 5
 
 type AssistedRoute = Exclude<CmsRouteId, 'members'>
+
+/** 자연어 요청이 바꿀 대상. 화면에서 고른 항목을 그대로 전달한다. */
+export type CmsAssistantTarget = {
+  type: 'MENU' | 'BOARD' | 'CONTENT' | 'TEMPLATE'
+  id: string
+  label: string
+}
 
 type AssistantProfile = {
   section: string
@@ -49,18 +62,110 @@ const profiles: Record<AssistedRoute, AssistantProfile> = {
   },
 }
 
-export default function CmsAiAssistant({ route, collapsed, onToggle }: { route: AssistedRoute; collapsed: boolean; onToggle: () => void }) {
+/** 패널 상태 기계. 입력 → 분석 → 승인 대기 → 완료(또는 반려)로만 움직인다. */
+type Phase =
+  | { kind: 'input' }
+  | { kind: 'asking'; requestText: string; candidates: CmsAssistantTarget[] }
+  | { kind: 'analyzing' }
+  | { kind: 'waiting'; job: NaturalCmsJob }
+  | { kind: 'deciding'; job: NaturalCmsJob }
+  | { kind: 'done'; job: NaturalCmsJob }
+  | { kind: 'rejected'; job: NaturalCmsJob }
+  | { kind: 'failed'; message: string }
+
+/** 지금 자연어 변경이 가능한 리소스. 나머지 화면은 안내만 한다. */
+const SUPPORTED: ReadonlySet<CmsAssistantTarget['type']> = new Set(['CONTENT'])
+
+export default function CmsAiAssistant({ route, target, candidates, onTarget, api, collapsed, onToggle }: {
+  route: AssistedRoute
+  target: CmsAssistantTarget | null
+  candidates: CmsAssistantTarget[]
+  onTarget: (target: CmsAssistantTarget) => void
+  api: NaturalCmsApi
+  collapsed: boolean
+  onToggle: () => void
+}) {
   const profile = profiles[route]
   const inputId = useId()
+  const feedbackId = useId()
   const [draft, setDraft] = useState('')
-  const [preview, setPreview] = useState<string | null>(null)
+  const [phase, setPhase] = useState<Phase>({ kind: 'input' })
+  const [feedback, setFeedback] = useState('')
+  const [detail, setDetail] = useState(false)
+  const routeSupported = route === 'contents'
+  const supported = target !== null && SUPPORTED.has(target.type)
 
-  function submit(event: FormEvent) {
+  /** 말에 대상이 없으면 이름이 겹치는 후보를 고르게 한다. 선택지는 코드가 만든다. */
+  function narrow(requestText: string) {
+    const words = requestText.split(/\s+/).filter((word) => word.length > 1)
+    const matched = candidates.filter((candidate) => words.some((word) => candidate.label.includes(word)))
+    return (matched.length > 0 ? matched : candidates).slice(0, MAX_CANDIDATES)
+  }
+
+  async function start(requestText: string, chosen: CmsAssistantTarget) {
+    setPhase({ kind: 'analyzing' })
+    try {
+      const profileVersionId = await api.activeProfileVersionId()
+      const job = await api.createJob({
+        profileVersionId,
+        requestText,
+        resource: { type: chosen.type, id: chosen.id },
+      })
+      setDraft('')
+      setPhase({ kind: 'waiting', job })
+    }
+    catch (failure) {
+      setPhase({ kind: 'failed', message: describeFailure(failure) })
+    }
+  }
+
+  async function submit(event: FormEvent) {
     event.preventDefault()
-    const request = draft.trim()
-    if (!request) return
-    setPreview(request)
-    setDraft('')
+    const requestText = draft.trim()
+    if (!requestText || !routeSupported) return
+    if (!supported) {
+      setPhase({ kind: 'asking', requestText, candidates: narrow(requestText) })
+      return
+    }
+    await start(requestText, target)
+  }
+
+  function choose(requestText: string, chosen: CmsAssistantTarget) {
+    onTarget(chosen)
+    void start(requestText, chosen)
+  }
+
+  async function decide(job: NaturalCmsJob, decision: 'APPROVED' | 'REJECTED') {
+    if (!job.previewId || !job.previewHash) {
+      setPhase({ kind: 'failed', message: '미리보기가 없어 승인할 수 없습니다. 다시 요청해 주세요.' })
+      return
+    }
+    if (decision === 'REJECTED' && !feedback.trim()) return
+    setPhase({ kind: 'deciding', job })
+    try {
+      const decided = await api.decide(job.jobId, {
+        previewId: job.previewId,
+        previewHash: job.previewHash,
+        decision,
+        ...(decision === 'REJECTED' ? { feedback: feedback.trim() } : {}),
+      })
+      setFeedback('')
+      setPhase(decision === 'APPROVED' ? { kind: 'done', job: decided } : { kind: 'rejected', job: decided })
+    }
+    catch (failure) {
+      setPhase({ kind: 'failed', message: describeFailure(failure) })
+    }
+  }
+
+  function reset() {
+    setFeedback('')
+    setDetail(false)
+    setPhase({ kind: 'input' })
+  }
+
+  function commandFields(job: NaturalCmsJob) {
+    const command = job.structuredCommand as { fields?: Record<string, unknown> } | null
+    return Object.entries(command?.fields ?? {}).map(([name, value]) => [name, String(value)] as const)
   }
 
   if (collapsed) return <aside
@@ -106,6 +211,13 @@ export default function CmsAiAssistant({ route, collapsed, onToggle }: { route: 
 
       <p className="mt-[0.875rem] text-[0.71875rem] leading-[1.6] text-muted">{profile.description}</p>
 
+      <div className="mt-[0.875rem] rounded-[0.3125rem] border border-line-soft px-[0.6875rem] py-[0.625rem]" aria-live="polite">
+        <small className="block text-[0.65625rem] text-muted-3">변경 대상</small>
+        {target
+          ? <b className="mt-[0.1875rem] block truncate text-[0.71875rem] font-semibold text-ink" title={target.label}>{target.label}</b>
+          : <span className="mt-[0.1875rem] block text-[0.71875rem] text-muted-2">목록에서 항목을 선택하면 그 대상에 적용합니다.</span>}
+      </div>
+
       <div className="mt-[0.875rem] flex flex-wrap gap-[0.375rem]">
         {profile.capabilities.map((item) => <span key={item} className="rounded border border-[#d6e2e6] bg-[#f7fbfb] px-[0.4375rem] py-[0.1875rem] text-[0.65625rem] font-semibold text-[#3f7f86]">{item}</span>)}
       </div>
@@ -128,29 +240,109 @@ export default function CmsAiAssistant({ route, collapsed, onToggle }: { route: 
         >추천 요청: {suggestion}</button>)}
       </div>
 
-      {preview && <div className="mt-4 border-t border-line-soft pt-[0.875rem]" aria-live="polite">
-        <div className="flex items-center gap-[0.4375rem]">
-          <Badge tone="wait">승인 대기</Badge>
-          <b className="text-[0.78125rem] font-semibold">변경 내용 확인</b>
-        </div>
-        <div className="mt-[0.625rem] rounded-[0.3125rem] border border-line-soft bg-sub px-[0.6875rem] py-[0.625rem]">
-          <small className="block text-[0.65625rem] text-muted-3">변경 전</small>
-          <span className="mt-[0.1875rem] block text-[0.71875rem] text-body">현재 {profile.section} 데이터</span>
-        </div>
-        <div className="mt-2 rounded-[0.3125rem] border border-[#dceae2] bg-[#f5faf7] px-[0.6875rem] py-[0.625rem]">
-          <small className="block text-[0.65625rem] text-[#79a08c]">변경 후 Mock</small>
-          <span className="mt-[0.1875rem] block text-[0.71875rem] text-[#37725a]">{preview}</span>
-        </div>
-        <div className="mt-[0.875rem] flex gap-2">
-          <button type="button" className={`${secondaryButton} flex-1 justify-center`} onClick={() => setPreview(null)}>취소</button>
-          <button type="button" className={`${primaryButton} flex-1 justify-center`} onClick={() => setPreview(null)}>승인하고 반영</button>
-        </div>
-      </div>}
+      <div className="mt-4 border-t border-line-soft pt-[0.875rem]" aria-live="polite">
+        {phase.kind === 'analyzing' && <p className="m-0 text-[0.71875rem] text-muted">요청을 분석하고 있습니다…</p>}
+
+        {phase.kind === 'asking' && <>
+          <b className="text-[0.78125rem] font-semibold">어느 것을 바꿀까요?</b>
+          <p className="mt-[0.3125rem] text-[0.6875rem] leading-[1.6] text-muted-2">요청에 대상이 분명하지 않아 확인이 필요합니다.</p>
+          <div className="mt-[0.625rem] grid gap-[0.375rem]">
+            {phase.candidates.map((candidate) => <button
+              key={`${candidate.type}:${candidate.id}`}
+              type="button"
+              className="w-full rounded-[0.3125rem] border border-line-soft bg-white px-[0.625rem] py-[0.5625rem] text-left text-[0.71875rem] text-body hover:bg-sub"
+              onClick={() => choose(phase.requestText, candidate)}
+            >{candidate.label}</button>)}
+            {phase.candidates.length === 0 && <p className="m-0 text-[0.6875rem] text-muted-2">고를 수 있는 항목이 없습니다.</p>}
+          </div>
+          <p className="mt-[0.625rem] mb-0 text-[0.65625rem] leading-[1.5] text-muted-3">찾는 항목이 없으면 왼쪽 목록에서 직접 선택해 주세요.</p>
+          <button type="button" className={`${secondaryButton} mt-[0.625rem] w-full justify-center`} onClick={reset}>취소</button>
+        </>}
+
+        {(phase.kind === 'waiting' || phase.kind === 'deciding') && <>
+          <div className="flex items-center gap-[0.4375rem]">
+            <Badge tone="wait">승인 대기</Badge>
+            <b className="text-[0.78125rem] font-semibold">변경 내용 확인</b>
+          </div>
+          <div className="mt-[0.625rem] rounded-[0.3125rem] border border-line-soft bg-sub px-[0.6875rem] py-[0.625rem]">
+            <small className="block text-[0.65625rem] text-muted-3">요청</small>
+            <span className="mt-[0.1875rem] block text-[0.71875rem] text-body">{phase.job.requestText}</span>
+          </div>
+          <button type="button" className={`${secondaryButton} mt-[0.625rem] w-full justify-center`} onClick={() => setDetail(true)}>변경 내용 자세히 보기</button>
+          <label className="mt-[0.875rem] block text-[0.71875rem] font-semibold text-body" htmlFor={feedbackId}>반려 사유</label>
+          <input
+            id={feedbackId}
+            className={control}
+            value={feedback}
+            onChange={(event) => setFeedback(event.target.value)}
+            placeholder="반려할 때만 입력합니다"
+          />
+          <div className="mt-[0.875rem] flex gap-2">
+            <button
+              type="button"
+              className={`${secondaryButton} flex-1 justify-center`}
+              disabled={phase.kind === 'deciding' || !feedback.trim()}
+              onClick={() => void decide(phase.job, 'REJECTED')}
+            >반려</button>
+            <button
+              type="button"
+              className={`${primaryButton} flex-1 justify-center`}
+              disabled={phase.kind === 'deciding'}
+              onClick={() => void decide(phase.job, 'APPROVED')}
+            >승인하고 반영</button>
+          </div>
+        </>}
+
+        {phase.kind === 'done' && <>
+          <Badge tone="ok">반영 완료</Badge>
+          <p className="mt-[0.625rem] text-[0.71875rem] text-muted">요청한 변경을 반영했습니다.</p>
+          <button type="button" className={`${secondaryButton} mt-[0.625rem] w-full justify-center`} onClick={reset}>새 요청</button>
+        </>}
+
+        {phase.kind === 'rejected' && <>
+          <Badge tone="wait">반려됨</Badge>
+          <p className="mt-[0.625rem] text-[0.71875rem] text-muted">반영하지 않았습니다. 요청을 고쳐 다시 시도해 주세요.</p>
+          <button type="button" className={`${secondaryButton} mt-[0.625rem] w-full justify-center`} onClick={reset}>새 요청</button>
+        </>}
+
+        {phase.kind === 'failed' && <>
+          <p className="m-0 flex items-start gap-2 rounded-[0.3125rem] border border-[#f0d5d1] bg-fail-bg p-[0.6875rem] text-[0.71875rem] leading-[1.6] text-fail-fg" role="alert">
+            <Icon name="triangle-alert" size={15} className="mt-[0.0625rem]" />{phase.message}
+          </p>
+          <button type="button" className={`${secondaryButton} mt-[0.625rem] w-full justify-center`} onClick={reset}>다시 시도</button>
+        </>}
+      </div>
     </div>
 
-    <form className="border-t border-line-soft p-3" onSubmit={submit}>
-      <button className={`${primaryButton} w-full justify-center`} type="submit" disabled={!draft.trim()}>요청 분석하기</button>
-      <p className="mb-0 mt-2 text-center text-[0.625rem] leading-4 text-muted-3">목업 화면입니다. 저장·수정·삭제 API를 호출하지 않습니다.</p>
+    <form className="border-t border-line-soft p-3" onSubmit={(event) => void submit(event)}>
+      <button
+        className={`${primaryButton} w-full justify-center`}
+        type="submit"
+        disabled={!draft.trim() || !routeSupported || phase.kind === 'analyzing' || phase.kind === 'deciding'}
+      >요청 분석하기</button>
+      {!routeSupported && <p className="mb-0 mt-2 text-center text-[0.625rem] leading-4 text-muted-3">
+        {profile.section} 화면은 아직 자연어 변경을 지원하지 않습니다.
+      </p>}
     </form>
+
+    {detail && (phase.kind === 'waiting' || phase.kind === 'deciding') && <AssistantPreviewModal
+      title={`${profile.section} 변경 미리보기`}
+      subtitle="승인하면 기존 CMS 저장 경로로 반영됩니다."
+      busy={phase.kind === 'deciding'}
+      onApprove={() => { setDetail(false); void decide(phase.job, 'APPROVED') }}
+      onClose={() => setDetail(false)}
+    >
+      <div className="rounded-[0.3125rem] border border-line-soft bg-sub px-[0.6875rem] py-[0.625rem]">
+        <small className="block text-[0.65625rem] text-muted-3">요청</small>
+        <span className="mt-[0.1875rem] block text-[0.8125rem] text-body">{phase.job.requestText}</span>
+      </div>
+      <div className="mt-3 grid gap-2">
+        {commandFields(phase.job).map(([name, value]) => <div key={name} className="rounded-[0.3125rem] border border-[#dceae2] bg-[#f5faf7] px-[0.6875rem] py-[0.625rem]">
+          <small className="block text-[0.65625rem] text-[#79a08c]">변경 후 · {name}</small>
+          <pre className="mt-[0.1875rem] mb-0 whitespace-pre-wrap break-words font-sans text-[0.8125rem] leading-[1.8] text-[#37725a]">{value}</pre>
+        </div>)}
+        {commandFields(phase.job).length === 0 && <p className="m-0 text-[0.71875rem] text-muted-2">아직 변경 내용을 받지 못했습니다.</p>}
+      </div>
+    </AssistantPreviewModal>}
   </aside>
 }
