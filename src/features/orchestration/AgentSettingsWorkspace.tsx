@@ -1,12 +1,13 @@
-import { useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react'
+import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react'
+import { describeFailure } from '../../shared/api/error'
 import { Icon, type IconName } from '../../shared/ui/icons'
 import {
   Badge, Callout, PageHead, PanelTitle, Tag, control, dangerButton, panel, primaryButton, secondaryButton,
 } from '../../shared/ui/primitives'
+import type { ProfileAuthoringSnapshot, ProfileKey, ProfileVersion, ProfileVersionApiClient } from './api'
 
 type TabId = 'provider' | 'workflow' | 'profile' | 'policy' | 'usage'
 type NodeType = 'start' | 'agent' | 'tool' | 'guardrail' | 'approval' | 'check' | 'end'
-type ProfileKey = 'LLM_OPS' | 'NATURAL_CMS'
 
 const temporaryMockTitle = '임시 목업 · 향후 필요 시 현재 Runtime 계약 기준으로 구현'
 
@@ -28,7 +29,7 @@ interface WorkflowEdge {
 const tabs: { id: TabId; label: string; temporary?: true }[] = [
   { id: 'provider', label: 'Provider·Model' },
   { id: 'workflow', label: 'Agent·Workflow' },
-  { id: 'profile', label: '자연어 기능 Profile', temporary: true },
+  { id: 'profile', label: '자연어 기능 Profile' },
   { id: 'policy', label: 'Tool·실행 정책', temporary: true },
   { id: 'usage', label: '사용량·평가', temporary: true },
 ]
@@ -68,6 +69,71 @@ const profileCatalog: Record<ProfileKey, {
   },
 }
 
+const starterSnapshots: Record<ProfileKey, ProfileAuthoringSnapshot> = {
+  LLM_OPS: {
+    nodes: [
+      { id: 'start', type: 'start', handlerKey: 'common.start', resultPorts: ['next'], config: {} },
+      { id: 'guardrail', type: 'guardrail', handlerKey: 'common.guardrail', resultPorts: ['passed', 'failed'], config: { locked: true } },
+      { id: 'analyze', type: 'agent', handlerKey: 'coding.analyze', resultPorts: ['feasible', 'infeasible'], config: {} },
+      { id: 'scope_approval', type: 'approval', handlerKey: 'coding.approval', resultPorts: ['approved'], config: { stage: 'SCOPE', requiredRole: 'GENERAL_ADMIN' } },
+      { id: 'code', type: 'agent', handlerKey: 'coding.code', resultPorts: ['completed'], config: {} },
+      { id: 'review', type: 'agent', handlerKey: 'coding.review', resultPorts: ['passed', 'changes_requested'], config: {} },
+      { id: 'preview', type: 'tool', handlerKey: 'coding.preview', resultPorts: ['ready'], config: {} },
+      { id: 'preview_approval', type: 'approval', handlerKey: 'coding.preview_approval', resultPorts: ['approved', 'rejected'], config: { stage: 'CANDIDATE', requiredRole: 'GENERAL_ADMIN' } },
+      { id: 'pr_request', type: 'tool', handlerKey: 'coding.pr_request', resultPorts: ['requested'], config: {} },
+      { id: 'github_approval', type: 'approval', handlerKey: 'coding.approval', resultPorts: ['approved'], config: { stage: 'GITHUB', requiredRole: 'SUPER_ADMIN' } },
+      { id: 'cms_approval', type: 'approval', handlerKey: 'coding.approval', resultPorts: ['approved'], config: { stage: 'CMS', requiredRole: 'GENERAL_ADMIN' } },
+      { id: 'deploy_approval', type: 'approval', handlerKey: 'coding.approval', resultPorts: ['approved'], config: { stage: 'DEPLOY', requiredRole: 'SUPER_ADMIN' } },
+      { id: 'deploy_request', type: 'tool', handlerKey: 'coding.deploy_request', resultPorts: ['recorded'], config: { mode: 'request_record_only' } },
+      { id: 'end', type: 'end', handlerKey: 'common.end', resultPorts: [], config: {} },
+    ],
+    edges: [
+      { from: 'start', resultPort: 'next', to: 'guardrail' }, { from: 'guardrail', resultPort: 'passed', to: 'analyze' },
+      { from: 'guardrail', resultPort: 'failed', to: 'end' }, { from: 'analyze', resultPort: 'feasible', to: 'scope_approval' },
+      { from: 'analyze', resultPort: 'infeasible', to: 'end' }, { from: 'scope_approval', resultPort: 'approved', to: 'code' },
+      { from: 'code', resultPort: 'completed', to: 'review' }, { from: 'review', resultPort: 'passed', to: 'preview' },
+      { from: 'review', resultPort: 'changes_requested', to: 'code' }, { from: 'preview', resultPort: 'ready', to: 'preview_approval' },
+      { from: 'preview_approval', resultPort: 'approved', to: 'pr_request' }, { from: 'preview_approval', resultPort: 'rejected', to: 'analyze' },
+      { from: 'pr_request', resultPort: 'requested', to: 'github_approval' }, { from: 'github_approval', resultPort: 'approved', to: 'cms_approval' },
+      { from: 'cms_approval', resultPort: 'approved', to: 'deploy_approval' }, { from: 'deploy_approval', resultPort: 'approved', to: 'deploy_request' },
+      { from: 'deploy_request', resultPort: 'recorded', to: 'end' },
+    ],
+    config: { maxNodes: 14, maxAttempts: 3, loopLimits: [
+      { from: 'review', resultPort: 'changes_requested', to: 'code', maxIterations: 2 },
+      { from: 'preview_approval', resultPort: 'rejected', to: 'analyze', maxIterations: 2 },
+    ] },
+    modelBindings: {
+      analyze: { primary: 'llm-ops-analyze', fallback: [] }, code: { primary: 'llm-ops-code', fallback: [] }, review: { primary: 'llm-ops-review', fallback: [] },
+    },
+    toolPolicy: { allowedTools: ['read_file', 'search_code', 'read_diff', 'apply_patch', 'run_check', 'check_package_allowlist', 'scan_changed_files'] },
+    guardrailProfileKey: 'central.default',
+  },
+  NATURAL_CMS: {
+    nodes: [
+      { id: 'start', type: 'start', handlerKey: 'common.start', resultPorts: ['next'], config: {} },
+      { id: 'guardrail', type: 'guardrail', handlerKey: 'common.guardrail', resultPorts: ['passed', 'failed'], config: { locked: true } },
+      { id: 'analyze', type: 'agent', handlerKey: 'cms.analyze', resultPorts: ['feasible', 'infeasible'], config: {} },
+      { id: 'preview', type: 'agent', handlerKey: 'cms.preview', resultPorts: ['ready'], config: {} },
+      { id: 'approval', type: 'approval', handlerKey: 'cms.approval', resultPorts: ['approved', 'rejected'], config: { stage: 'PREVIEW', requiredRole: 'GENERAL_ADMIN' } },
+      { id: 'discard', type: 'tool', handlerKey: 'cms.discard', resultPorts: ['retry', 'discarded'], config: {} },
+      { id: 'apply', type: 'tool', handlerKey: 'cms.apply', resultPorts: ['applied'], config: {} },
+      { id: 'end', type: 'end', handlerKey: 'common.end', resultPorts: [], config: {} },
+    ],
+    edges: [
+      { from: 'start', resultPort: 'next', to: 'guardrail' }, { from: 'guardrail', resultPort: 'passed', to: 'analyze' },
+      { from: 'guardrail', resultPort: 'failed', to: 'end' }, { from: 'analyze', resultPort: 'feasible', to: 'preview' },
+      { from: 'analyze', resultPort: 'infeasible', to: 'end' }, { from: 'preview', resultPort: 'ready', to: 'approval' },
+      { from: 'approval', resultPort: 'approved', to: 'apply' }, { from: 'approval', resultPort: 'rejected', to: 'discard' },
+      { from: 'discard', resultPort: 'retry', to: 'analyze' }, { from: 'discard', resultPort: 'discarded', to: 'end' },
+      { from: 'apply', resultPort: 'applied', to: 'end' },
+    ],
+    config: { maxNodes: 8, maxAttempts: 3, loopLimits: [{ from: 'discard', resultPort: 'retry', to: 'analyze', maxIterations: 2 }] },
+    modelBindings: { analyze: { primary: 'natural-cms-analyze', fallback: [] }, preview: { primary: 'natural-cms-command', fallback: [] } },
+    toolPolicy: { allowedTools: ['resolve_cms_target', 'validate_cms_command', 'create_cms_preview', 'discard_cms_preview', 'revalidate_cms_preview', 'apply_cms_preview'] },
+    guardrailProfileKey: 'central.default',
+  },
+}
+
 const initialNodes: WorkflowNode[] = [
   { id: 'n1', type: 'start', name: 'Start', x: 24, y: 48, model: models[0], tools: [] },
   { id: 'n2', type: 'guardrail', name: '잠금 Guardrail', x: 200, y: 48, model: models[0], tools: [] },
@@ -86,7 +152,7 @@ const providerCards = [
   { initial: 'G', name: 'Google', model: '모델 배치 예시', skin: 'bg-[#f1f4f9] text-[#4a5f8a]' },
 ]
 
-export default function AgentSettingsWorkspace() {
+export default function AgentSettingsWorkspace({ api }: { api: ProfileVersionApiClient }) {
   const [activeTab, setActiveTab] = useState<TabId>('workflow')
   const [selectedProfileKey, setSelectedProfileKey] = useState<ProfileKey>('LLM_OPS')
 
@@ -103,12 +169,12 @@ export default function AgentSettingsWorkspace() {
   }
 
   return <>
-    <PageHead title="Agent 설정" description="현재 Runtime 계약을 기준으로 향후 Agent 설정 화면의 범위를 확인합니다.">
+    <PageHead title="Agent 설정" description="Profile Version을 조회·저장·활성화하고 나머지 Runtime 설정 경계를 확인합니다.">
       <Badge tone="run" dot={false}>최고관리자 전용</Badge>
     </PageHead>
     <div className="mb-4 flex flex-wrap items-center gap-2 rounded-md border border-[#d9e6ef] bg-[#f4f9fc] px-3 py-2 text-[0.71875rem] text-run-fg">
-      <Badge tone="run">임시 목업</Badge>
-      <span>{temporaryMockTitle}. 저장·검증·실행 API는 호출하지 않습니다.</span>
+      <Badge tone="run">부분 연결</Badge>
+      <span>자연어 기능 Profile은 실제 API를 사용합니다. Provider·Workflow·정책·사용량 영역은 아직 저장하거나 실행하지 않습니다.</span>
     </div>
 
     <div className="mb-[1.125rem] flex gap-[1.375rem] overflow-x-auto border-b border-line" role="tablist" aria-label="Agent 설정 영역">
@@ -131,6 +197,7 @@ export default function AgentSettingsWorkspace() {
     {activeTab === 'provider' && <ProviderModelPanel />}
     {activeTab === 'workflow' && <WorkflowPanel />}
     {activeTab === 'profile' && <NaturalFeatureProfilePanel
+      api={api}
       selectedKey={selectedProfileKey}
       onSelect={setSelectedProfileKey}
     />}
@@ -139,19 +206,97 @@ export default function AgentSettingsWorkspace() {
   </>
 }
 
-function NaturalFeatureProfilePanel({ selectedKey, onSelect }: {
+function NaturalFeatureProfilePanel({ api, selectedKey, onSelect }: {
+  api: ProfileVersionApiClient
   selectedKey: ProfileKey
   onSelect: (key: ProfileKey) => void
 }) {
   const selected = profileCatalog[selectedKey]
+  const [versions, setVersions] = useState<ProfileVersion[]>([])
+  const [selectedVersionId, setSelectedVersionId] = useState<string | null>(null)
+  const [editor, setEditor] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [failure, setFailure] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
+
+  useEffect(() => {
+    let active = true
+    setLoading(true)
+    setFailure(null)
+    setNotice(null)
+    void api.list(selectedKey).then((items) => {
+      if (!active) return
+      const next = [...items].sort((left, right) => right.profileVersion - left.profileVersion)
+      const preferred = next.find((item) => item.status === 'ACTIVE') ?? next[0] ?? null
+      setVersions(next)
+      if (preferred) chooseVersion(preferred)
+      else {
+        setSelectedVersionId(null)
+        setEditor(JSON.stringify(starterSnapshots[selectedKey], null, 2))
+      }
+    }).catch((error: unknown) => {
+      if (active) { setVersions([]); setSelectedVersionId(null); setEditor(''); setFailure(describeFailure(error)) }
+    }).finally(() => { if (active) setLoading(false) })
+    return () => { active = false }
+  }, [api, selectedKey])
+
+  const selectedVersion = versions.find((item) => item.profileVersionId === selectedVersionId) ?? null
+
+  function chooseVersion(version: ProfileVersion | null) {
+    setSelectedVersionId(version?.profileVersionId ?? null)
+    setEditor(version ? JSON.stringify(toAuthoringSnapshot(version.snapshot), null, 2) : '')
+  }
+
+  async function saveDraft() {
+    setFailure(null)
+    setNotice(null)
+    let snapshot: ProfileAuthoringSnapshot
+    try {
+      snapshot = JSON.parse(editor) as ProfileAuthoringSnapshot
+    } catch {
+      setFailure('Snapshot JSON 형식을 확인해 주세요.')
+      return
+    }
+    setSaving(true)
+    try {
+      const created = await api.create(selectedKey, snapshot)
+      setVersions((current) => [created, ...current])
+      chooseVersion(created)
+      setNotice(`v${created.profileVersion} DRAFT를 저장했습니다.`)
+    } catch (error) {
+      setFailure(describeFailure(error))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function activateSelected() {
+    if (!selectedVersion || selectedVersion.status !== 'DRAFT') return
+    setSaving(true)
+    setFailure(null)
+    setNotice(null)
+    try {
+      const activated = await api.activate(selectedVersion.profileVersionId)
+      setVersions((current) => current.map((item) => item.profileVersionId === activated.profileVersionId
+        ? activated
+        : item.status === 'ACTIVE' ? { ...item, status: 'INACTIVE' } : item))
+      chooseVersion(activated)
+      setNotice(`v${activated.profileVersion}을 ACTIVE로 전환했습니다.`)
+    } catch (error) {
+      setFailure(describeFailure(error))
+    } finally {
+      setSaving(false)
+    }
+  }
 
   return <section id="agent-settings-panel-profile" role="tabpanel" aria-labelledby="agent-settings-tab-profile">
-    <Callout tone="warn" icon="triangle-alert">
-      현재 구현된 Queue Lane과 Job–Profile Version 바인딩 경계만 읽기 전용으로 표시합니다. 기능별 상세 설정과 Tool은 각 담당 범위가 확정된 뒤 연결합니다.
+    <Callout tone="ok" icon="shield-check">
+      저장은 새 불변 DRAFT만 만들며 기존 Snapshot을 덮어쓰지 않습니다. 실행 반영은 DRAFT를 선택한 뒤 별도 활성화해야 합니다.
     </Callout>
     <div className="mt-3 grid items-start gap-[0.875rem] xl:grid-cols-[18rem_minmax(0,1fr)]">
       <aside className={`${panel} overflow-hidden`} aria-label="자연어 기능 Profile 목록">
-        <PanelTitle title="Profile" sub="기능 소유 영역별 Runtime 경계" />
+        <PanelTitle title="Profile" sub="기능 소유 영역별 버전" />
         <div className="grid gap-2 p-3">
           {(Object.keys(profileCatalog) as ProfileKey[]).map((key) => {
             const profile = profileCatalog[key]
@@ -172,21 +317,66 @@ function NaturalFeatureProfilePanel({ selectedKey, onSelect }: {
             </button>
           })}
         </div>
+        <div className="border-t border-row-line p-3">
+          <b className="text-[0.71875rem] font-semibold">저장된 Version</b>
+          {loading && <p className="mt-2 text-[0.6875rem] text-muted-2">조회 중…</p>}
+          {!loading && versions.length === 0 && <p className="mt-2 text-[0.6875rem] text-muted-2">저장된 Version이 없습니다.</p>}
+          <div className="mt-2 grid gap-2">
+            {versions.map((version) => <button
+              key={version.profileVersionId}
+              type="button"
+              aria-label={`v${version.profileVersion} ${version.status} 선택`}
+              aria-pressed={selectedVersionId === version.profileVersionId}
+              className={`flex items-center rounded border px-2 py-2 text-left text-[0.71875rem] ${selectedVersionId === version.profileVersionId ? 'border-primary bg-run-bg' : 'border-line bg-white'}`}
+              onClick={() => chooseVersion(version)}
+            >
+              <b>v{version.profileVersion}</b><span className="ml-auto">{version.status}</span>
+            </button>)}
+          </div>
+        </div>
       </aside>
 
       <article className={panel}>
         <PanelTitle title={`${selected.title} Profile`} sub={`${selectedKey} · ${selected.owner}`}>
-          <Badge tone="idle" dot={false}>읽기 전용 목업</Badge>
+          <Badge tone={selectedVersion?.status === 'ACTIVE' ? 'ok' : 'wait'} dot={false}>{selectedVersion?.status ?? 'VERSION 없음'}</Badge>
         </PanelTitle>
         <div className="grid gap-3 p-4 sm:grid-cols-2 xl:grid-cols-3">
           <ProfileFact label="Queue Lane" value={selected.queue} />
           <ProfileFact label="작업 대상" value={selected.target} />
           <ProfileFact label="현재 Runtime" value={selected.runtime} />
         </div>
-        <p className="border-t border-row-line px-4 py-3 text-[0.6875rem] leading-5 text-muted-2">Model·Tool·업무 규칙은 이 공통 목업에서 저장하지 않습니다.</p>
+        <div className="border-t border-row-line p-4">
+          <label className="block text-[0.71875rem] font-semibold text-body">새 DRAFT Snapshot JSON
+            <textarea
+              aria-label="Profile Snapshot JSON"
+              className={`${control} min-h-[22rem] resize-y font-mono text-[0.6875rem] leading-5`}
+              value={editor}
+              disabled={saving}
+              onChange={(event) => setEditor(event.target.value)}
+            />
+          </label>
+          <p className="mt-2 text-[0.6875rem] leading-5 text-muted-2">서버가 계약·Handler Registry·잠금 Guardrail을 다시 검증하고 ID와 Version을 부여합니다.</p>
+          {failure && <div role="alert" className="mt-3 rounded border border-[#ead2d2] bg-fail-bg px-3 py-2 text-[0.71875rem] text-fail-fg">{failure}</div>}
+          {notice && <div role="status" className="mt-3 rounded border border-[#cfe8db] bg-ok-bg px-3 py-2 text-[0.71875rem] text-ok-fg">{notice}</div>}
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button type="button" className={primaryButton} disabled={!editor || saving} onClick={() => void saveDraft()}>불변 버전 저장</button>
+            <button type="button" className={secondaryButton} disabled={!selectedVersion || selectedVersion.status !== 'DRAFT' || saving} onClick={() => void activateSelected()}>선택 DRAFT 활성화</button>
+          </div>
+        </div>
       </article>
     </div>
   </section>
+}
+
+function toAuthoringSnapshot(snapshot: ProfileVersion['snapshot']): ProfileAuthoringSnapshot {
+  return {
+    nodes: snapshot.nodes,
+    edges: snapshot.edges,
+    config: snapshot.config,
+    modelBindings: snapshot.modelBindings,
+    toolPolicy: snapshot.toolPolicy,
+    guardrailProfileKey: snapshot.guardrailProfileKey,
+  }
 }
 
 function ProfileFact({ label, value }: { label: string; value: string }) {
@@ -274,6 +464,10 @@ function WorkflowPanel() {
 
   function deleteSelected() {
     if (!selected) return
+    if (selected.type === 'guardrail') {
+      setStatus('잠금 Guardrail은 Snapshot 계약 때문에 삭제할 수 없습니다.')
+      return
+    }
     const remaining = nodes.filter((node) => node.id !== selected.id)
     setNodes(remaining)
     setEdges((current) => current.filter((edge) => edge.from !== selected.id && edge.to !== selected.id))
@@ -400,7 +594,7 @@ function WorkflowPanel() {
             <input aria-label="선택 Node 이름" className={control} value={selected.name} onChange={(event) => updateSelected({ name: event.target.value || nodeTypes[selected.type].label })} />
           </label>
           <label className="mt-3 block text-[0.71875rem] font-semibold text-body">유형
-            <select aria-label="선택 Node 유형" className={control} value={selected.type} onChange={(event) => updateSelected({ type: event.target.value as NodeType })}>
+            <select aria-label="선택 Node 유형" className={control} value={selected.type} disabled={selected.type === 'guardrail'} title={selected.type === 'guardrail' ? '잠금 Guardrail의 유형은 변경할 수 없습니다.' : undefined} onChange={(event) => updateSelected({ type: event.target.value as NodeType })}>
               {(Object.keys(nodeTypes) as NodeType[]).map((type) => <option key={type} value={type}>{nodeTypes[type].label}</option>)}
             </select>
           </label>
@@ -429,7 +623,7 @@ function WorkflowPanel() {
           </label>}
 
           {(selected.type === 'approval' || selected.type === 'check') && <div className="mt-3"><Badge tone="wait" dot={false}>공통 Handler 연결 전</Badge></div>}
-          {selected.type === 'guardrail' && <div className="mt-3"><Badge tone="idle" dot={false}>Snapshot 잠금 계약</Badge></div>}
+          {selected.type === 'guardrail' && <div className="mt-3 text-[0.6875rem] leading-5 text-muted-2"><Badge tone="idle" dot={false}>Snapshot 잠금 계약</Badge><p className="mt-2">Guardrail은 삭제하거나 비활성화할 수 없습니다.</p></div>}
 
           <div className="mt-4 grid gap-2">
             <button type="button" className={connectFrom === selected.id ? secondaryButton : primaryButton} onClick={() => {
@@ -439,7 +633,7 @@ function WorkflowPanel() {
                 setConnectFrom(selected.id); setStatus(`${selected.name}에서 연결할 대상 Node를 선택하세요.`)
               }
             }}>{connectFrom === selected.id ? '연결 선택 취소' : '이 Node에서 연결'}</button>
-            <button type="button" className={dangerButton} onClick={deleteSelected}>Node 삭제</button>
+            <button type="button" className={dangerButton} disabled={selected.type === 'guardrail'} title={selected.type === 'guardrail' ? '잠금 Guardrail은 삭제할 수 없습니다.' : undefined} onClick={deleteSelected}>Node 삭제</button>
           </div>
 
           <div className="mt-4 border-t border-row-line pt-3">

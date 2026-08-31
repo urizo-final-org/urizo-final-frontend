@@ -3,7 +3,7 @@ import type { IconName } from '../shared/ui/icons'
 
 /** Screens backed by the CMS API. */
 export type CmsRouteId = 'members' | 'menus' | 'contents' | 'boards' | 'templates'
-/** Screens the design canvas adds; these render static mockups and call no API. */
+/** Operations screens; some remain static while Agent/System settings now include Profile API reads and writes. */
 export type OpsRouteId = 'home' | 'agents' | 'models' | 'rag' | 'devops' | 'approvals' | 'runs' | 'settings' | 'system-settings' | 'sites'
 export type RouteId = CmsRouteId | OpsRouteId
 
@@ -31,13 +31,13 @@ export const routes: RouteDefinition[] = [
   { id: 'boards', path: '/admin/boards', group: '개요', label: '게시판 관리', glyph: '▦', icon: 'message-square', allowedRoles: admins },
   { id: 'templates', path: '/admin/templates', group: '개요', label: '템플릿 관리', glyph: '◇', icon: 'layout-template', allowedRoles: admins },
   { id: 'agents', path: '/admin/agents', group: 'AI 운영', label: 'Agent 관리', glyph: '◈', icon: 'bot', allowedRoles: admins, mock: true, hiddenFromNavigation: true },
-  { id: 'models', path: '/admin/models', group: 'AI 운영', label: 'Agent 설정', glyph: '◧', icon: 'boxes', allowedRoles: superAdmins, mock: true },
+  { id: 'models', path: '/admin/models', group: 'AI 운영', label: 'Agent 설정', glyph: '◧', icon: 'boxes', allowedRoles: superAdmins },
   { id: 'rag', path: '/admin/rag', group: 'AI 운영', label: 'RAG 관리', glyph: '▩', icon: 'database', allowedRoles: admins, mock: true },
   { id: 'devops', path: '/admin/llm-devops', group: 'AI 운영', label: 'LLM DevOps', glyph: '◑', icon: 'code-2', allowedRoles: admins, mock: true },
   { id: 'approvals', path: '/admin/approvals', group: '거버넌스', label: '승인 관리', glyph: '◍', icon: 'shield-check', allowedRoles: admins, mock: true },
   { id: 'runs', path: '/admin/runs', group: '거버넌스', label: '실행 이력', glyph: '◌', icon: 'history', allowedRoles: admins, mock: true },
   { id: 'settings', path: '/admin/settings', group: '환경', label: '설정', glyph: '⚙', icon: 'settings', allowedRoles: admins, mock: true },
-  { id: 'system-settings', path: '/admin/system-settings', group: '환경', label: '시스템 설정', glyph: '◫', icon: 'sliders-horizontal', allowedRoles: superAdmins, mock: true },
+  { id: 'system-settings', path: '/admin/system-settings', group: '환경', label: '시스템 설정', glyph: '◫', icon: 'sliders-horizontal', allowedRoles: superAdmins },
   { id: 'sites', path: '/admin/sites', group: '환경', label: '사이트 관리', glyph: '◎', icon: 'globe-2', allowedRoles: superAdmins, mock: true },
 ]
 
