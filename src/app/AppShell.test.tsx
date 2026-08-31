@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, expect, test, vi } from 'vitest'
 import { SITE_UPDATE_EVENT } from '../features/cms/api'
 import AppShell from './AppShell'
@@ -41,6 +41,90 @@ test('an open public page refreshes when CMS data changes', async () => {
   template = { ...template, heroTitle: 'CMS 변경 즉시 반영' }
   window.dispatchEvent(new Event(SITE_UPDATE_EVENT))
   expect(await screen.findByRole('heading', { name: 'CMS 변경 즉시 반영' })).toBeInTheDocument()
+})
+
+test('an initial public Site failure is visible and retry recovers the page', async () => {
+  let contextCalls = 0
+  vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => {
+    const path = String(input)
+    if (path.startsWith('/api/site/context?path=')) {
+      contextCalls += 1
+      return Promise.resolve(contextCalls === 1
+        ? json({ detail: '일시적인 Site 장애입니다.' }, 503)
+        : json(siteContext()))
+    }
+    if (path === '/api/site/menus' || path === '/api/site/boards') return Promise.resolve(json([]))
+    return Promise.resolve(json([]))
+  }))
+
+  render(<AppShell />)
+
+  expect(await screen.findByRole('alert')).toHaveTextContent('일시적인 Site 장애입니다.')
+  fireEvent.click(screen.getByRole('button', { name: '다시 시도' }))
+  expect(await screen.findByRole('heading', { name: 'Technology for a Better Tomorrow' })).toBeInTheDocument()
+  expect(contextCalls).toBe(2)
+})
+
+test('an older public Site request cannot overwrite the latest route', async () => {
+  window.history.pushState({}, '', '/campaign')
+  const campaign = deferred<Response>()
+  const eventTemplate = { ...siteTemplate(), siteName: 'Event Site', heroTitle: 'Latest Event Site' }
+  const campaignTemplate = { ...siteTemplate(), siteName: 'Campaign Site', heroTitle: 'Stale Campaign Site' }
+  vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => {
+    const path = String(input)
+    if (path.includes(encodeURIComponent('/campaign'))) return campaign.promise
+    if (path.includes(encodeURIComponent('/event'))) return Promise.resolve(json(siteContext(eventTemplate, '/event')))
+    if (path === '/api/site/menus' || path === '/api/site/boards') return Promise.resolve(json([]))
+    return Promise.resolve(json([]))
+  }))
+
+  render(<AppShell />)
+  act(() => {
+    window.history.pushState({}, '', '/event')
+    window.dispatchEvent(new PopStateEvent('popstate'))
+  })
+  expect(await screen.findByRole('heading', { name: 'Latest Event Site' })).toBeInTheDocument()
+
+  await act(async () => {
+    campaign.resolve(json(siteContext(campaignTemplate, '/campaign')))
+    await campaign.promise
+  })
+
+  expect(screen.getByRole('heading', { name: 'Latest Event Site' })).toBeInTheDocument()
+  expect(screen.queryByRole('heading', { name: 'Stale Campaign Site' })).not.toBeInTheDocument()
+})
+
+test('a failed Site transition replaces the stale Site with a retry that can recover', async () => {
+  window.history.pushState({}, '', '/campaign')
+  let eventCalls = 0
+  const campaignTemplate = { ...siteTemplate(), siteName: 'Campaign Site', heroTitle: 'Campaign Home' }
+  const eventTemplate = { ...siteTemplate(), siteName: 'Event Site', heroTitle: 'Event Home' }
+  vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => {
+    const path = String(input)
+    if (path.includes(encodeURIComponent('/campaign'))) return Promise.resolve(json(siteContext(campaignTemplate, '/campaign')))
+    if (path.includes(encodeURIComponent('/event'))) {
+      eventCalls += 1
+      return Promise.resolve(eventCalls === 1
+        ? json({ detail: 'Event Site를 불러오지 못했습니다.' }, 503)
+        : json(siteContext(eventTemplate, '/event')))
+    }
+    if (path === '/api/site/menus' || path === '/api/site/boards') return Promise.resolve(json([]))
+    return Promise.resolve(json([]))
+  }))
+
+  render(<AppShell />)
+  expect(await screen.findByRole('heading', { name: 'Campaign Home' })).toBeInTheDocument()
+
+  act(() => {
+    window.history.pushState({}, '', '/event')
+    window.dispatchEvent(new PopStateEvent('popstate'))
+  })
+
+  expect(await screen.findByRole('alert')).toHaveTextContent('Event Site를 불러오지 못했습니다.')
+  expect(screen.queryByRole('heading', { name: 'Campaign Home' })).not.toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: '다시 시도' }))
+  expect(await screen.findByRole('heading', { name: 'Event Home' })).toBeInTheDocument()
+  expect(eventCalls).toBe(2)
 })
 
 test('the admin URL shows the CMS login when no session exists', async () => {
@@ -271,7 +355,7 @@ test('the page-scoped AI panel collapses to a rail and expands again', async () 
 
 test('an administrator previews a template and saves only contract fields', async () => {
   window.history.pushState({}, '', '/admin/templates')
-  const bold = { ...siteTemplate(), key: 'BOLD', layout: 'BOLD', siteName: 'AX Creative', active: false }
+  const bold = { ...siteTemplate(), key: 'BOLD', layout: 'BOLD', siteName: 'AX Creative' }
   let savedBody: Record<string, unknown> | null = null
   vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
     const path = String(input)
@@ -279,7 +363,7 @@ test('an administrator previews a template and saves only contract fields', asyn
     if (path === '/api/cms/templates' && !init?.method) return Promise.resolve(json([siteTemplate(), bold]))
     if (path === '/api/cms/templates/BOLD' && init?.method === 'PUT') {
       savedBody = JSON.parse(String(init.body)) as Record<string, unknown>
-      return Promise.resolve(json({ ...bold, ...savedBody, active: true }))
+      return Promise.resolve(json({ ...bold, ...savedBody }))
     }
     return Promise.resolve(json([]))
   }))
@@ -287,16 +371,17 @@ test('an administrator previews a template and saves only contract fields', asyn
   render(<AppShell />)
   expect(await screen.findByRole('heading', { name: '템플릿 관리' })).toBeInTheDocument()
   expect(await screen.findByText('Header와 메인 영역의 배치·여백·강조 방식을 선택합니다.')).toBeInTheDocument()
+  expect(screen.queryByText('ACTIVE')).not.toBeInTheDocument()
 
   fireEvent.click(screen.getByRole('button', { name: 'BOLD 템플릿 미리보기' }))
   expect(screen.getByRole('dialog', { name: 'BOLD 템플릿 미리보기' })).toBeInTheDocument()
   fireEvent.click(screen.getByRole('button', { name: '닫기' }))
 
   fireEvent.click(screen.getByRole('button', { name: 'BOLD 템플릿 선택' }))
-  fireEvent.click(await screen.findByRole('button', { name: '저장하고 사용자 사이트에 적용' }))
+  fireEvent.click(await screen.findByRole('button', { name: '템플릿 저장' }))
   await waitFor(() => expect(savedBody).not.toBeNull())
   const status = await screen.findByRole('status')
-  expect(status).toHaveTextContent('템플릿을 저장하고 사용자 사이트에 적용했습니다.')
+  expect(status).toHaveTextContent('템플릿을 저장했습니다.')
   expect(status).toHaveClass('cms-success-toast')
   expect(window.localStorage.getItem(SITE_UPDATE_EVENT)).toBeTruthy()
   expect(Object.keys(savedBody ?? {}).sort()).toEqual([
@@ -317,7 +402,7 @@ test('an administrator sees a clear template save failure', async () => {
 
   render(<AppShell />)
   expect(await screen.findByRole('heading', { name: '템플릿 관리' })).toBeInTheDocument()
-  fireEvent.click(await screen.findByRole('button', { name: '저장하고 사용자 사이트에 적용' }))
+  fireEvent.click(await screen.findByRole('button', { name: '템플릿 저장' }))
   expect(await screen.findByRole('alert')).toHaveTextContent('템플릿을 저장하지 못했습니다. 입력값을 확인하세요.')
 })
 
@@ -351,7 +436,7 @@ function siteTemplate() {
     headerText: 'Technology · Trust · Growth', footerText: 'AX Bio Studio | 서울특별시 디지털로 123',
     heroImageUrl: '/images/cms/hero-bio.svg', heroTitle: 'Technology for a Better Tomorrow',
     heroSubtitle: '사람과 기술을 연결합니다.', heroButtonLabel: '회사 소개', heroButtonUrl: '/about/company',
-    active: true, updatedAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
   }
 }
 
@@ -372,4 +457,10 @@ function session(role: 'SUPER_ADMIN' | 'GENERAL_ADMIN' = 'GENERAL_ADMIN', name =
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((onResolve) => { resolve = onResolve })
+  return { promise, resolve }
 }

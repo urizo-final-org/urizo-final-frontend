@@ -27,7 +27,7 @@ function profileApi(overrides: Partial<ProfileVersionApiClient> = {}): ProfileVe
 
 const template: SiteTemplate = {
   key: 'CLASSIC', layout: 'CLASSIC', primaryColor: '#287255', siteName: 'AX Studio', headerText: 'Header', footerText: 'Footer',
-  heroImageUrl: '/hero.svg', heroTitle: 'Hero', heroSubtitle: 'Subtitle', heroButtonLabel: '보기', heroButtonUrl: '/about', active: true, updatedAt: '2026-08-31T00:00:00Z',
+  heroImageUrl: '/hero.svg', heroTitle: 'Hero', heroSubtitle: 'Subtitle', heroButtonLabel: '보기', heroButtonUrl: '/about', updatedAt: '2026-08-31T00:00:00Z',
 }
 const mainSite: CmsSite = {
   key: 'main', name: 'AX Studio', publicPath: '/', templateKey: 'CLASSIC', enabled: true, defaultSite: true, updatedAt: '2026-08-31T00:00:00Z',
@@ -38,6 +38,7 @@ function siteSettingsApi(overrides: Partial<CmsSiteSettingsApiClient> = {}): Cms
     settings: vi.fn().mockResolvedValue({ defaultSiteKey: 'main', defaultTemplateKey: 'CLASSIC', updatedAt: '2026-08-31T00:00:00Z' }),
     saveSettings: vi.fn().mockResolvedValue({ defaultSiteKey: 'main', defaultTemplateKey: 'CLASSIC', updatedAt: '2026-08-31T00:00:00Z' }),
     sites: vi.fn().mockResolvedValue([mainSite]),
+    createSite: vi.fn().mockResolvedValue(mainSite),
     saveSite: vi.fn().mockResolvedValue(mainSite),
     templates: vi.fn().mockResolvedValue([template]),
     ...overrides,
@@ -111,7 +112,7 @@ test('central guardrail lookup failures are visible without edit controls', asyn
 
 test('system settings saves the selected default site and template', async () => {
   const campaign = { ...mainSite, key: 'campaign', name: '캠페인', publicPath: '/campaign', templateKey: 'BOLD', defaultSite: false }
-  const bold = { ...template, key: 'BOLD', layout: 'BOLD', active: false }
+  const bold = { ...template, key: 'BOLD', layout: 'BOLD' }
   const api = siteSettingsApi({
     sites: vi.fn().mockResolvedValue([mainSite, campaign]),
     templates: vi.fn().mockResolvedValue([template, bold]),
@@ -142,6 +143,46 @@ test('site management saves only the selected site settings', async () => {
   })))
   expect(await screen.findByText(/사용자 화면에 반영했습니다/)).toBeInTheDocument()
   expect(screen.queryByLabelText('대표 색상')).not.toBeInTheDocument()
+})
+
+test('site management creates a second Site with its own path and template', async () => {
+  const created = {
+    ...mainSite,
+    key: 'campaign',
+    name: '캠페인',
+    publicPath: '/campaign',
+    defaultSite: false,
+  }
+  const createSite = vi.fn().mockResolvedValue(created)
+  const api = siteSettingsApi({ createSite })
+  render(<OpsWorkspace route="sites" actorName="최고 관리자" roleLabel="최고관리자" profileApi={profileApi()} siteSettingsApi={api} />)
+
+  fireEvent.click(await screen.findByRole('button', { name: '새 사이트' }))
+  fireEvent.change(screen.getByLabelText('사이트 키'), { target: { value: 'campaign' } })
+  fireEvent.change(screen.getByLabelText('사이트명'), { target: { value: '캠페인' } })
+  fireEvent.change(screen.getByLabelText(/공개 경로/), { target: { value: '/campaign' } })
+  fireEvent.click(screen.getByRole('button', { name: '사이트 생성' }))
+
+  await waitFor(() => expect(createSite).toHaveBeenCalledWith({
+    key: 'campaign', name: '캠페인', publicPath: '/campaign', templateKey: 'CLASSIC', enabled: true,
+  }))
+  expect(await screen.findByText(/사이트를 생성하고 사용자 화면에 반영했습니다/)).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: /캠페인/ })).toBeInTheDocument()
+})
+
+test('site creation exposes key and path conflicts without adding the Site', async () => {
+  const createSite = vi.fn().mockRejectedValue(new Error('이미 사용 중인 Site 키 또는 공개 경로입니다.'))
+  const api = siteSettingsApi({ createSite })
+  render(<OpsWorkspace route="sites" actorName="최고 관리자" roleLabel="최고관리자" profileApi={profileApi()} siteSettingsApi={api} />)
+
+  fireEvent.click(await screen.findByRole('button', { name: '새 사이트' }))
+  fireEvent.change(screen.getByLabelText('사이트 키'), { target: { value: 'main' } })
+  fireEvent.change(screen.getByLabelText('사이트명'), { target: { value: '중복 사이트' } })
+  fireEvent.click(screen.getByRole('button', { name: '사이트 생성' }))
+
+  expect(await screen.findByText(/사이트를 생성하지 못했습니다.*이미 사용 중인 Site 키 또는 공개 경로/)).toBeInTheDocument()
+  expect(createSite).toHaveBeenCalledTimes(1)
+  expect(screen.queryByRole('button', { name: /중복 사이트/ })).not.toBeInTheDocument()
 })
 
 test('site management exposes a clear save failure', async () => {

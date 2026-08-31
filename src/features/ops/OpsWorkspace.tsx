@@ -513,6 +513,7 @@ function Sites({ api }: { api: CmsSiteSettingsApiClient }) {
   const [items, setItems] = useState<CmsSite[]>([])
   const [templates, setTemplates] = useState<SiteTemplate[]>([])
   const [selected, setSelected] = useState<CmsSite | null>(null)
+  const [creating, setCreating] = useState(false)
   const [failure, setFailure] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -533,11 +534,14 @@ function Sites({ api }: { api: CmsSiteSettingsApiClient }) {
     if (!selected) return
     setSaving(true); setFailure(null); setSuccess(null)
     try {
-      const saved = await api.saveSite(selected.key, selected)
-      setItems((current) => current.map((item) => item.key === saved.key ? saved : item))
-      setSelected(saved); notifySiteUpdated(); setSuccess('사이트 설정을 저장하고 사용자 화면에 반영했습니다.')
+      const saved = creating
+        ? await api.createSite({ key: selected.key, name: selected.name, publicPath: selected.publicPath, templateKey: selected.templateKey, enabled: selected.enabled })
+        : await api.saveSite(selected.key, selected)
+      setItems((current) => creating ? [...current, saved] : current.map((item) => item.key === saved.key ? saved : item))
+      setSelected(saved); setCreating(false); notifySiteUpdated()
+      setSuccess(creating ? '사이트를 생성하고 사용자 화면에 반영했습니다.' : '사이트 설정을 저장하고 사용자 화면에 반영했습니다.')
     } catch (error) {
-      setFailure(`사이트 설정을 저장하지 못했습니다. ${describeFailure(error)}`)
+      setFailure(`${creating ? '사이트를 생성' : '사이트 설정을 저장'}하지 못했습니다. ${describeFailure(error)}`)
     } finally {
       setSaving(false)
     }
@@ -552,13 +556,24 @@ function Sites({ api }: { api: CmsSiteSettingsApiClient }) {
 
     <div className="grid items-start gap-[0.875rem] lg:grid-cols-[18rem_minmax(0,1fr)]">
       <section className={panel}>
-        <PanelTitle title="사이트" sub={loading ? '불러오는 중' : `${items.length}개`} />
+        <PanelTitle title="사이트" sub={loading ? '불러오는 중' : `${items.length}개`}>
+          <button
+            type="button"
+            className={smallButton}
+            disabled={loading || saving || templates.length === 0}
+            onClick={() => {
+              setCreating(true)
+              setSelected({ key: '', name: '', publicPath: '/', templateKey: templates[0]?.key ?? '', enabled: true, defaultSite: false, updatedAt: '' })
+              setFailure(null); setSuccess(null)
+            }}
+          >새 사이트</button>
+        </PanelTitle>
         <div className="grid gap-2 p-3">
           {items.map((site) => <button
             key={site.key}
             type="button"
             className={`rounded-md border p-3 text-left ${selected?.key === site.key ? 'border-primary bg-sub' : 'border-line-soft bg-white hover:bg-sub'}`}
-            onClick={() => { setSelected(site); setFailure(null); setSuccess(null) }}
+            onClick={() => { setSelected(site); setCreating(false); setFailure(null); setSuccess(null) }}
           >
             <span className="flex items-center gap-2"><b className="min-w-0 flex-1 truncate text-xs">{site.name}</b>{site.defaultSite && <Badge tone="run">기본</Badge>}</span>
             <small className="mt-2 block text-[0.6875rem] text-muted-2">{site.publicPath} · {site.enabled ? '사용' : '중지'}</small>
@@ -568,8 +583,11 @@ function Sites({ api }: { api: CmsSiteSettingsApiClient }) {
       </section>
 
       <form className={panel} onSubmit={save}>
-        <PanelTitle title="사이트 설정" sub={selected ? selected.key : '선택 필요'} />
+        <PanelTitle title={creating ? '사이트 생성' : '사이트 설정'} sub={selected ? selected.key || '새 Site' : '선택 필요'} />
         {selected ? <div className="grid gap-4 p-4 md:grid-cols-2">
+          {creating && <label className="text-xs font-semibold">사이트 키
+            <input className={`${control} mt-2 font-mono`} value={selected.key} maxLength={40} pattern="[A-Za-z0-9_-]+" required onChange={(event) => setSelected({ ...selected, key: event.target.value })} />
+          </label>}
           <label className="text-xs font-semibold">사이트명
             <input className={`${control} mt-2`} value={selected.name} maxLength={100} required onChange={(event) => setSelected({ ...selected, name: event.target.value })} />
           </label>
@@ -588,7 +606,7 @@ function Sites({ api }: { api: CmsSiteSettingsApiClient }) {
             {selected.defaultSite && <small className="ml-auto font-normal text-muted-2">기본 사이트는 중지할 수 없습니다.</small>}
           </label>
           <div className="flex justify-end md:col-span-2">
-            <button className={primaryButton} disabled={saving || templates.length === 0}>{saving ? '저장 중…' : '사이트 설정 저장'}</button>
+            <button className={primaryButton} disabled={saving || templates.length === 0}>{saving ? '저장 중…' : creating ? '사이트 생성' : '사이트 설정 저장'}</button>
           </div>
         </div> : <p className="p-4 text-xs text-muted-2">편집할 사이트를 선택하세요.</p>}
       </form>

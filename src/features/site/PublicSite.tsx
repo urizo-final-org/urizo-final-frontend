@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { describeFailure } from '../../shared/api/error'
 import { SITE_UPDATE_EVENT, SiteApi, type Article, type Board, type Menu, type Post, type PublicSiteContext, type SiteTemplate } from '../cms/api'
@@ -13,18 +13,35 @@ export default function PublicSite() {
   const [content, setContent] = useState<Article | null>(null)
   const [posts, setPosts] = useState<Post[]>([])
   const [post, setPost] = useState<Post | null>(null)
+  const [siteFailure, setSiteFailure] = useState<string | null>(null)
   const [failure, setFailure] = useState<string | null>(null)
+  const siteRequest = useRef(0)
 
   const loadSite = useCallback(() => {
+    const request = ++siteRequest.current
+    setSiteFailure(null)
     Promise.all([api.site(location.pathname), api.menus(), api.boards()]).then(([s, m, b]) => {
-      setFailure(null)
+      if (request !== siteRequest.current) return
+      setSiteFailure(null)
       setSite(s); setMenus(m); setBoards(b)
-      if (b[0]) void api.posts(b[0].id).then(setNotices)
-    }).catch((error) => setFailure(describeFailure(error)))
+      if (b[0]) {
+        void api.posts(b[0].id).then((next) => {
+          if (request === siteRequest.current) setNotices(next)
+        }).catch((error) => {
+          if (request === siteRequest.current) setSiteFailure(describeFailure(error))
+        })
+      } else {
+        setNotices([])
+      }
+    }).catch((error) => {
+      if (request === siteRequest.current) setSiteFailure(describeFailure(error))
+    })
   }, [api, location.pathname])
 
   useEffect(() => {
+    setSite(null)
     loadSite()
+    return () => { siteRequest.current += 1 }
   }, [loadSite])
 
   useEffect(() => {
@@ -46,15 +63,24 @@ export default function PublicSite() {
   const routePath = site ? relativeSitePath(site.publicPath, location.pathname) : location.pathname
 
   useEffect(() => {
+    let active = true
     setContent(null); setPosts([]); setPost(null); setFailure(null)
     const postMatch = routePath.match(/^\/posts\/(\d+)$/)
-    if (postMatch) { void api.post(Number(postMatch[1])).then(setPost).catch((e) => setFailure(describeFailure(e))); return }
+    if (postMatch) {
+      void api.post(Number(postMatch[1])).then((next) => { if (active) setPost(next) }).catch((e) => { if (active) setFailure(describeFailure(e)) })
+      return () => { active = false }
+    }
     const menu = menus.find((item) => item.path === routePath)
-    if (menu?.targetType === 'CONTENT' && menu.targetId) void api.content(menu.targetId).then(setContent).catch((e) => setFailure(describeFailure(e)))
-    if (menu?.targetType === 'BOARD' && menu.targetId) void api.posts(menu.targetId).then(setPosts).catch((e) => setFailure(describeFailure(e)))
+    if (menu?.targetType === 'CONTENT' && menu.targetId) void api.content(menu.targetId).then((next) => { if (active) setContent(next) }).catch((e) => { if (active) setFailure(describeFailure(e)) })
+    if (menu?.targetType === 'BOARD' && menu.targetId) void api.posts(menu.targetId).then((next) => { if (active) setPosts(next) }).catch((e) => { if (active) setFailure(describeFailure(e)) })
+    return () => { active = false }
   }, [api, menus, routePath])
 
-  if (!site) return <div className="grid min-h-screen place-items-center bg-white text-sm text-[#6a8184]">사용자 사이트를 불러오는 중입니다…</div>
+  if (!site) return <div className="grid min-h-screen place-items-center bg-white px-5 text-sm text-[#6a8184]">
+    {siteFailure
+      ? <div className="grid max-w-md gap-4 text-center"><p className="m-0 rounded border border-[#f2d5d3] bg-[#fdebea] p-4 text-[#b4615d]" role="alert">{siteFailure}</p><button type="button" className="mx-auto rounded bg-[#2a5f61] px-4 py-2 font-bold text-white" onClick={loadSite}>다시 시도</button></div>
+      : <span>사용자 사이트를 불러오는 중입니다…</span>}
+  </div>
   const template = site.template
   const roots = menus.filter((menu) => menu.parentId === null)
   const currentMenu = menus.find((menu) => menu.path === routePath)
@@ -62,6 +88,7 @@ export default function PublicSite() {
   const style = { '--brand': template.primaryColor } as CSSProperties
 
   return <div className={`min-h-screen overflow-x-hidden bg-[#fbfcfa] text-[#263e48] site-${template.layout.toLowerCase()}`} style={style}>
+    {siteFailure && <div className="flex items-center justify-center gap-3 border-b border-[#f2d5d3] bg-[#fdebea] px-5 py-3 text-xs text-[#b4615d]" role="alert"><span>{siteFailure}</span><button type="button" className="rounded border border-current px-3 py-1 font-bold" onClick={loadSite}>다시 시도</button></div>}
     <header className="relative z-30 bg-white">
       <div className="border-b border-[#e8eeeb] bg-[#f6f9f8]">
         <div className="mx-auto flex max-w-[77.5rem] items-center justify-between gap-4 px-5 py-2 text-[0.6875rem] text-[#6a8184]"><span>{template.headerText}</span><Link className="rounded border border-[#dce7e4] px-[0.625rem] py-[0.375rem] text-[0.625rem] font-bold no-underline hover:border-[var(--brand)] hover:text-[var(--brand)]" to="/admin">CMS 관리자</Link></div>

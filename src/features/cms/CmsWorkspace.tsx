@@ -332,13 +332,13 @@ function Templates({ api }: { api: CmsApi }) {
   const [value, setValue] = useState<SiteTemplate | null>(null)
   const [preview, setPreview] = useState<SiteTemplate | null>(null)
   const [failure, setFailure] = useState<string | null>(null)
-  const load = () => api.templates().then((next) => { setItems(next); setValue((current) => current ? next.find((item) => item.key === current.key) ?? current : next.find((item) => item.active) ?? next[0]) }).catch((e) => setFailure(`불러오지 못했습니다. ${describeFailure(e)}`))
+  const load = () => api.templates().then((next) => { setItems(next); setValue((current) => current ? next.find((item) => item.key === current.key) ?? current : next[0]) }).catch((e) => setFailure(`불러오지 못했습니다. ${describeFailure(e)}`))
   useEffect(() => { void load() }, [api])
   async function submit(event: FormEvent) {
     event.preventDefault()
     if (!value) return
     setFailure(null)
-    try { setValue(await api.saveTemplate(value)); await load(); notifySiteUpdated(); notifyCmsSuccess('템플릿을 저장하고 사용자 사이트에 적용했습니다.') } catch (e) { setFailure(`템플릿을 저장하지 못했습니다. ${describeFailure(e)}`) }
+    try { setValue(await api.saveTemplate(value)); await load(); notifySiteUpdated(); notifyCmsSuccess('템플릿을 저장했습니다.') } catch (e) { setFailure(`템플릿을 저장하지 못했습니다. ${describeFailure(e)}`) }
   }
   function select(item: SiteTemplate) { setFailure(null); setValue(item) }
 
@@ -348,7 +348,7 @@ function Templates({ api }: { api: CmsApi }) {
     <div className="mb-[0.875rem] grid gap-[0.875rem] md:grid-cols-3">
       {items.map((item) => <article key={item.key} className={`${panel} grid content-start gap-3 p-4 ${value?.key === item.key ? 'border-primary ring-2 ring-[#eef2f7]' : ''}`}>
         <button type="button" className="text-left" aria-label={`${item.key} 템플릿 선택`} onClick={() => select(item)}>
-          <span className="flex items-center gap-2 text-[0.65625rem] font-semibold text-run-fg">{item.key}{item.active && <Badge tone="ok">ACTIVE</Badge>}</span>
+          <span className="flex items-center gap-2 text-[0.65625rem] font-semibold text-run-fg">{item.key}</span>
           <h2 className="mb-1 mt-2 text-base font-semibold">{item.siteName}</h2>
           <span className="text-[0.6875rem] text-muted-2">{item.layout}</span>
         </button>
@@ -356,7 +356,7 @@ function Templates({ api }: { api: CmsApi }) {
       </article>)}
     </div>
     {value && <form className={panel} onSubmit={submit}>
-      <PanelTitle title={`${value.key} 템플릿 설정`} sub="저장하면 이 템플릿이 사용자 사이트에 적용됩니다.">
+      <PanelTitle title={`${value.key} 템플릿 설정`} sub="저장한 내용은 이 템플릿을 사용하는 사이트에 반영됩니다.">
         <button type="button" className={smallButton} onClick={() => setPreview(value)}>현재 입력값 미리보기</button>
       </PanelTitle>
       <div className="grid gap-4 p-4 md:grid-cols-2">
@@ -391,7 +391,7 @@ function Templates({ api }: { api: CmsApi }) {
           <input className={control} value={value.footerText} onChange={(e) => setValue({ ...value, footerText: e.target.value })} />
         </TemplateField>
         <div className="md:col-span-2 flex justify-end">
-          <button className={primaryButton}>저장하고 사용자 사이트에 적용</button>
+          <button className={primaryButton}>템플릿 저장</button>
         </div>
       </div>
     </form>}

@@ -34,7 +34,6 @@ export type SiteTemplate = {
   heroSubtitle: string
   heroButtonLabel: string
   heroButtonUrl: string
-  active: boolean
   updatedAt: string
 }
 export type PublicSiteContext = { key: string; name: string; publicPath: string; template: SiteTemplate }
@@ -102,5 +101,4 @@ export class SiteApi {
   posts = (boardId: number) => this.request<Post[]>(`/api/site/boards/${boardId}/posts`)
   post = (id: number) => this.request<Post>(`/api/site/posts/${id}`)
   site = (path = '/') => this.request<PublicSiteContext>(`/api/site/context?path=${encodeURIComponent(path)}`)
-  template = (path = '/') => this.request<SiteTemplate>(`/api/site/template?path=${encodeURIComponent(path)}`)
 }

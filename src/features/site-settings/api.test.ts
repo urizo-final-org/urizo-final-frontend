@@ -25,6 +25,28 @@ test('site save exposes the backend validation detail', async () => {
     .rejects.toMatchObject({ status: 400, message: '이미 사용 중인 공개 경로입니다.' })
 })
 
+test('site creation posts its key and isolated Site settings', async () => {
+  let path = ''
+  let method = ''
+  let body: unknown
+  vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+    path = String(input)
+    method = init?.method ?? 'GET'
+    body = JSON.parse(String(init?.body))
+    return Promise.resolve(json({
+      key: 'campaign', name: '캠페인', publicPath: '/campaign', templateKey: 'BOLD', enabled: true,
+      defaultSite: false, updatedAt: '2026-08-31T00:00:00Z',
+    }))
+  }))
+  const api = new CmsSiteSettingsApi('access-token', vi.fn(), vi.fn())
+
+  await api.createSite({ key: 'campaign', name: '캠페인', publicPath: '/campaign', templateKey: 'BOLD', enabled: true })
+
+  expect(path).toBe('/api/admin/cms/sites')
+  expect(method).toBe('POST')
+  expect(body).toEqual({ key: 'campaign', siteName: '캠페인', publicPath: '/campaign', templateKey: 'BOLD', enabled: true })
+})
+
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
 }
