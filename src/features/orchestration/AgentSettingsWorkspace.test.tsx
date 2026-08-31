@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, expect, test, vi } from 'vitest'
 import AgentSettingsWorkspace from './AgentSettingsWorkspace'
-import type { ProfileVersion, ProfileVersionApiClient } from './api'
+import type { AgentSettingsApiClient, ProfileVersion } from './api'
 
 afterEach(() => vi.unstubAllGlobals())
 
@@ -13,11 +13,23 @@ const activeVersion: ProfileVersion = {
   },
 }
 
-function profileApi(overrides: Partial<ProfileVersionApiClient> = {}): ProfileVersionApiClient {
+function profileApi(overrides: Partial<AgentSettingsApiClient> = {}): AgentSettingsApiClient {
   return {
     list: vi.fn().mockResolvedValue([activeVersion]),
     create: vi.fn().mockResolvedValue({ ...activeVersion, profileVersionId: 'version-3', profileVersion: 3, status: 'DRAFT' }),
     activate: vi.fn().mockResolvedValue({ ...activeVersion, profileVersionId: 'version-3', profileVersion: 3 }),
+    listProviderCredentials: vi.fn().mockResolvedValue({
+      csrfToken: 'csrf-fixture',
+      providers: [
+        { provider: 'OPENAI', configured: false, state: null, fingerprintSuffix: null, updatedAt: null, lastTestedAt: null },
+        { provider: 'ANTHROPIC', configured: false, state: null, fingerprintSuffix: null, updatedAt: null, lastTestedAt: null },
+        { provider: 'GOOGLE_GENAI', configured: false, state: null, fingerprintSuffix: null, updatedAt: null, lastTestedAt: null },
+      ],
+      checkedAt: '2026-08-31T00:00:00Z',
+    }),
+    storeProviderCredential: vi.fn(),
+    testProviderCredential: vi.fn(),
+    deleteProviderCredential: vi.fn(),
     ...overrides,
   }
 }
@@ -50,6 +62,46 @@ test('the five Agent settings tabs expose runtime status without fake controls o
   fireEvent.click(screen.getByRole('tab', { name: /사용량·평가/ }))
   expect(screen.getAllByText('API 없음')).toHaveLength(3)
   expect(screen.queryByText(/RAGAS|Langfuse|ToolCallAccuracy|AgentGoalAccuracy/)).not.toBeInTheDocument()
+})
+
+test('provider keys can be stored, tested, and deleted without rendering the secret again', async () => {
+  const stored = {
+    provider: 'OPENAI' as const, configured: true, state: 'STORED' as const, fingerprintSuffix: 'abc123fixture',
+    updatedAt: '2026-08-31T00:01:00Z', lastTestedAt: null,
+  }
+  const api = profileApi({
+    storeProviderCredential: vi.fn().mockResolvedValue(stored),
+    testProviderCredential: vi.fn().mockResolvedValue({
+      provider: 'OPENAI', modelId: 'fixture-model', state: 'VERIFIED', inferenceExecuted: true,
+      inputTokens: 1, outputTokens: 1, latencyMs: 12, testedAt: '2026-08-31T00:02:00Z', safeCode: 'OK',
+    }),
+    deleteProviderCredential: vi.fn().mockResolvedValue({
+      provider: 'OPENAI', configured: false, state: null, fingerprintSuffix: null, updatedAt: null, lastTestedAt: null,
+    }),
+  })
+  vi.stubGlobal('confirm', vi.fn(() => true))
+  render(<AgentSettingsWorkspace api={api} />)
+  fireEvent.click(screen.getByRole('tab', { name: 'Provider·Model' }))
+
+  await waitFor(() => expect(api.listProviderCredentials).toHaveBeenCalled())
+  const secretInput = screen.getByLabelText('OpenAI API Key')
+  fireEvent.change(secretInput, { target: { value: 'fixture-credential-value' } })
+  fireEvent.click(within(secretInput.closest('article') as HTMLElement).getByRole('button', { name: 'Key 저장' }))
+
+  await screen.findByText(/OpenAI API Key를 암호화 저장했습니다/)
+  expect(api.storeProviderCredential).toHaveBeenCalledWith('OPENAI', 'fixture-credential-value', 'csrf-fixture')
+  expect(secretInput).toHaveValue('')
+  expect(screen.queryByDisplayValue('fixture-credential-value')).not.toBeInTheDocument()
+  expect(screen.getByText('...abc123fixture')).toBeInTheDocument()
+
+  fireEvent.click(screen.getByRole('button', { name: '연결 테스트' }))
+  await screen.findByText('OpenAI 연결 테스트 결과: 연결 확인 · OK.')
+  expect(api.testProviderCredential).toHaveBeenCalledWith('OPENAI', 'csrf-fixture')
+
+  fireEvent.click(screen.getByRole('button', { name: 'Key 삭제' }))
+  await screen.findByText('OpenAI API Key를 삭제했습니다.')
+  expect(api.deleteProviderCredential).toHaveBeenCalledWith('OPENAI', 'csrf-fixture')
+  expect(screen.queryByRole('button', { name: 'Key 삭제' })).not.toBeInTheDocument()
 })
 
 test('natural feature profiles query, create, and explicitly activate immutable versions', async () => {
