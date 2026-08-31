@@ -1,16 +1,15 @@
-import { useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
+import { useEffect, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import type { OpsRouteId } from '../../app/routes'
+import { describeFailure } from '../../shared/api/error'
 import { Icon, type IconName } from '../../shared/ui/icons'
 import {
   Badge, Callout, FilterChip, PageHead, Pagination, PanelTitle, SearchField, Tabs, Tag,
   control, panel, primaryButton, secondaryButton, smallButton, type Tone,
 } from '../../shared/ui/primitives'
+import type { ProfileVersion, ProfileVersionApiClient } from '../orchestration/api'
 
-/**
- * Screens the design canvas adds on top of the CMS. They are static mockups: no API call, no
- * persistence. Every number here is demo data and the UI says so.
- */
-export default function OpsWorkspace({ route, actorName, roleLabel }: { route: OpsRouteId; actorName: string; roleLabel: string }) {
+/** Operations screens added on top of the CMS; only Profile-backed sections call an API. */
+export default function OpsWorkspace({ route, actorName, roleLabel, profileApi }: { route: OpsRouteId; actorName: string; roleLabel: string; profileApi: ProfileVersionApiClient }) {
   if (route === 'home') return <Home actorName={actorName} />
   if (route === 'agents') return <Agents />
   if (route === 'models') return <Models />
@@ -18,7 +17,7 @@ export default function OpsWorkspace({ route, actorName, roleLabel }: { route: O
   if (route === 'devops') return <Devops />
   if (route === 'approvals') return <Approvals />
   if (route === 'runs') return <Runs />
-  if (route === 'system-settings') return <SystemSettings />
+  if (route === 'system-settings') return <SystemSettings api={profileApi} />
   if (route === 'sites') return <Sites />
   return <Settings roleLabel={roleLabel} />
 }
@@ -536,7 +535,7 @@ const systemSettingsTabs: { id: SystemSettingsTabId; label: string }[] = [
   { id: 'guardrail', label: 'Guardrail Profile' },
 ]
 
-function SystemSettings() {
+function SystemSettings({ api }: { api: ProfileVersionApiClient }) {
   const [activeTab, setActiveTab] = useState<SystemSettingsTabId>('cms')
 
   function moveTabFocus(event: ReactKeyboardEvent<HTMLButtonElement>, index: number) {
@@ -552,10 +551,10 @@ function SystemSettings() {
   }
 
   return <>
-    <PageHead title="시스템 설정" description="현재 CMS와 공통 Runtime의 설정 경계만 확인합니다.">
-      <Badge tone="run" dot={false}>임시 목업</Badge>
+    <PageHead title="시스템 설정" description="현재 CMS 경계와 활성 Profile의 중앙 Guardrail 연결 상태를 확인합니다.">
+      <Badge tone="run" dot={false}>부분 연결</Badge>
     </PageHead>
-    <RuntimeMockNotice>상세 정책을 편집하는 화면이 아닙니다. 실제 저장 API가 생기기 전까지 구현 상태만 읽기 전용으로 표시합니다.</RuntimeMockNotice>
+    <RuntimeMockNotice>CMS 기본 설정은 임시 안내이며 Guardrail Profile은 실제 활성 Snapshot을 읽기 전용으로 조회합니다.</RuntimeMockNotice>
 
     <div className="mb-[1.125rem] flex gap-[1.375rem] overflow-x-auto border-b border-line" role="tablist" aria-label="시스템 설정 영역">
       {systemSettingsTabs.map((tab, index) => <button
@@ -570,7 +569,7 @@ function SystemSettings() {
         onKeyDown={(event) => moveTabFocus(event, index)}
       >
         {tab.label}
-        <span className="ml-2 rounded border border-line bg-sub px-1 py-[0.0625rem] text-[0.5625rem] font-semibold text-muted-2" title={temporaryMockTitle}>임시</span>
+        {tab.id === 'cms' && <span className="ml-2 rounded border border-line bg-sub px-1 py-[0.0625rem] text-[0.5625rem] font-semibold text-muted-2" title={temporaryMockTitle}>임시</span>}
       </button>)}
     </div>
 
@@ -590,19 +589,57 @@ function SystemSettings() {
       </article>
     </section>}
 
-    {activeTab === 'guardrail' && <section id="system-settings-panel-guardrail" role="tabpanel" aria-labelledby="system-settings-tab-guardrail">
-      <Callout tone="warn" icon="triangle-alert">
-        Snapshot 계약에 잠금 Guardrail 구조는 있지만 중앙 정책 작성·저장 API는 없습니다. 세부 보안 설정처럼 보이던 토글과 경로 입력은 제거했습니다.
-      </Callout>
-      <article className={`${panel} mt-3`}>
-        <PanelTitle title="Guardrail Runtime 경계" sub="상세 정책 편집 없음" />
-        <div className="grid gap-3 p-4 md:grid-cols-2">
-          <RuntimeFact label="Snapshot 잠금 Guardrail" state="계약 있음" tone="ok" description="Versioned Snapshot이 잠금 Guardrail 구조를 포함합니다." />
-          <RuntimeFact label="중앙 정책 UI·저장 API" state="미구현" tone="idle" description="필요성이 확정되면 Runtime 계약과 함께 별도 Work로 구현합니다." />
-        </div>
-      </article>
-    </section>}
+    {activeTab === 'guardrail' && <GuardrailProfileStatus api={api} />}
   </>
+}
+
+function GuardrailProfileStatus({ api }: { api: ProfileVersionApiClient }) {
+  const [versions, setVersions] = useState<ProfileVersion[]>([])
+  const [loading, setLoading] = useState(true)
+  const [failure, setFailure] = useState<string | null>(null)
+
+  useEffect(() => {
+    let active = true
+    void api.list().then((items) => {
+      if (active) setVersions(items.filter((item) => item.status === 'ACTIVE'))
+    }).catch((error: unknown) => {
+      if (active) setFailure(describeFailure(error))
+    }).finally(() => { if (active) setLoading(false) })
+    return () => { active = false }
+  }, [api])
+
+  const centralKeys = [...new Set(versions.map((version) => version.snapshot.guardrailProfileKey))]
+
+  return <section id="system-settings-panel-guardrail" role="tabpanel" aria-labelledby="system-settings-tab-guardrail">
+    <Callout tone="ok" icon="shield-check">
+      중앙 Guardrail 연결은 활성 Profile Snapshot에서 계산한 읽기 전용 상태입니다. 삭제·비활성화·정책 변경 기능은 제공하지 않습니다.
+    </Callout>
+    {failure && <div role="alert" className="mt-3 rounded border border-[#ead2d2] bg-fail-bg px-3 py-2 text-[0.71875rem] text-fail-fg">{failure}</div>}
+    <article className={`${panel} mt-3`}>
+      <PanelTitle title="활성 Guardrail Profile" sub="Profile Version API 조회 결과">
+        <Badge tone={versions.length > 0 ? 'ok' : 'idle'} dot={false}>{loading ? '조회 중' : `${versions.length}개 활성 Profile`}</Badge>
+      </PanelTitle>
+      <div className="grid gap-3 p-4 md:grid-cols-2">
+        {versions.map((version) => <RuntimeFact
+          key={version.profileVersionId}
+          label={`${version.profileKey} v${version.profileVersion}`}
+          state={version.snapshot.guardrailProfileKey}
+          tone="ok"
+          description={`잠금 Guardrail Node ${lockedGuardrailCount(version)}개 · 삭제/비활성화 불가`}
+        />)}
+        {!loading && !failure && versions.length === 0 && <RuntimeFact label="활성 Profile" state="없음" tone="idle" description="활성 Profile Version을 확인해 주세요." />}
+        <RuntimeFact label="중앙 Profile Key" state={centralKeys.join(', ') || '조회 결과 없음'} tone={centralKeys.length > 0 ? 'ok' : 'idle'} description="활성 Snapshot이 참조하는 Guardrail Profile Key입니다." />
+      </div>
+    </article>
+  </section>
+}
+
+function lockedGuardrailCount(version: ProfileVersion): number {
+  return version.snapshot.nodes.filter((node) => {
+    if (!node || typeof node !== 'object') return false
+    const value = node as { type?: unknown; config?: { locked?: unknown } }
+    return value.type === 'guardrail' && value.config?.locked === true
+  }).length
 }
 
 /* ------------------------------------------------------------------ 설정 */

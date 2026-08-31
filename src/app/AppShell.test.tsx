@@ -93,8 +93,8 @@ test('only a super administrator can open Agent settings', async () => {
   expect(screen.getByText('최고관리자 전용')).toBeInTheDocument()
   expect(screen.getByRole('tab', { name: 'Agent·Workflow' })).toHaveAttribute('aria-selected', 'true')
   const agentSettingsItem = within(screen.getByRole('navigation', { name: '관리자 메뉴' })).getByRole('button', { name: /Agent 설정/ })
-  expect(within(agentSettingsItem).getByText('임시')).toHaveAttribute('title', '임시 목업 · 향후 필요 시 현재 Runtime 계약 기준으로 구현')
-  expect(screen.getAllByText('임시 목업').length).toBeGreaterThan(0)
+  expect(within(agentSettingsItem).queryByText('임시')).not.toBeInTheDocument()
+  expect(screen.getByText('부분 연결')).toBeInTheDocument()
 })
 
 test('a general administrator is redirected away from Agent settings', async () => {
@@ -119,8 +119,9 @@ test('only a super administrator can open system settings', async () => {
   render(<AppShell />)
   expect(await screen.findByRole('heading', { name: '시스템 설정' })).toBeInTheDocument()
   const navigation = screen.getByRole('navigation', { name: '관리자 메뉴' })
-  expect(within(navigation).getByRole('button', { name: /시스템 설정/ })).toBeInTheDocument()
-  expect(screen.getAllByText('임시 목업').length).toBeGreaterThan(0)
+  const systemSettingsItem = within(navigation).getByRole('button', { name: /시스템 설정/ })
+  expect(within(systemSettingsItem).queryByText('임시')).not.toBeInTheDocument()
+  expect(screen.getByText('부분 연결')).toBeInTheDocument()
 })
 
 test('a general administrator is redirected away from system settings', async () => {
