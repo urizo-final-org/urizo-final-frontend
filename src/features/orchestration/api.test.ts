@@ -47,3 +47,44 @@ test('preserves the public error envelope for forbidden and validation failures'
   expect(invalid).toBeInstanceOf(ProductApiError)
   expect(invalid).toMatchObject({ status: 400, code: 'CONTRACT_VALIDATION_FAILED', traceId: 'trace-validation' })
 })
+
+test('manages local provider credentials with the one-time CSRF token and never expects a returned secret', async () => {
+  const overview = {
+    csrfToken: 'csrf-fixture',
+    providers: [{ provider: 'OPENAI', configured: false, state: null, fingerprintSuffix: null, updatedAt: null, lastTestedAt: null }],
+    checkedAt: '2026-08-31T00:00:00Z',
+  }
+  const stored = {
+    provider: 'OPENAI', configured: true, state: 'STORED', fingerprintSuffix: 'abc123fixture',
+    updatedAt: '2026-08-31T00:01:00Z', lastTestedAt: null,
+  }
+  const tested = {
+    provider: 'OPENAI', modelId: 'fixture-model', state: 'VERIFIED', inferenceExecuted: true,
+    inputTokens: 1, outputTokens: 1, latencyMs: 12, testedAt: '2026-08-31T00:02:00Z', safeCode: 'OK',
+  }
+  const removed = { ...stored, configured: false, state: null, fingerprintSuffix: null, updatedAt: null }
+  const fetcher = vi.fn()
+    .mockResolvedValueOnce(new Response(JSON.stringify(overview)))
+    .mockResolvedValueOnce(new Response(JSON.stringify(stored)))
+    .mockResolvedValueOnce(new Response(JSON.stringify(tested)))
+    .mockResolvedValueOnce(new Response(JSON.stringify(removed)))
+  vi.stubGlobal('fetch', fetcher)
+  vi.stubGlobal('crypto', { randomUUID: () => 'trace-id' })
+  const api = new ProfileVersionApi('token', vi.fn(), vi.fn())
+
+  await expect(api.listProviderCredentials()).resolves.toEqual(overview)
+  await expect(api.storeProviderCredential('OPENAI', 'fixture-credential-value', 'csrf-fixture')).resolves.toEqual(stored)
+  await expect(api.testProviderCredential('OPENAI', 'csrf-fixture')).resolves.toEqual(tested)
+  await expect(api.deleteProviderCredential('OPENAI', 'csrf-fixture')).resolves.toEqual(removed)
+
+  expect(fetcher.mock.calls.map(([path]) => path)).toEqual([
+    '/internal/dev/provider-credentials',
+    '/internal/dev/provider-credentials/OPENAI',
+    '/internal/dev/provider-credentials/OPENAI/test',
+    '/internal/dev/provider-credentials/OPENAI',
+  ])
+  expect(fetcher.mock.calls.map(([, init]) => init?.method)).toEqual([undefined, 'PUT', 'POST', 'DELETE'])
+  expect(new Headers(fetcher.mock.calls[1][1].headers).get('X-AXMS-CSRF')).toBe('csrf-fixture')
+  expect(JSON.parse(fetcher.mock.calls[1][1].body)).toEqual({ credential: 'fixture-credential-value' })
+  expect(JSON.stringify(stored)).not.toContain('fixture-credential-value')
+})

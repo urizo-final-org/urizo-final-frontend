@@ -3,8 +3,12 @@ import { describeFailure } from '../../shared/api/error'
 import { Icon, type IconName } from '../../shared/ui/icons'
 import {
   Badge, Callout, PageHead, PanelTitle, Tag, control, dangerButton, panel, primaryButton, secondaryButton,
+  type Tone,
 } from '../../shared/ui/primitives'
-import type { ProfileAuthoringSnapshot, ProfileKey, ProfileVersion, ProfileVersionApiClient } from './api'
+import type {
+  AgentSettingsApiClient, ModelProvider, ProfileAuthoringSnapshot, ProfileKey, ProfileVersion,
+  ProfileVersionApiClient, ProviderCredentialState, ProviderCredentialStatus,
+} from './api'
 
 type TabId = 'provider' | 'workflow' | 'profile' | 'policy' | 'usage'
 type NodeType = 'start' | 'agent' | 'tool' | 'guardrail' | 'approval' | 'check' | 'end'
@@ -146,13 +150,21 @@ const initialEdges: WorkflowEdge[] = [
   { from: 'n1', to: 'n2' }, { from: 'n2', to: 'n3' }, { from: 'n3', to: 'n4' }, { from: 'n4', to: 'n5' },
 ]
 
-const providerCards = [
-  { initial: 'O', name: 'OpenAI', model: '모델 배치 예시', skin: 'bg-run-bg text-run-fg' },
-  { initial: 'A', name: 'Anthropic', model: '모델 배치 예시', skin: 'bg-[#f8f1ea] text-[#9a633a]' },
-  { initial: 'G', name: 'Google', model: '모델 배치 예시', skin: 'bg-[#f1f4f9] text-[#4a5f8a]' },
+const providerCards: { id: ModelProvider; initial: string; name: string; model: string; skin: string }[] = [
+  { id: 'OPENAI', initial: 'O', name: 'OpenAI', model: 'OpenAI API', skin: 'bg-run-bg text-run-fg' },
+  { id: 'ANTHROPIC', initial: 'A', name: 'Anthropic', model: 'Anthropic API', skin: 'bg-[#f8f1ea] text-[#9a633a]' },
+  { id: 'GOOGLE_GENAI', initial: 'G', name: 'Google', model: 'Gemini API', skin: 'bg-[#f1f4f9] text-[#4a5f8a]' },
 ]
 
-export default function AgentSettingsWorkspace({ api }: { api: ProfileVersionApiClient }) {
+const providerStatePresentation: Record<ProviderCredentialState, { label: string; tone: Tone }> = {
+  STORED: { label: '저장됨 · 미검증', tone: 'wait' },
+  VERIFIED: { label: '연결 확인', tone: 'ok' },
+  BILLING_BLOCKED: { label: '결제 확인 필요', tone: 'wait' },
+  INVALID_CREDENTIAL: { label: '인증 실패', tone: 'fail' },
+  PROVIDER_UNAVAILABLE: { label: 'Provider 응답 없음', tone: 'fail' },
+}
+
+export default function AgentSettingsWorkspace({ api }: { api: AgentSettingsApiClient }) {
   const [activeTab, setActiveTab] = useState<TabId>('workflow')
   const [selectedProfileKey, setSelectedProfileKey] = useState<ProfileKey>('LLM_OPS')
 
@@ -169,12 +181,12 @@ export default function AgentSettingsWorkspace({ api }: { api: ProfileVersionApi
   }
 
   return <>
-    <PageHead title="Agent 설정" description="Profile Version을 조회·저장·활성화하고 나머지 Runtime 설정 경계를 확인합니다.">
+    <PageHead title="Agent 설정" description="Provider Credential과 Profile Version을 최고관리자 계약으로 관리합니다.">
       <Badge tone="run" dot={false}>최고관리자 전용</Badge>
     </PageHead>
     <div className="mb-4 flex flex-wrap items-center gap-2 rounded-md border border-[#d9e6ef] bg-[#f4f9fc] px-3 py-2 text-[0.71875rem] text-run-fg">
       <Badge tone="run">부분 연결</Badge>
-      <span>자연어 기능 Profile은 실제 API를 사용합니다. Provider·Workflow·정책·사용량 영역은 아직 저장하거나 실행하지 않습니다.</span>
+      <span>Provider Key와 자연어 기능 Profile은 실제 API를 사용합니다. Workflow·정책·사용량 영역은 아직 저장하거나 실행하지 않습니다.</span>
     </div>
 
     <div className="mb-[1.125rem] flex gap-[1.375rem] overflow-x-auto border-b border-line" role="tablist" aria-label="Agent 설정 영역">
@@ -194,7 +206,7 @@ export default function AgentSettingsWorkspace({ api }: { api: ProfileVersionApi
       </button>)}
     </div>
 
-    {activeTab === 'provider' && <ProviderModelPanel />}
+    {activeTab === 'provider' && <ProviderModelPanel api={api} />}
     {activeTab === 'workflow' && <WorkflowPanel />}
     {activeTab === 'profile' && <NaturalFeatureProfilePanel
       api={api}
@@ -386,27 +398,147 @@ function ProfileFact({ label, value }: { label: string; value: string }) {
   </div>
 }
 
-function ProviderModelPanel() {
-  return <section id="agent-settings-panel-provider" role="tabpanel" aria-labelledby="agent-settings-tab-provider">
-    <div className="mb-[0.875rem] grid gap-3 md:grid-cols-3">
-      {providerCards.map((provider) => <article key={provider.name} className={`${panel} p-4`}>
-        <div className="flex items-center gap-[0.625rem]">
-          <span className={`grid h-8 w-8 place-items-center rounded-md text-xs font-bold ${provider.skin}`}>{provider.initial}</span>
-          <span className="min-w-0 flex-1">
-            <b className="block text-[0.8125rem] font-semibold">{provider.name}</b>
-            <small className="block text-[0.6875rem] text-muted-2">{provider.model}</small>
-          </span>
-          <Badge tone="idle" dot={false}>임시</Badge>
-        </div>
-      </article>)}
-    </div>
+function ProviderModelPanel({ api }: { api: AgentSettingsApiClient }) {
+  const [csrfToken, setCsrfToken] = useState('')
+  const [statuses, setStatuses] = useState<ProviderCredentialStatus[]>([])
+  const [credentials, setCredentials] = useState<Record<ModelProvider, string>>({ OPENAI: '', ANTHROPIC: '', GOOGLE_GENAI: '' })
+  const [busyProvider, setBusyProvider] = useState<ModelProvider | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [notice, setNotice] = useState('')
+  const [error, setError] = useState('')
 
-    <section className={panel}>
-      <PanelTitle title="Provider·Model 연결" sub="실제 연결 상태 API는 아직 없습니다.">
-        <Badge tone="wait" dot={false}>Runtime 연결 전</Badge>
+  useEffect(() => {
+    let mounted = true
+    setLoading(true)
+    api.listProviderCredentials()
+      .then((overview) => {
+        if (!mounted) return
+        setCsrfToken(overview.csrfToken)
+        setStatuses(overview.providers)
+        setError('')
+      })
+      .catch((failure: unknown) => {
+        if (mounted) setError(describeFailure(failure))
+      })
+      .finally(() => {
+        if (mounted) setLoading(false)
+      })
+    return () => { mounted = false }
+  }, [api])
+
+  function replaceStatus(next: ProviderCredentialStatus) {
+    setStatuses((current) => current.some((item) => item.provider === next.provider)
+      ? current.map((item) => item.provider === next.provider ? next : item)
+      : [...current, next])
+  }
+
+  async function save(provider: typeof providerCards[number]) {
+    const credential = credentials[provider.id]
+    if (credential.length < 8) {
+      setError(`${provider.name} API Key는 8자 이상 입력하세요.`)
+      return
+    }
+    setBusyProvider(provider.id)
+    setError('')
+    setNotice('')
+    try {
+      const status = await api.storeProviderCredential(provider.id, credential, csrfToken)
+      replaceStatus(status)
+      setCredentials((current) => ({ ...current, [provider.id]: '' }))
+      setNotice(`${provider.name} API Key를 암호화 저장했습니다. 원문은 다시 표시하지 않습니다.`)
+    } catch (failure) {
+      setError(describeFailure(failure))
+    } finally {
+      setBusyProvider(null)
+    }
+  }
+
+  async function testConnection(provider: typeof providerCards[number], current: ProviderCredentialStatus) {
+    setBusyProvider(provider.id)
+    setError('')
+    setNotice('')
+    try {
+      const result = await api.testProviderCredential(provider.id, csrfToken)
+      replaceStatus({ ...current, state: result.state, lastTestedAt: result.testedAt })
+      setNotice(`${provider.name} 연결 테스트 결과: ${providerStatePresentation[result.state].label} · ${result.safeCode}.`)
+    } catch (failure) {
+      setError(describeFailure(failure))
+    } finally {
+      setBusyProvider(null)
+    }
+  }
+
+  async function remove(provider: typeof providerCards[number]) {
+    if (!window.confirm(`${provider.name} API Key를 삭제할까요? 해당 Provider 호출은 즉시 중단됩니다.`)) return
+    setBusyProvider(provider.id)
+    setError('')
+    setNotice('')
+    try {
+      replaceStatus(await api.deleteProviderCredential(provider.id, csrfToken))
+      setCredentials((current) => ({ ...current, [provider.id]: '' }))
+      setNotice(`${provider.name} API Key를 삭제했습니다.`)
+    } catch (failure) {
+      setError(describeFailure(failure))
+    } finally {
+      setBusyProvider(null)
+    }
+  }
+
+  return <section id="agent-settings-panel-provider" role="tabpanel" aria-labelledby="agent-settings-tab-provider">
+    <Callout tone="warn" icon="triangle-alert">
+      API Key는 이 입력창에서 저장 요청에만 사용되고 다시 조회되지 않습니다. 연결 테스트는 Provider에 최소 추론 요청을 보내므로 계정 상태에 따라 과금될 수 있습니다.
+    </Callout>
+    {error && <div role="alert" className="mt-3 rounded-md border border-[#f0d5d1] bg-fail-bg px-3 py-2 text-xs text-fail-fg">{error}</div>}
+    {notice && <div className="mt-3"><Callout tone="ok" icon="check-check">{notice}</Callout></div>}
+    <section className={`${panel} mt-3`}>
+      <PanelTitle title="Provider Credential" sub="dev 로컬 Secret Store · 최고관리자 전용 · AES-GCM 암호화 저장">
+        <Badge tone={loading ? 'wait' : 'ok'} dot={false}>{loading ? '상태 조회 중' : '실제 API 연결'}</Badge>
       </PanelTitle>
-      <div className="p-4 text-[0.71875rem] leading-6 text-muted-2">
-        Provider Key, 연결 상태, Agent별 Model 배치는 실제 Backend 계약이 생긴 뒤 구현합니다. 이 화면은 Provider 후보를 인지하기 위한 임시 목업입니다.
+      <div className="grid gap-3 p-4 md:grid-cols-3">
+        {providerCards.map((provider) => {
+          const status = statuses.find((item) => item.provider === provider.id)
+          const presentation = status?.configured && status.state
+            ? providerStatePresentation[status.state]
+            : { label: '미등록', tone: 'idle' as Tone }
+          const busy = busyProvider === provider.id
+          return <article key={provider.id} className="rounded-md border border-line-soft bg-white p-4">
+            <div className="flex items-center gap-[0.625rem]">
+              <span className={`grid h-8 w-8 place-items-center rounded-md text-xs font-bold ${provider.skin}`}>{provider.initial}</span>
+              <span className="min-w-0 flex-1">
+                <b className="block text-[0.8125rem] font-semibold">{provider.name}</b>
+                <small className="block text-[0.6875rem] text-muted-2">{provider.model}</small>
+              </span>
+              <Badge tone={presentation.tone}>{presentation.label}</Badge>
+            </div>
+            <div className="mt-4 min-h-9 text-[0.6875rem] leading-5 text-muted-2">
+              {status?.configured
+                ? <>암호화 지문 <span className="font-mono text-body">...{status.fingerprintSuffix}</span>{status.lastTestedAt && <span className="block">마지막 테스트 {new Date(status.lastTestedAt).toLocaleString('ko-KR')}</span>}</>
+                : '저장된 Key가 없습니다.'}
+            </div>
+            <label className="mt-3 block text-[0.71875rem] font-semibold text-body">
+              {provider.name} API Key
+              <input
+                type="password"
+                autoComplete="new-password"
+                spellCheck={false}
+                minLength={8}
+                maxLength={4096}
+                className={control}
+                value={credentials[provider.id]}
+                placeholder={status?.configured ? '새 Key 입력 시 교체' : 'API Key 입력'}
+                disabled={loading || busyProvider !== null}
+                onChange={(event) => setCredentials((current) => ({ ...current, [provider.id]: event.target.value }))}
+              />
+            </label>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button type="button" className={primaryButton} disabled={loading || busyProvider !== null || !csrfToken} onClick={() => void save(provider)}>
+                {busy ? '처리 중' : status?.configured ? 'Key 교체' : 'Key 저장'}
+              </button>
+              {status?.configured && <button type="button" className={secondaryButton} disabled={busyProvider !== null || !csrfToken} onClick={() => void testConnection(provider, status)}>연결 테스트</button>}
+              {status?.configured && <button type="button" className={dangerButton} disabled={busyProvider !== null || !csrfToken} onClick={() => void remove(provider)}>Key 삭제</button>}
+            </div>
+          </article>
+        })}
       </div>
     </section>
   </section>

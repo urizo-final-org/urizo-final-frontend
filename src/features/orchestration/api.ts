@@ -3,6 +3,35 @@ import { fetchWithSessionRefresh, type AdminSession } from '../../shared/api/ses
 
 export type ProfileKey = 'LLM_OPS' | 'NATURAL_CMS'
 export type ProfileStatus = 'DRAFT' | 'ACTIVE' | 'INACTIVE'
+export type ModelProvider = 'OPENAI' | 'ANTHROPIC' | 'GOOGLE_GENAI'
+export type ProviderCredentialState = 'STORED' | 'VERIFIED' | 'BILLING_BLOCKED' | 'INVALID_CREDENTIAL' | 'PROVIDER_UNAVAILABLE'
+
+export interface ProviderCredentialStatus {
+  provider: ModelProvider
+  configured: boolean
+  state: ProviderCredentialState | null
+  fingerprintSuffix: string | null
+  updatedAt: string | null
+  lastTestedAt: string | null
+}
+
+export interface ProviderCredentialOverview {
+  csrfToken: string
+  providers: ProviderCredentialStatus[]
+  checkedAt: string
+}
+
+export interface ProviderConnectionTestResult {
+  provider: ModelProvider
+  modelId: string
+  state: ProviderCredentialState
+  inferenceExecuted: boolean
+  inputTokens: number | null
+  outputTokens: number | null
+  latencyMs: number
+  testedAt: string
+  safeCode: string
+}
 
 export interface ProfileAuthoringSnapshot {
   nodes: unknown[]
@@ -35,6 +64,13 @@ export interface ProfileVersionApiClient {
   activate(profileVersionId: string): Promise<ProfileVersion>
 }
 
+export interface AgentSettingsApiClient extends ProfileVersionApiClient {
+  listProviderCredentials(): Promise<ProviderCredentialOverview>
+  storeProviderCredential(provider: ModelProvider, credential: string, csrfToken: string): Promise<ProviderCredentialStatus>
+  testProviderCredential(provider: ModelProvider, csrfToken: string): Promise<ProviderConnectionTestResult>
+  deleteProviderCredential(provider: ModelProvider, csrfToken: string): Promise<ProviderCredentialStatus>
+}
+
 async function responseBody<T>(response: Response): Promise<T> {
   if (!response.ok) {
     const body = await response.json().catch(() => ({})) as PublicErrorEnvelope
@@ -50,7 +86,7 @@ async function responseBody<T>(response: Response): Promise<T> {
   return response.json() as Promise<T>
 }
 
-export class ProfileVersionApi implements ProfileVersionApiClient {
+export class ProfileVersionApi implements AgentSettingsApiClient {
   constructor(
     private token: string,
     private readonly onRefreshed: (session: AdminSession) => void,
@@ -84,5 +120,24 @@ export class ProfileVersionApi implements ProfileVersionApiClient {
   activate = (profileVersionId: string) => this.request<ProfileVersion>(
     `/api/admin/ai/profile-versions/${encodeURIComponent(profileVersionId)}/activate`,
     { method: 'POST' },
+  )
+
+  listProviderCredentials = () => this.request<ProviderCredentialOverview>(
+    '/internal/dev/provider-credentials',
+  )
+
+  storeProviderCredential = (provider: ModelProvider, credential: string, csrfToken: string) => this.request<ProviderCredentialStatus>(
+    `/internal/dev/provider-credentials/${encodeURIComponent(provider)}`,
+    { method: 'PUT', headers: { 'X-AXMS-CSRF': csrfToken }, body: JSON.stringify({ credential }) },
+  )
+
+  testProviderCredential = (provider: ModelProvider, csrfToken: string) => this.request<ProviderConnectionTestResult>(
+    `/internal/dev/provider-credentials/${encodeURIComponent(provider)}/test`,
+    { method: 'POST', headers: { 'X-AXMS-CSRF': csrfToken } },
+  )
+
+  deleteProviderCredential = (provider: ModelProvider, csrfToken: string) => this.request<ProviderCredentialStatus>(
+    `/internal/dev/provider-credentials/${encodeURIComponent(provider)}`,
+    { method: 'DELETE', headers: { 'X-AXMS-CSRF': csrfToken } },
   )
 }
