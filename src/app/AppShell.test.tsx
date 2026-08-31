@@ -188,7 +188,7 @@ test.each([
   ['/admin/contents', '컨텐츠 관리', '컨텐츠 AI', '메뉴 구조, 게시판·게시글, 템플릿은 변경하지 않아요.'],
   ['/admin/boards', '게시판 관리', '게시판 AI', '메뉴 연결, 정적 컨텐츠, 템플릿은 변경하지 않아요.'],
   ['/admin/templates', '템플릿 관리', '템플릿 AI', '메뉴, 컨텐츠 본문, 게시판·게시글은 변경하지 않아요.'],
-])('%s shows a page-scoped AI control mockup', async (path, section, assistant, excluded) => {
+])('%s shows a page-scoped AI panel', async (path, section, assistant, excluded) => {
   window.history.pushState({}, '', path)
   vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => {
     if (String(input) === '/api/auth/refresh') return Promise.resolve(json(session()))
@@ -201,7 +201,52 @@ test.each([
   expect(within(panel).getByRole('heading', { name: assistant })).toBeInTheDocument()
   expect(within(panel).getByText('현재 화면 전용')).toBeInTheDocument()
   expect(within(panel).getByText(excluded)).toBeInTheDocument()
-  expect(within(panel).getByText('목업 화면입니다. 저장·수정·삭제 API를 호출하지 않습니다.')).toBeInTheDocument()
+  expect(within(panel).getByText('목록에서 항목을 선택하면 그 대상에 적용합니다.')).toBeInTheDocument()
+  expect(within(panel).getByRole('button', { name: '요청 분석하기' })).toBeDisabled()
+})
+
+test('the assistant asks which item to change when no target is selected', async () => {
+  window.history.pushState({}, '', '/admin/contents')
+  const contents = [
+    { id: 1, authorId: actorId, authorName: '관리자', title: '회사 소개', body: '본문', createdAt: '2026-08-31T00:00:00Z', updatedAt: '2026-08-31T00:00:00Z' },
+    { id: 2, authorId: actorId, authorName: '관리자', title: '회사 연혁', body: '본문', createdAt: '2026-08-31T00:00:00Z', updatedAt: '2026-08-31T00:00:00Z' },
+    { id: 3, authorId: actorId, authorName: '관리자', title: '문의하기', body: '본문', createdAt: '2026-08-31T00:00:00Z', updatedAt: '2026-08-31T00:00:00Z' },
+  ]
+  vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => {
+    const url = String(input)
+    if (url === '/api/auth/refresh') return Promise.resolve(json(session()))
+    if (url === '/api/cms/contents') return Promise.resolve(json(contents))
+    return Promise.resolve(json([]))
+  }))
+
+  render(<AppShell />)
+  expect(await screen.findByRole('heading', { name: '컨텐츠 관리' })).toBeInTheDocument()
+  const panel = screen.getByRole('complementary', { name: '컨텐츠 관리 자연어 도우미' })
+
+  const submit = within(panel).getByRole('button', { name: '요청 분석하기' })
+  expect(submit).toBeDisabled()
+
+  fireEvent.change(within(panel).getByPlaceholderText('CMS 변경 요청을 입력하세요'), { target: { value: '회사 소개 본문 다듬어줘' } })
+  expect(submit).toBeEnabled()
+  fireEvent.click(submit)
+
+  expect(await within(panel).findByText('어느 것을 바꿀까요?')).toBeInTheDocument()
+  expect(within(panel).getByRole('button', { name: '회사 소개' })).toBeInTheDocument()
+  expect(within(panel).getByRole('button', { name: '회사 연혁' })).toBeInTheDocument()
+  expect(within(panel).queryByRole('button', { name: '문의하기' })).not.toBeInTheDocument()
+})
+
+test('the assistant only accepts requests on the screen that supports them', async () => {
+  window.history.pushState({}, '', '/admin/menus')
+  vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => {
+    if (String(input) === '/api/auth/refresh') return Promise.resolve(json(session()))
+    return Promise.resolve(json([]))
+  }))
+
+  render(<AppShell />)
+  expect(await screen.findByRole('heading', { name: '메뉴 관리' })).toBeInTheDocument()
+  const panel = screen.getByRole('complementary', { name: '메뉴 관리 자연어 도우미' })
+  expect(within(panel).getByText('메뉴 관리 화면은 아직 자연어 변경을 지원하지 않습니다.')).toBeInTheDocument()
 })
 
 test('the page-scoped AI panel collapses to a rail and expands again', async () => {

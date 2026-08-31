@@ -7,16 +7,19 @@ import {
   control, fieldLabel, panel, primaryButton, secondaryButton, smallButton, textarea, type Tone,
 } from '../../shared/ui/primitives'
 import { CmsApi, notifySiteUpdated, type Article, type Board, type Member, type Menu, type MenuTargetType, type Post, type SiteTemplate } from './api'
-import CmsAiAssistant from './assistant/CmsAiAssistant'
+import CmsAiAssistant, { type CmsAssistantTarget } from './assistant/CmsAiAssistant'
+import type { NaturalCmsApi } from './assistant/api'
 
 const dangerButton = 'inline-flex h-8 items-center gap-[0.375rem] rounded-[0.3125rem] border border-[#f0d5d1] bg-fail-bg px-[0.6875rem] text-xs font-semibold text-fail-fg enabled:hover:bg-[#f8e0dc]'
 const recordRow = 'flex w-full items-center gap-[0.625rem] border-b border-row-line px-4 py-[0.625rem] text-left text-body hover:bg-sub'
 const CMS_SUCCESS_EVENT = 'axms:cms-success'
 type SuccessNotice = { id: string; message: string }
 
-export default function CmsWorkspace({ route, api }: { route: CmsRouteId; api: CmsApi }) {
+export default function CmsWorkspace({ route, api, assistantApi }: { route: CmsRouteId; api: CmsApi; assistantApi: NaturalCmsApi }) {
   const [success, setSuccess] = useState<SuccessNotice | null>(null)
   const [assistantCollapsed, setAssistantCollapsed] = useState(false)
+  const [assistantTarget, setAssistantTarget] = useState<CmsAssistantTarget | null>(null)
+  const [assistantCandidates, setAssistantCandidates] = useState<CmsAssistantTarget[]>([])
   useEffect(() => {
     const showSuccess = (event: Event) => setSuccess({ id: `${Date.now()}-${Math.random()}`, message: (event as CustomEvent<string>).detail })
     window.addEventListener(CMS_SUCCESS_EVENT, showSuccess)
@@ -27,10 +30,10 @@ export default function CmsWorkspace({ route, api }: { route: CmsRouteId; api: C
     const timer = window.setTimeout(() => setSuccess(null), 2600)
     return () => window.clearTimeout(timer)
   }, [success])
-  useEffect(() => { setSuccess(null) }, [route])
+  useEffect(() => { setSuccess(null); setAssistantTarget(null); setAssistantCandidates([]) }, [route])
   const workspace = route === 'members' ? <Members api={api} />
     : route === 'menus' ? <Menus api={api} />
-      : route === 'contents' ? <Contents api={api} />
+      : route === 'contents' ? <Contents api={api} onSelect={setAssistantTarget} onCandidates={setAssistantCandidates} />
         : route === 'boards' ? <Boards api={api} />
           : <Templates api={api} />
   const assistantRoute = route === 'members' ? null : route
@@ -39,7 +42,7 @@ export default function CmsWorkspace({ route, api }: { route: CmsRouteId; api: C
     {assistantRoute
       ? <div className={`grid items-start gap-[0.875rem] ${assistantCollapsed ? 'min-[1240px]:grid-cols-[minmax(0,1fr)_4rem]' : 'min-[1240px]:grid-cols-[minmax(0,1fr)_22rem]'}`}>
         <div className="min-w-0">{workspace}</div>
-        <CmsAiAssistant key={assistantRoute} route={assistantRoute} collapsed={assistantCollapsed} onToggle={() => setAssistantCollapsed((value) => !value)} />
+        <CmsAiAssistant key={assistantRoute} route={assistantRoute} target={assistantTarget} candidates={assistantCandidates} onTarget={setAssistantTarget} api={assistantApi} collapsed={assistantCollapsed} onToggle={() => setAssistantCollapsed((value) => !value)} />
       </div>
       : workspace}
   </>
@@ -168,7 +171,11 @@ function Menus({ api }: { api: CmsApi }) {
   </>
 }
 
-function Contents({ api }: { api: CmsApi }) {
+function Contents({ api, onSelect, onCandidates }: {
+  api: CmsApi
+  onSelect: (target: CmsAssistantTarget | null) => void
+  onCandidates: (candidates: CmsAssistantTarget[]) => void
+}) {
   const [items, setItems] = useState<Article[]>([])
   const [editing, setEditing] = useState<Article | null>(null)
   const [title, setTitle] = useState('')
@@ -176,7 +183,15 @@ function Contents({ api }: { api: CmsApi }) {
   const [failure, setFailure] = useState<string | null>(null)
   const load = () => api.contents().then(setItems).catch((e) => setFailure(`불러오지 못했습니다. ${describeFailure(e)}`))
   useEffect(() => { void load() }, [api])
-  function select(item: Article | null) { setEditing(item); setTitle(item?.title ?? ''); setBody(item?.body ?? '') }
+  useEffect(() => {
+    onCandidates(items.map((item) => ({ type: 'CONTENT' as const, id: String(item.id), label: item.title })))
+  }, [items, onCandidates])
+  function select(item: Article | null) {
+    setEditing(item)
+    setTitle(item?.title ?? '')
+    setBody(item?.body ?? '')
+    onSelect(item ? { type: 'CONTENT', id: String(item.id), label: item.title } : null)
+  }
   function insert(mark: string) { setBody((value) => value ? `${value}\n${mark}` : mark) }
   async function submit(event: FormEvent) { event.preventDefault(); setFailure(null); const action = editing ? '수정' : '등록'; try { if (editing) await api.updateContent(editing.id, { title, body }); else await api.createContent({ title, body }); select(null); await load(); notifySiteUpdated(); notifyCmsSuccess(`컨텐츠를 ${action}했습니다.`) } catch (e) { setFailure(`컨텐츠를 저장하지 못했습니다. ${describeFailure(e)}`) } }
   async function remove(id: number) { if (!window.confirm('컨텐츠를 삭제할까요?')) return; setFailure(null); try { await api.deleteContent(id); select(null); await load(); notifySiteUpdated(); notifyCmsSuccess('컨텐츠를 삭제했습니다.') } catch (e) { setFailure(`컨텐츠를 삭제하지 못했습니다. ${describeFailure(e)}`) } }

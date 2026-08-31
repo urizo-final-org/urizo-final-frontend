@@ -8,6 +8,7 @@ import AgentSettingsWorkspace from '../features/orchestration/AgentSettingsWorks
 import { ProfileVersionApi } from '../features/orchestration/api'
 import PublicSite from '../features/site/PublicSite'
 import { CmsApi } from '../features/cms/api'
+import { NaturalCmsApi } from '../features/cms/assistant/api'
 import { CmsSiteSettingsApi } from '../features/site-settings/api'
 import { fetchCurrentSession, logout, refreshSession, ROLE_LABELS, type AdminSession } from '../shared/api/session'
 import { Icon } from '../shared/ui/icons'
@@ -81,6 +82,7 @@ function AuthenticatedAdmin({ session, onRefresh, onExpired, onSignOut }: {
   const cmsApi = useMemo(() => new CmsApi(session.sessionToken, onRefresh, onExpired), [session.sessionToken, onRefresh, onExpired])
   const profileApi = useMemo(() => new ProfileVersionApi(session.sessionToken, onRefresh, onExpired), [session.sessionToken, onRefresh, onExpired])
   const siteSettingsApi = useMemo(() => new CmsSiteSettingsApi(session.sessionToken, onRefresh, onExpired), [session.sessionToken, onRefresh, onExpired])
+  const naturalCmsApi = useMemo(() => new NaturalCmsApi(session.sessionToken, onRefresh, onExpired), [session.sessionToken, onRefresh, onExpired])
 
   function go(route: RouteId) { navigate(pathForRoute(route)); setMenuOpen(false) }
 
@@ -158,7 +160,7 @@ function AuthenticatedAdmin({ session, onRefresh, onExpired, onSignOut }: {
             key={route.id}
             path={route.path}
             element={isCmsRouteId(route.id)
-              ? <CmsWorkspace route={route.id} api={cmsApi} />
+              ? <CmsWorkspace route={route.id} api={cmsApi} assistantApi={naturalCmsApi} />
               : route.id === 'models'
                 ? <AgentSettingsWorkspace api={profileApi} />
               : <OpsWorkspace route={route.id} actorName={session.actor.name} roleLabel={ROLE_LABELS[session.actor.role]} profileApi={profileApi} siteSettingsApi={siteSettingsApi} />}
