@@ -404,27 +404,38 @@ function ProviderModelPanel({ api }: { api: AgentSettingsApiClient }) {
   const [credentials, setCredentials] = useState<Record<ModelProvider, string>>({ OPENAI: '', ANTHROPIC: '', GOOGLE_GENAI: '' })
   const [busyProvider, setBusyProvider] = useState<ModelProvider | null>(null)
   const [loading, setLoading] = useState(true)
+  const [overviewReady, setOverviewReady] = useState(false)
   const [notice, setNotice] = useState('')
   const [error, setError] = useState('')
+  const statusRequest = useRef(0)
 
   useEffect(() => {
-    let mounted = true
-    setLoading(true)
-    api.listProviderCredentials()
-      .then((overview) => {
-        if (!mounted) return
-        setCsrfToken(overview.csrfToken)
-        setStatuses(overview.providers)
-        setError('')
-      })
-      .catch((failure: unknown) => {
-        if (mounted) setError(describeFailure(failure))
-      })
-      .finally(() => {
-        if (mounted) setLoading(false)
-      })
-    return () => { mounted = false }
+    void loadStatuses()
+    return () => { statusRequest.current += 1 }
   }, [api])
+
+  async function loadStatuses() {
+    const request = ++statusRequest.current
+    setLoading(true)
+    setOverviewReady(false)
+    setCsrfToken('')
+    setStatuses([])
+    setError('')
+    setNotice('')
+    try {
+      const overview = await api.listProviderCredentials()
+      if (request !== statusRequest.current) return null
+      setCsrfToken(overview.csrfToken)
+      setStatuses(overview.providers)
+      setOverviewReady(true)
+      return overview
+    } catch (failure) {
+      if (request === statusRequest.current) setError(describeFailure(failure))
+      return null
+    } finally {
+      if (request === statusRequest.current) setLoading(false)
+    }
+  }
 
   function replaceStatus(next: ProviderCredentialStatus) {
     setStatuses((current) => current.some((item) => item.provider === next.provider)
@@ -453,14 +464,23 @@ function ProviderModelPanel({ api }: { api: AgentSettingsApiClient }) {
     }
   }
 
-  async function testConnection(provider: typeof providerCards[number], current: ProviderCredentialStatus) {
+  async function testConnection(provider: typeof providerCards[number], testedStatus: ProviderCredentialStatus) {
+    const testedFingerprint = testedStatus.fingerprintSuffix
     setBusyProvider(provider.id)
     setError('')
     setNotice('')
     try {
       const result = await api.testProviderCredential(provider.id, csrfToken)
-      replaceStatus({ ...current, state: result.state, lastTestedAt: result.testedAt })
-      setNotice(`${provider.name} 연결 테스트 결과: ${providerStatePresentation[result.state].label} · ${result.safeCode}.`)
+      const overview = await loadStatuses()
+      const current = overview?.providers.find((status) => status.provider === provider.id)
+      if (testedFingerprint !== null
+        && current?.fingerprintSuffix === testedFingerprint
+        && current.state === result.state
+        && current.lastTestedAt !== null) {
+        setNotice(`${provider.name} 연결 테스트 결과: ${providerStatePresentation[result.state].label} · ${result.safeCode}.`)
+      } else if (overview) {
+        setError(`${provider.name} Key가 변경되어 이전 연결 테스트 결과를 폐기했습니다.`)
+      }
     } catch (failure) {
       setError(describeFailure(failure))
     } finally {
@@ -488,19 +508,25 @@ function ProviderModelPanel({ api }: { api: AgentSettingsApiClient }) {
     <Callout tone="warn" icon="triangle-alert">
       API Key는 이 입력창에서 저장 요청에만 사용되고 다시 조회되지 않습니다. 연결 테스트는 Provider에 최소 추론 요청을 보내므로 계정 상태에 따라 과금될 수 있습니다.
     </Callout>
-    {error && <div role="alert" className="mt-3 rounded-md border border-[#f0d5d1] bg-fail-bg px-3 py-2 text-xs text-fail-fg">{error}</div>}
+    {error && <div role="alert" className="mt-3 flex flex-wrap items-center gap-2 rounded-md border border-[#f0d5d1] bg-fail-bg px-3 py-2 text-xs text-fail-fg">
+      <span>{error}</span>
+      {!overviewReady && !loading && <button type="button" className={`${secondaryButton} ml-auto`} onClick={() => void loadStatuses()}>상태 다시 조회</button>}
+    </div>}
     {notice && <div className="mt-3"><Callout tone="ok" icon="check-check">{notice}</Callout></div>}
     <section className={`${panel} mt-3`}>
       <PanelTitle title="Provider Credential" sub="dev 로컬 Secret Store · 최고관리자 전용 · AES-GCM 암호화 저장">
-        <Badge tone={loading ? 'wait' : 'ok'} dot={false}>{loading ? '상태 조회 중' : '실제 API 연결'}</Badge>
+        <Badge tone={loading ? 'wait' : overviewReady ? 'ok' : 'fail'} dot={false}>{loading ? '상태 조회 중' : overviewReady ? '실제 API 연결' : '상태 조회 실패'}</Badge>
       </PanelTitle>
       <div className="grid gap-3 p-4 md:grid-cols-3">
         {providerCards.map((provider) => {
           const status = statuses.find((item) => item.provider === provider.id)
-          const presentation = status?.configured && status.state
+          const presentation = !overviewReady
+            ? { label: loading ? '조회 중' : '조회 실패', tone: loading ? 'wait' as Tone : 'fail' as Tone }
+            : status?.configured && status.state
             ? providerStatePresentation[status.state]
             : { label: '미등록', tone: 'idle' as Tone }
           const busy = busyProvider === provider.id
+          const controlsDisabled = loading || !overviewReady || busyProvider !== null
           return <article key={provider.id} className="rounded-md border border-line-soft bg-white p-4">
             <div className="flex items-center gap-[0.625rem]">
               <span className={`grid h-8 w-8 place-items-center rounded-md text-xs font-bold ${provider.skin}`}>{provider.initial}</span>
@@ -511,7 +537,9 @@ function ProviderModelPanel({ api }: { api: AgentSettingsApiClient }) {
               <Badge tone={presentation.tone}>{presentation.label}</Badge>
             </div>
             <div className="mt-4 min-h-9 text-[0.6875rem] leading-5 text-muted-2">
-              {status?.configured
+              {!overviewReady
+                ? loading ? '상태를 조회하고 있습니다.' : '상태를 확인하지 못했습니다.'
+                : status?.configured
                 ? <>암호화 지문 <span className="font-mono text-body">...{status.fingerprintSuffix}</span>{status.lastTestedAt && <span className="block">마지막 테스트 {new Date(status.lastTestedAt).toLocaleString('ko-KR')}</span>}</>
                 : '저장된 Key가 없습니다.'}
             </div>
@@ -526,16 +554,16 @@ function ProviderModelPanel({ api }: { api: AgentSettingsApiClient }) {
                 className={control}
                 value={credentials[provider.id]}
                 placeholder={status?.configured ? '새 Key 입력 시 교체' : 'API Key 입력'}
-                disabled={loading || busyProvider !== null}
+                disabled={controlsDisabled}
                 onChange={(event) => setCredentials((current) => ({ ...current, [provider.id]: event.target.value }))}
               />
             </label>
             <div className="mt-3 flex flex-wrap gap-2">
-              <button type="button" className={primaryButton} disabled={loading || busyProvider !== null || !csrfToken} onClick={() => void save(provider)}>
+              <button type="button" className={primaryButton} disabled={controlsDisabled || !csrfToken} onClick={() => void save(provider)}>
                 {busy ? '처리 중' : status?.configured ? 'Key 교체' : 'Key 저장'}
               </button>
-              {status?.configured && <button type="button" className={secondaryButton} disabled={busyProvider !== null || !csrfToken} onClick={() => void testConnection(provider, status)}>연결 테스트</button>}
-              {status?.configured && <button type="button" className={dangerButton} disabled={busyProvider !== null || !csrfToken} onClick={() => void remove(provider)}>Key 삭제</button>}
+              {status?.configured && <button type="button" className={secondaryButton} disabled={controlsDisabled || !csrfToken} onClick={() => void testConnection(provider, status)}>연결 테스트</button>}
+              {status?.configured && <button type="button" className={dangerButton} disabled={controlsDisabled || !csrfToken} onClick={() => void remove(provider)}>Key 삭제</button>}
             </div>
           </article>
         })}

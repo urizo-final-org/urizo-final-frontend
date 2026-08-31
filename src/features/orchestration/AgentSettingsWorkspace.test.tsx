@@ -1,7 +1,7 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, expect, test, vi } from 'vitest'
 import AgentSettingsWorkspace from './AgentSettingsWorkspace'
-import type { AgentSettingsApiClient, ProfileVersion } from './api'
+import type { AgentSettingsApiClient, ProfileVersion, ProviderConnectionTestResult } from './api'
 
 afterEach(() => vi.unstubAllGlobals())
 
@@ -70,6 +70,25 @@ test('provider keys can be stored, tested, and deleted without rendering the sec
     updatedAt: '2026-08-31T00:01:00Z', lastTestedAt: null,
   }
   const api = profileApi({
+    listProviderCredentials: vi.fn()
+      .mockResolvedValueOnce({
+        csrfToken: 'csrf-fixture',
+        providers: [
+          { provider: 'OPENAI', configured: false, state: null, fingerprintSuffix: null, updatedAt: null, lastTestedAt: null },
+          { provider: 'ANTHROPIC', configured: false, state: null, fingerprintSuffix: null, updatedAt: null, lastTestedAt: null },
+          { provider: 'GOOGLE_GENAI', configured: false, state: null, fingerprintSuffix: null, updatedAt: null, lastTestedAt: null },
+        ],
+        checkedAt: '2026-08-31T00:00:00Z',
+      })
+      .mockResolvedValueOnce({
+        csrfToken: 'csrf-fixture',
+        providers: [
+          { ...stored, state: 'VERIFIED', lastTestedAt: '2026-08-31T00:02:01Z' },
+          { provider: 'ANTHROPIC', configured: false, state: null, fingerprintSuffix: null, updatedAt: null, lastTestedAt: null },
+          { provider: 'GOOGLE_GENAI', configured: false, state: null, fingerprintSuffix: null, updatedAt: null, lastTestedAt: null },
+        ],
+        checkedAt: '2026-08-31T00:02:00Z',
+      }),
     storeProviderCredential: vi.fn().mockResolvedValue(stored),
     testProviderCredential: vi.fn().mockResolvedValue({
       provider: 'OPENAI', modelId: 'fixture-model', state: 'VERIFIED', inferenceExecuted: true,
@@ -102,6 +121,124 @@ test('provider keys can be stored, tested, and deleted without rendering the sec
   await screen.findByText('OpenAI API Key를 삭제했습니다.')
   expect(api.deleteProviderCredential).toHaveBeenCalledWith('OPENAI', 'csrf-fixture')
   expect(screen.queryByRole('button', { name: 'Key 삭제' })).not.toBeInTheDocument()
+})
+
+test('provider status load failure stays failed and locks credential actions until a successful reload', async () => {
+  const api = profileApi({
+    listProviderCredentials: vi.fn()
+      .mockRejectedValueOnce(new Error('Provider 상태 조회 실패 [PROVIDER_STATUS_UNAVAILABLE]'))
+      .mockResolvedValueOnce({
+        csrfToken: 'csrf-reloaded',
+        providers: [
+          { provider: 'OPENAI', configured: false, state: null, fingerprintSuffix: null, updatedAt: null, lastTestedAt: null },
+          { provider: 'ANTHROPIC', configured: false, state: null, fingerprintSuffix: null, updatedAt: null, lastTestedAt: null },
+          { provider: 'GOOGLE_GENAI', configured: false, state: null, fingerprintSuffix: null, updatedAt: null, lastTestedAt: null },
+        ],
+        checkedAt: '2026-08-31T00:03:00Z',
+      }),
+  })
+
+  render(<AgentSettingsWorkspace api={api} />)
+  fireEvent.click(screen.getByRole('tab', { name: 'Provider·Model' }))
+
+  expect(await screen.findByRole('alert')).toHaveTextContent('Provider 상태 조회 실패 [PROVIDER_STATUS_UNAVAILABLE]')
+  expect(screen.getByText('상태 조회 실패')).toBeInTheDocument()
+  expect(screen.queryByText('실제 API 연결')).not.toBeInTheDocument()
+  expect(screen.queryByText('미등록')).not.toBeInTheDocument()
+  expect(screen.queryByText('저장된 Key가 없습니다.')).not.toBeInTheDocument()
+  for (const input of screen.getAllByLabelText(/API Key$/)) expect(input).toBeDisabled()
+  for (const button of screen.getAllByRole('button', { name: 'Key 저장' })) expect(button).toBeDisabled()
+
+  fireEvent.click(screen.getByRole('button', { name: '상태 다시 조회' }))
+
+  await waitFor(() => expect(api.listProviderCredentials).toHaveBeenCalledTimes(2))
+  expect(await screen.findByText('실제 API 연결')).toBeInTheDocument()
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  expect(screen.getAllByText('미등록')).toHaveLength(3)
+  for (const input of screen.getAllByLabelText(/API Key$/)) expect(input).toBeEnabled()
+})
+
+test('replacing a verified provider key discards the prior verification evidence', async () => {
+  const api = profileApi({
+    listProviderCredentials: vi.fn().mockResolvedValue({
+      csrfToken: 'csrf-fixture',
+      providers: [
+        {
+          provider: 'OPENAI', configured: true, state: 'VERIFIED', fingerprintSuffix: 'old-fixture',
+          updatedAt: '2026-08-31T00:01:00Z', lastTestedAt: '2026-08-31T00:02:00Z',
+        },
+        { provider: 'ANTHROPIC', configured: false, state: null, fingerprintSuffix: null, updatedAt: null, lastTestedAt: null },
+        { provider: 'GOOGLE_GENAI', configured: false, state: null, fingerprintSuffix: null, updatedAt: null, lastTestedAt: null },
+      ],
+      checkedAt: '2026-08-31T00:02:00Z',
+    }),
+    storeProviderCredential: vi.fn().mockResolvedValue({
+      provider: 'OPENAI', configured: true, state: 'STORED', fingerprintSuffix: 'new-fixture',
+      updatedAt: '2026-08-31T00:03:00Z', lastTestedAt: null,
+    }),
+  })
+
+  render(<AgentSettingsWorkspace api={api} />)
+  fireEvent.click(screen.getByRole('tab', { name: 'Provider·Model' }))
+
+  const secretInput = await screen.findByLabelText('OpenAI API Key')
+  expect(await screen.findByText('연결 확인')).toBeInTheDocument()
+  expect(screen.getByText(/마지막 테스트/)).toBeInTheDocument()
+  fireEvent.change(secretInput, { target: { value: 'replacement-credential' } })
+  fireEvent.click(within(secretInput.closest('article') as HTMLElement).getByRole('button', { name: 'Key 교체' }))
+
+  expect(await screen.findByText('저장됨 · 미검증')).toBeInTheDocument()
+  expect(screen.queryByText('연결 확인')).not.toBeInTheDocument()
+  expect(screen.queryByText(/마지막 테스트/)).not.toBeInTheDocument()
+  expect(screen.getByText('...new-fixture')).toBeInTheDocument()
+})
+
+test('an obsolete connection test cannot restore verification after the provider key changed', async () => {
+  const pendingTest = deferred<ProviderConnectionTestResult>()
+  const api = profileApi({
+    listProviderCredentials: vi.fn()
+      .mockResolvedValueOnce({
+        csrfToken: 'csrf-before',
+        providers: [
+          {
+            provider: 'OPENAI', configured: true, state: 'STORED', fingerprintSuffix: 'old-fixture',
+            updatedAt: '2026-08-31T00:01:00Z', lastTestedAt: null,
+          },
+          { provider: 'ANTHROPIC', configured: false, state: null, fingerprintSuffix: null, updatedAt: null, lastTestedAt: null },
+          { provider: 'GOOGLE_GENAI', configured: false, state: null, fingerprintSuffix: null, updatedAt: null, lastTestedAt: null },
+        ],
+        checkedAt: '2026-08-31T00:01:00Z',
+      })
+      .mockResolvedValueOnce({
+        csrfToken: 'csrf-after',
+        providers: [
+          {
+            provider: 'OPENAI', configured: true, state: 'VERIFIED', fingerprintSuffix: 'replacement-fixture',
+            updatedAt: '2026-08-31T00:03:00Z', lastTestedAt: '2026-08-31T00:03:01Z',
+          },
+          { provider: 'ANTHROPIC', configured: false, state: null, fingerprintSuffix: null, updatedAt: null, lastTestedAt: null },
+          { provider: 'GOOGLE_GENAI', configured: false, state: null, fingerprintSuffix: null, updatedAt: null, lastTestedAt: null },
+        ],
+        checkedAt: '2026-08-31T00:03:00Z',
+      }),
+    testProviderCredential: vi.fn().mockReturnValue(pendingTest.promise),
+  })
+
+  render(<AgentSettingsWorkspace api={api} />)
+  fireEvent.click(screen.getByRole('tab', { name: 'Provider·Model' }))
+  fireEvent.click(await screen.findByRole('button', { name: '연결 테스트' }))
+
+  await act(async () => pendingTest.resolve({
+    provider: 'OPENAI', modelId: 'fixture-model', state: 'VERIFIED', inferenceExecuted: true,
+    inputTokens: 1, outputTokens: 1, latencyMs: 12, testedAt: '2026-08-31T00:02:00Z', safeCode: 'OK',
+  }))
+
+  await waitFor(() => expect(api.listProviderCredentials).toHaveBeenCalledTimes(2))
+  expect(screen.getByText('연결 확인')).toBeInTheDocument()
+  expect(screen.queryByText('OpenAI 연결 테스트 결과: 연결 확인 · OK.')).not.toBeInTheDocument()
+  expect(screen.getByRole('alert')).toHaveTextContent('OpenAI Key가 변경되어 이전 연결 테스트 결과를 폐기했습니다.')
+  expect(screen.getByText(/마지막 테스트/)).toBeInTheDocument()
+  expect(screen.getByText('...replacement-fixture')).toBeInTheDocument()
 })
 
 test('natural feature profiles query, create, and explicitly activate immutable versions', async () => {
@@ -204,3 +341,9 @@ test('selected Agent settings update the model and fixed Tool mapping locally', 
   fireEvent.click(screen.getByLabelText('apply_patch'))
   expect(screen.getByLabelText('apply_patch')).toBeChecked()
 })
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((accept) => { resolve = accept })
+  return { promise, resolve }
+}

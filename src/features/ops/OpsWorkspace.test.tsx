@@ -49,7 +49,6 @@ function siteSettingsApi(overrides: Partial<CmsSiteSettingsApiClient> = {}): Cms
 const screens: [OpsRouteId, string][] = [
   ['home', '안녕하세요, 일반 관리자님'],
   ['agents', 'Agent 관리'],
-  ['models', '모델 및 Provider 관리'],
   ['rag', 'RAG 관리'],
   ['devops', 'LLM DevOps'],
   ['approvals', '승인 관리'],
