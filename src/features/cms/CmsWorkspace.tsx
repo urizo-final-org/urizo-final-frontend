@@ -176,6 +176,13 @@ function Contents({ api, onSelect, onCandidates }: {
   onSelect: (target: CmsAssistantTarget | null) => void
   onCandidates: (candidates: CmsAssistantTarget[]) => void
 }) {
+  /** 미리보기가 변경 전으로 쓸 수 있도록 현재 값을 함께 넘긴다. */
+  const contentTarget = (item: Article): CmsAssistantTarget => ({
+    type: 'CONTENT',
+    id: String(item.id),
+    label: item.title,
+    fields: { title: item.title, body: item.body },
+  })
   const [items, setItems] = useState<Article[]>([])
   const [editing, setEditing] = useState<Article | null>(null)
   const [title, setTitle] = useState('')
@@ -184,13 +191,13 @@ function Contents({ api, onSelect, onCandidates }: {
   const load = () => api.contents().then(setItems).catch((e) => setFailure(`불러오지 못했습니다. ${describeFailure(e)}`))
   useEffect(() => { void load() }, [api])
   useEffect(() => {
-    onCandidates(items.map((item) => ({ type: 'CONTENT' as const, id: String(item.id), label: item.title })))
+    onCandidates(items.map(contentTarget))
   }, [items, onCandidates])
   function select(item: Article | null) {
     setEditing(item)
     setTitle(item?.title ?? '')
     setBody(item?.body ?? '')
-    onSelect(item ? { type: 'CONTENT', id: String(item.id), label: item.title } : null)
+    onSelect(item ? contentTarget(item) : null)
   }
   function insert(mark: string) { setBody((value) => value ? `${value}\n${mark}` : mark) }
   async function submit(event: FormEvent) { event.preventDefault(); setFailure(null); const action = editing ? '수정' : '등록'; try { if (editing) await api.updateContent(editing.id, { title, body }); else await api.createContent({ title, body }); select(null); await load(); notifySiteUpdated(); notifyCmsSuccess(`컨텐츠를 ${action}했습니다.`) } catch (e) { setFailure(`컨텐츠를 저장하지 못했습니다. ${describeFailure(e)}`) } }
