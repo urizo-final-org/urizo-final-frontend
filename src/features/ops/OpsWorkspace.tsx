@@ -1,4 +1,4 @@
-import { useEffect, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
+import { useEffect, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import type { OpsRouteId } from '../../app/routes'
 import { describeFailure } from '../../shared/api/error'
 import { Icon, type IconName } from '../../shared/ui/icons'
@@ -7,9 +7,11 @@ import {
   control, panel, primaryButton, secondaryButton, smallButton, type Tone,
 } from '../../shared/ui/primitives'
 import type { ProfileVersion, ProfileVersionApiClient } from '../orchestration/api'
+import { notifySiteUpdated, type SiteTemplate } from '../cms/api'
+import type { CmsSite, CmsSiteSettings, CmsSiteSettingsApiClient } from '../site-settings/api'
 
 /** Operations screens added on top of the CMS; only Profile-backed sections call an API. */
-export default function OpsWorkspace({ route, actorName, roleLabel, profileApi }: { route: OpsRouteId; actorName: string; roleLabel: string; profileApi: ProfileVersionApiClient }) {
+export default function OpsWorkspace({ route, actorName, roleLabel, profileApi, siteSettingsApi }: { route: OpsRouteId; actorName: string; roleLabel: string; profileApi: ProfileVersionApiClient; siteSettingsApi: CmsSiteSettingsApiClient }) {
   if (route === 'home') return <Home actorName={actorName} />
   if (route === 'agents') return <Agents />
   if (route === 'models') return <Models />
@@ -17,8 +19,8 @@ export default function OpsWorkspace({ route, actorName, roleLabel, profileApi }
   if (route === 'devops') return <Devops />
   if (route === 'approvals') return <Approvals />
   if (route === 'runs') return <Runs />
-  if (route === 'system-settings') return <SystemSettings api={profileApi} />
-  if (route === 'sites') return <Sites />
+  if (route === 'system-settings') return <SystemSettings profileApi={profileApi} siteSettingsApi={siteSettingsApi} />
+  if (route === 'sites') return <Sites api={siteSettingsApi} />
   return <Settings roleLabel={roleLabel} />
 }
 
@@ -445,8 +447,6 @@ function Devops() {
 
 /* ------------------------------------------------------------------ 승인 관리 */
 
-const temporaryMockTitle = '임시 목업 · 향후 필요 시 현재 Runtime 계약 기준으로 구현'
-
 function RuntimeMockNotice({ children }: { children: string }) {
   return <div className="mb-4 flex flex-wrap items-center gap-2 rounded-md border border-[#d9e6ef] bg-[#f4f9fc] px-3 py-2 text-[0.71875rem] text-run-fg">
     <Badge tone="run">임시 목업</Badge>
@@ -509,20 +509,90 @@ function Runs() {
 
 /* ------------------------------------------------------------------ 사이트 관리 */
 
-function Sites() {
-  return <>
-    <PageHead title="사이트 관리" description="현재 CMS의 사이트 경계와 향후 관리 범위를 확인합니다.">
-      <Badge tone="run" dot={false}>임시 목업</Badge>
-    </PageHead>
-    <RuntimeMockNotice>현재는 사용자 사이트 한 곳을 공개 경로 `/`로 제공합니다. 별도 사이트 관리 저장 API는 없습니다.</RuntimeMockNotice>
+function Sites({ api }: { api: CmsSiteSettingsApiClient }) {
+  const [items, setItems] = useState<CmsSite[]>([])
+  const [templates, setTemplates] = useState<SiteTemplate[]>([])
+  const [selected, setSelected] = useState<CmsSite | null>(null)
+  const [failure, setFailure] = useState<string | null>(null)
+  const [success, setSuccess] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
 
-    <section className={panel}>
-      <PanelTitle title="현재 CMS 연결 상태" sub="5번 Natural CMS 소유 범위" />
-      <div className="grid gap-3 p-4 md:grid-cols-2">
-        <RuntimeFact label="기본 사용자 사이트" state="운영 중" tone="ok" description="사이드바의 사용자 사이트 열기 링크가 현재 공개 경로 `/`를 엽니다." />
-        <RuntimeFact label="사이트별 설정 API" state="미연결" tone="idle" description="추가·삭제·게시·도메인 설정은 5번 기능 요구가 확정될 때 별도 Work로 구현합니다." />
-      </div>
-    </section>
+  useEffect(() => {
+    let active = true
+    Promise.all([api.sites(), api.templates()]).then(([nextSites, nextTemplates]) => {
+      if (!active) return
+      setItems(nextSites); setTemplates(nextTemplates); setSelected(nextSites[0] ?? null); setFailure(null)
+    }).catch((error) => { if (active) setFailure(`사이트 설정을 불러오지 못했습니다. ${describeFailure(error)}`) })
+      .finally(() => { if (active) setLoading(false) })
+    return () => { active = false }
+  }, [api])
+
+  async function save(event: FormEvent) {
+    event.preventDefault()
+    if (!selected) return
+    setSaving(true); setFailure(null); setSuccess(null)
+    try {
+      const saved = await api.saveSite(selected.key, selected)
+      setItems((current) => current.map((item) => item.key === saved.key ? saved : item))
+      setSelected(saved); notifySiteUpdated(); setSuccess('사이트 설정을 저장하고 사용자 화면에 반영했습니다.')
+    } catch (error) {
+      setFailure(`사이트 설정을 저장하지 못했습니다. ${describeFailure(error)}`)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return <>
+    <PageHead title="사이트 관리" description="사이트별 공개 경로와 적용 템플릿을 관리합니다.">
+      <Badge tone="ok" dot={false}>API 연결</Badge>
+    </PageHead>
+    {failure && <Callout tone="warn" icon="triangle-alert">{failure}</Callout>}
+    {success && <Callout tone="ok" icon="check-check">{success}</Callout>}
+
+    <div className="grid items-start gap-[0.875rem] lg:grid-cols-[18rem_minmax(0,1fr)]">
+      <section className={panel}>
+        <PanelTitle title="사이트" sub={loading ? '불러오는 중' : `${items.length}개`} />
+        <div className="grid gap-2 p-3">
+          {items.map((site) => <button
+            key={site.key}
+            type="button"
+            className={`rounded-md border p-3 text-left ${selected?.key === site.key ? 'border-primary bg-sub' : 'border-line-soft bg-white hover:bg-sub'}`}
+            onClick={() => { setSelected(site); setFailure(null); setSuccess(null) }}
+          >
+            <span className="flex items-center gap-2"><b className="min-w-0 flex-1 truncate text-xs">{site.name}</b>{site.defaultSite && <Badge tone="run">기본</Badge>}</span>
+            <small className="mt-2 block text-[0.6875rem] text-muted-2">{site.publicPath} · {site.enabled ? '사용' : '중지'}</small>
+          </button>)}
+          {!loading && items.length === 0 && <p className="p-3 text-xs text-muted-2">등록된 사이트가 없습니다.</p>}
+        </div>
+      </section>
+
+      <form className={panel} onSubmit={save}>
+        <PanelTitle title="사이트 설정" sub={selected ? selected.key : '선택 필요'} />
+        {selected ? <div className="grid gap-4 p-4 md:grid-cols-2">
+          <label className="text-xs font-semibold">사이트명
+            <input className={`${control} mt-2`} value={selected.name} maxLength={100} required onChange={(event) => setSelected({ ...selected, name: event.target.value })} />
+          </label>
+          <label className="text-xs font-semibold">공개 경로
+            <input className={`${control} mt-2`} value={selected.publicPath} maxLength={180} pattern="/(?:[A-Za-z0-9_-]+(?:/[A-Za-z0-9_-]+)*)?" required onChange={(event) => setSelected({ ...selected, publicPath: event.target.value })} />
+            <small className="mt-1 block font-normal text-muted-2">`/` 또는 `/campaign` 형식</small>
+          </label>
+          <label className="text-xs font-semibold">적용 템플릿
+            <select className={`${control} mt-2`} value={selected.templateKey} required onChange={(event) => setSelected({ ...selected, templateKey: event.target.value })}>
+              {templates.map((template) => <option key={template.key} value={template.key}>{template.key} · {template.layout}</option>)}
+            </select>
+          </label>
+          <label className="flex items-center gap-2 self-end rounded-md border border-line-soft bg-sub px-3 py-[0.6875rem] text-xs font-semibold">
+            <input type="checkbox" checked={selected.enabled} disabled={selected.defaultSite} onChange={(event) => setSelected({ ...selected, enabled: event.target.checked })} />
+            사이트 사용
+            {selected.defaultSite && <small className="ml-auto font-normal text-muted-2">기본 사이트는 중지할 수 없습니다.</small>}
+          </label>
+          <div className="flex justify-end md:col-span-2">
+            <button className={primaryButton} disabled={saving || templates.length === 0}>{saving ? '저장 중…' : '사이트 설정 저장'}</button>
+          </div>
+        </div> : <p className="p-4 text-xs text-muted-2">편집할 사이트를 선택하세요.</p>}
+      </form>
+    </div>
   </>
 }
 
@@ -535,7 +605,7 @@ const systemSettingsTabs: { id: SystemSettingsTabId; label: string }[] = [
   { id: 'guardrail', label: 'Guardrail Profile' },
 ]
 
-function SystemSettings({ api }: { api: ProfileVersionApiClient }) {
+function SystemSettings({ profileApi, siteSettingsApi }: { profileApi: ProfileVersionApiClient; siteSettingsApi: CmsSiteSettingsApiClient }) {
   const [activeTab, setActiveTab] = useState<SystemSettingsTabId>('cms')
 
   function moveTabFocus(event: ReactKeyboardEvent<HTMLButtonElement>, index: number) {
@@ -551,10 +621,9 @@ function SystemSettings({ api }: { api: ProfileVersionApiClient }) {
   }
 
   return <>
-    <PageHead title="시스템 설정" description="현재 CMS 경계와 활성 Profile의 중앙 Guardrail 연결 상태를 확인합니다.">
-      <Badge tone="run" dot={false}>부분 연결</Badge>
+    <PageHead title="시스템 설정" description="CMS 기본값과 활성 Profile의 중앙 Guardrail을 관리합니다.">
+      <Badge tone="ok" dot={false}>API 연결</Badge>
     </PageHead>
-    <RuntimeMockNotice>CMS 기본 설정은 임시 안내이며 Guardrail Profile은 실제 활성 Snapshot을 읽기 전용으로 조회합니다.</RuntimeMockNotice>
 
     <div className="mb-[1.125rem] flex gap-[1.375rem] overflow-x-auto border-b border-line" role="tablist" aria-label="시스템 설정 영역">
       {systemSettingsTabs.map((tab, index) => <button
@@ -569,28 +638,67 @@ function SystemSettings({ api }: { api: ProfileVersionApiClient }) {
         onKeyDown={(event) => moveTabFocus(event, index)}
       >
         {tab.label}
-        {tab.id === 'cms' && <span className="ml-2 rounded border border-line bg-sub px-1 py-[0.0625rem] text-[0.5625rem] font-semibold text-muted-2" title={temporaryMockTitle}>임시</span>}
       </button>)}
     </div>
 
-    {activeTab === 'cms' && <section id="system-settings-panel-cms" role="tabpanel" aria-labelledby="system-settings-tab-cms" className="grid items-start gap-[0.875rem] xl:grid-cols-2">
-      <article className={panel}>
-        <PanelTitle title="현재 CMS" sub="실제 제공 범위" />
-        <div className="grid gap-3 p-4">
-          <RuntimeFact label="공개 사이트" state="연결됨" tone="ok" description="현재 공개 경로 `/`와 CMS Resource API를 사용합니다." />
-          <RuntimeFact label="사이트 기본값 저장" state="API 없음" tone="idle" description="사이트명·공개 경로를 별도 설정으로 저장하는 계약은 없습니다." />
-        </div>
-      </article>
-      <article className={panel}>
-        <PanelTitle title="기능 소유 경계"><Badge tone="idle" dot={false}>5번 담당</Badge></PanelTitle>
-        <div className="p-4 text-[0.71875rem] leading-6 text-muted-2">
-          사이트·CMS의 상세 UX와 업무 규칙은 5번 Natural CMS 문서가 소유합니다. 공통 AI 화면에서 새 설정 규칙을 만들지 않습니다.
-        </div>
-      </article>
-    </section>}
+    {activeTab === 'cms' && <CmsDefaults api={siteSettingsApi} />}
 
-    {activeTab === 'guardrail' && <GuardrailProfileStatus api={api} />}
+    {activeTab === 'guardrail' && <GuardrailProfileStatus api={profileApi} />}
   </>
+}
+
+function CmsDefaults({ api }: { api: CmsSiteSettingsApiClient }) {
+  const [value, setValue] = useState<CmsSiteSettings | null>(null)
+  const [sites, setSites] = useState<CmsSite[]>([])
+  const [templates, setTemplates] = useState<SiteTemplate[]>([])
+  const [failure, setFailure] = useState<string | null>(null)
+  const [success, setSuccess] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    let active = true
+    Promise.all([api.settings(), api.sites(), api.templates()]).then(([settings, nextSites, nextTemplates]) => {
+      if (!active) return
+      setValue(settings); setSites(nextSites); setTemplates(nextTemplates); setFailure(null)
+    }).catch((error) => { if (active) setFailure(`CMS 기본 설정을 불러오지 못했습니다. ${describeFailure(error)}`) })
+    return () => { active = false }
+  }, [api])
+
+  async function save(event: FormEvent) {
+    event.preventDefault()
+    if (!value) return
+    setSaving(true); setFailure(null); setSuccess(null)
+    try {
+      const saved = await api.saveSettings(value)
+      setValue(saved); setSites(await api.sites()); notifySiteUpdated(); setSuccess('CMS 기본 설정을 저장하고 사용자 화면에 반영했습니다.')
+    } catch (error) {
+      setFailure(`CMS 기본 설정을 저장하지 못했습니다. ${describeFailure(error)}`)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return <section id="system-settings-panel-cms" role="tabpanel" aria-labelledby="system-settings-tab-cms">
+    {failure && <Callout tone="warn" icon="triangle-alert">{failure}</Callout>}
+    {success && <Callout tone="ok" icon="check-check">{success}</Callout>}
+    <form className={panel} onSubmit={save}>
+      <PanelTitle title="CMS 기본 설정" sub="기본 사이트의 적용 템플릿을 함께 저장합니다." />
+      {value ? <div className="grid gap-4 p-4 md:grid-cols-2">
+        <label className="text-xs font-semibold">기본 사이트
+          <select className={`${control} mt-2`} value={value.defaultSiteKey} required onChange={(event) => setValue({ ...value, defaultSiteKey: event.target.value })}>
+            {sites.filter((site) => site.enabled).map((site) => <option key={site.key} value={site.key}>{site.name} · {site.publicPath}</option>)}
+          </select>
+        </label>
+        <label className="text-xs font-semibold">기본 템플릿
+          <select className={`${control} mt-2`} value={value.defaultTemplateKey} required onChange={(event) => setValue({ ...value, defaultTemplateKey: event.target.value })}>
+            {templates.map((template) => <option key={template.key} value={template.key}>{template.key} · {template.layout}</option>)}
+          </select>
+        </label>
+        <p className="m-0 text-[0.6875rem] leading-5 text-muted-2 md:col-span-2">사이트명·공개 경로·사용 여부는 사이트 관리에서, 레이아웃·색상·Header·Hero·버튼·Footer는 템플릿 관리에서 변경합니다.</p>
+        <div className="flex justify-end md:col-span-2"><button className={primaryButton} disabled={saving || sites.length === 0 || templates.length === 0}>{saving ? '저장 중…' : '기본 설정 저장'}</button></div>
+      </div> : <p className="p-4 text-xs text-muted-2">CMS 기본 설정을 불러오는 중입니다…</p>}
+    </form>
+  </section>
 }
 
 function GuardrailProfileStatus({ api }: { api: ProfileVersionApiClient }) {

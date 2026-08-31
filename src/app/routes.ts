@@ -38,7 +38,7 @@ export const routes: RouteDefinition[] = [
   { id: 'runs', path: '/admin/runs', group: '거버넌스', label: '실행 이력', glyph: '◌', icon: 'history', allowedRoles: admins, mock: true },
   { id: 'settings', path: '/admin/settings', group: '환경', label: '설정', glyph: '⚙', icon: 'settings', allowedRoles: admins, mock: true },
   { id: 'system-settings', path: '/admin/system-settings', group: '환경', label: '시스템 설정', glyph: '◫', icon: 'sliders-horizontal', allowedRoles: superAdmins },
-  { id: 'sites', path: '/admin/sites', group: '환경', label: '사이트 관리', glyph: '◎', icon: 'globe-2', allowedRoles: superAdmins, mock: true },
+  { id: 'sites', path: '/admin/sites', group: '환경', label: '사이트 관리', glyph: '◎', icon: 'globe-2', allowedRoles: superAdmins },
 ]
 
 /** Groups the canvas lets the operator fold away; 개요 always stays open. */

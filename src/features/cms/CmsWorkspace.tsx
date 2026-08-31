@@ -6,7 +6,7 @@ import {
   Badge, EmptyState, PageHead, PanelTitle,
   control, fieldLabel, panel, primaryButton, secondaryButton, smallButton, textarea, type Tone,
 } from '../../shared/ui/primitives'
-import { SITE_UPDATE_EVENT, CmsApi, type Article, type Board, type Member, type Menu, type MenuTargetType, type Post, type SiteTemplate } from './api'
+import { CmsApi, notifySiteUpdated, type Article, type Board, type Member, type Menu, type MenuTargetType, type Post, type SiteTemplate } from './api'
 import CmsAiAssistant from './assistant/CmsAiAssistant'
 
 const dangerButton = 'inline-flex h-8 items-center gap-[0.375rem] rounded-[0.3125rem] border border-[#f0d5d1] bg-fail-bg px-[0.6875rem] text-xs font-semibold text-fail-fg enabled:hover:bg-[#f8e0dc]'
@@ -59,11 +59,6 @@ function Feedback({ failure }: { failure: string | null }) {
 function Failure({ value }: { value: string | null }) { return <Feedback failure={value} /> }
 
 function notifyCmsSuccess(message: string) { window.dispatchEvent(new CustomEvent(CMS_SUCCESS_EVENT, { detail: message })) }
-
-function notifySiteUpdated() {
-  try { window.localStorage.setItem(SITE_UPDATE_EVENT, crypto.randomUUID()) } catch { /* 사용자 화면 갱신은 현재 탭 이벤트로 계속 시도합니다. */ }
-  window.dispatchEvent(new Event(SITE_UPDATE_EVENT))
-}
 
 function Members({ api }: { api: CmsApi }) {
   const [items, setItems] = useState<Member[]>([])
@@ -349,8 +344,8 @@ function Templates({ api }: { api: CmsApi }) {
         <TemplateField label="대표 색상" description="버튼, 링크, 강조 요소에 공통 적용되는 브랜드 색상입니다.">
           <input className={`${control} p-1`} type="color" value={value.primaryColor} onChange={(e) => setValue({ ...value, primaryColor: e.target.value })} />
         </TemplateField>
-        <TemplateField label="사이트명" description="사용자 화면 Header와 Footer에 표시되는 사이트 이름입니다.">
-          <input className={control} value={value.siteName} onChange={(e) => setValue({ ...value, siteName: e.target.value })} required />
+        <TemplateField label="사이트명" description="사이트명은 사이트 관리에서 변경하며 여기서는 미리보기 값만 표시합니다.">
+          <div className="rounded-md border border-line bg-sub px-3 py-2 text-xs text-muted-2">{value.siteName}</div>
         </TemplateField>
         <TemplateField label="Header 보조 문구" description="사용자 화면 맨 위 안내 영역에 표시되는 짧은 문구입니다.">
           <input className={control} value={value.headerText} onChange={(e) => setValue({ ...value, headerText: e.target.value })} />

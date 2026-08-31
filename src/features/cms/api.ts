@@ -3,6 +3,11 @@ import { fetchWithSessionRefresh, type AdminSession } from '../../shared/api/ses
 
 export const SITE_UPDATE_EVENT = 'axms:site-updated'
 
+export function notifySiteUpdated() {
+  try { window.localStorage.setItem(SITE_UPDATE_EVENT, crypto.randomUUID()) } catch { /* 현재 탭 이벤트로 계속 갱신합니다. */ }
+  window.dispatchEvent(new Event(SITE_UPDATE_EVENT))
+}
+
 export type Member = { id: string; loginId: string; name: string; role: string }
 export type MenuTargetType = 'NONE' | 'CONTENT' | 'BOARD'
 export type Menu = {
@@ -32,6 +37,7 @@ export type SiteTemplate = {
   active: boolean
   updatedAt: string
 }
+export type PublicSiteContext = { key: string; name: string; publicPath: string; template: SiteTemplate }
 
 async function responseBody<T>(response: Response): Promise<T> {
   if (!response.ok) {
@@ -95,5 +101,6 @@ export class SiteApi {
   boards = () => this.request<Board[]>('/api/site/boards')
   posts = (boardId: number) => this.request<Post[]>(`/api/site/boards/${boardId}/posts`)
   post = (id: number) => this.request<Post>(`/api/site/posts/${id}`)
-  template = () => this.request<SiteTemplate>('/api/site/template')
+  site = (path = '/') => this.request<PublicSiteContext>(`/api/site/context?path=${encodeURIComponent(path)}`)
+  template = (path = '/') => this.request<SiteTemplate>(`/api/site/template?path=${encodeURIComponent(path)}`)
 }
