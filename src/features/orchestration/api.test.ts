@@ -5,7 +5,8 @@ import { ProfileVersionApi, type ProfileAuthoringSnapshot } from './api'
 afterEach(() => vi.unstubAllGlobals())
 
 const snapshot: ProfileAuthoringSnapshot = {
-  nodes: [], edges: [], config: {}, modelBindings: {}, toolPolicy: {}, guardrailProfileKey: 'central.default',
+  nodes: [], edges: [], config: { maxNodes: 1, maxAttempts: 3, loopLimits: [] },
+  modelBindings: {}, toolPolicy: { allowedTools: [] }, guardrailProfileKey: 'central.default',
 }
 
 test('lists, creates, and activates Profile Versions through the admin contract', async () => {

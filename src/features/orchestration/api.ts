@@ -5,6 +5,7 @@ export type ProfileKey = 'LLM_OPS' | 'NATURAL_CMS'
 export type ProfileStatus = 'DRAFT' | 'ACTIVE' | 'INACTIVE'
 export type ModelProvider = 'OPENAI' | 'ANTHROPIC' | 'GOOGLE_GENAI'
 export type ProviderCredentialState = 'STORED' | 'VERIFIED' | 'BILLING_BLOCKED' | 'INVALID_CREDENTIAL' | 'PROVIDER_UNAVAILABLE'
+export type ProfileNodeType = 'start' | 'agent' | 'tool' | 'approval' | 'check' | 'guardrail' | 'end'
 
 export interface ProviderCredentialStatus {
   provider: ModelProvider
@@ -33,12 +34,41 @@ export interface ProviderConnectionTestResult {
   safeCode: string
 }
 
-export interface ProfileAuthoringSnapshot {
-  nodes: unknown[]
-  edges: unknown[]
+export interface ProfileSnapshotNode {
+  id: string
+  type: ProfileNodeType
+  handlerKey: string
+  resultPorts: string[]
   config: Record<string, unknown>
-  modelBindings: Record<string, unknown>
-  toolPolicy: Record<string, unknown>
+}
+
+export interface ProfileSnapshotEdge {
+  from: string
+  resultPort: string
+  to: string
+}
+
+export interface ProfileLoopLimit extends ProfileSnapshotEdge {
+  maxIterations: number
+}
+
+export interface ProfileSnapshotConfig {
+  maxNodes: number
+  maxAttempts: number
+  loopLimits: ProfileLoopLimit[]
+}
+
+export interface ProfileModelBinding {
+  primary: string
+  fallback: string[]
+}
+
+export interface ProfileAuthoringSnapshot {
+  nodes: ProfileSnapshotNode[]
+  edges: ProfileSnapshotEdge[]
+  config: ProfileSnapshotConfig
+  modelBindings: Record<string, ProfileModelBinding>
+  toolPolicy: { allowedTools: string[] }
   guardrailProfileKey: string
 }
 
