@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { BrowserRouter, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import LoginScreen from '../features/auth/LoginScreen'
 import { clearExplicitSignOut, clearStoredToken, hasExplicitSignOutMarker, markExplicitSignOut, readStoredToken, storeToken } from '../features/auth/session-store'
@@ -30,6 +30,8 @@ function AdminApplication() {
   const [session, setSession] = useState<AdminSession | null>(null)
   const [restoring, setRestoring] = useState(true)
   const [notice, setNotice] = useState<string | null>(null)
+  const currentSession = useRef<AdminSession | null>(null)
+  const restoreRefresh = useRef<Promise<AdminSession> | null>(null)
 
   useEffect(() => {
     let active = true
@@ -37,10 +39,19 @@ function AdminApplication() {
       try {
         if (hasExplicitSignOutMarker()) { clearStoredToken(); return }
         const token = readStoredToken()
-        const next = token ? await fetchCurrentSession(token) : await refreshSession()
-        if (active) { storeToken(next.sessionToken); setSession(next) }
+        const next = token
+          ? await fetchCurrentSession(token)
+          : await (restoreRefresh.current ??= refreshSession())
+        if (active) {
+          currentSession.current = next
+          storeToken(next.sessionToken)
+          setSession(next)
+        }
       } catch {
-        if (active) clearStoredToken()
+        if (active) {
+          currentSession.current = null
+          clearStoredToken()
+        }
       } finally {
         if (active) setRestoring(false)
       }
@@ -50,27 +61,36 @@ function AdminApplication() {
   }, [])
 
   const signedIn = useCallback((next: AdminSession) => {
+    currentSession.current = next
     clearExplicitSignOut(); storeToken(next.sessionToken); setNotice(null); setSession(next)
   }, [])
-  const expired = useCallback(() => {
+  const refreshed = useCallback((expectedToken: string, next: AdminSession) => {
+    if (currentSession.current?.sessionToken !== expectedToken) return
+    currentSession.current = next
+    storeToken(next.sessionToken); setNotice(null); setSession(next)
+  }, [])
+  const expired = useCallback((expectedToken: string) => {
+    if (currentSession.current?.sessionToken !== expectedToken) return
+    currentSession.current = null
     clearStoredToken(); setSession(null); setNotice('세션이 만료되었습니다. 다시 로그인해 주세요.')
   }, [])
   const signOut = useCallback(async () => {
-    const token = session?.sessionToken
+    const token = currentSession.current?.sessionToken
+    currentSession.current = null
     markExplicitSignOut(); clearStoredToken(); setSession(null)
     if (token) await logout(token)
-  }, [session])
+  }, [])
 
   if (restoring) return <div className="grid min-h-screen place-items-center bg-sb-bg text-sm text-white">CMS 세션을 확인하는 중입니다…</div>
   if (!session) return <LoginScreen notice={notice} onSignedIn={signedIn} />
   if (session.actor.role === 'GENERAL_USER') return <Navigate to="/" replace />
-  return <AuthenticatedAdmin session={session} onRefresh={signedIn} onExpired={expired} onSignOut={signOut} />
+  return <AuthenticatedAdmin session={session} onRefresh={refreshed} onExpired={expired} onSignOut={signOut} />
 }
 
 function AuthenticatedAdmin({ session, onRefresh, onExpired, onSignOut }: {
   session: AdminSession
-  onRefresh: (session: AdminSession) => void
-  onExpired: () => void
+  onRefresh: (expectedToken: string, session: AdminSession) => void
+  onExpired: (expectedToken: string) => void
   onSignOut: () => void
 }) {
   const navigate = useNavigate()
@@ -79,10 +99,11 @@ function AuthenticatedAdmin({ session, onRefresh, onExpired, onSignOut }: {
   const fallback = defaultRouteForRole(session.actor.role)
   const visible = routeIdForPath(location.pathname) ?? fallback
   const permitted = routesForRole(session.actor.role)
-  const cmsApi = useMemo(() => new CmsApi(session.sessionToken, onRefresh, onExpired), [session.sessionToken, onRefresh, onExpired])
-  const profileApi = useMemo(() => new ProfileVersionApi(session.sessionToken, onRefresh, onExpired), [session.sessionToken, onRefresh, onExpired])
-  const siteSettingsApi = useMemo(() => new CmsSiteSettingsApi(session.sessionToken, onRefresh, onExpired), [session.sessionToken, onRefresh, onExpired])
-  const naturalCmsApi = useMemo(() => new NaturalCmsApi(session.sessionToken, onRefresh, onExpired), [session.sessionToken, onRefresh, onExpired])
+  const lifecycle = useMemo(() => sessionLifecycle(session.sessionToken, onRefresh, onExpired), [session.sessionToken, onRefresh, onExpired])
+  const cmsApi = useMemo(() => new CmsApi(session.sessionToken, lifecycle.refreshed, lifecycle.expired), [session.sessionToken, lifecycle])
+  const profileApi = useMemo(() => new ProfileVersionApi(session.sessionToken, lifecycle.refreshed, lifecycle.expired), [session.sessionToken, lifecycle])
+  const siteSettingsApi = useMemo(() => new CmsSiteSettingsApi(session.sessionToken, lifecycle.refreshed, lifecycle.expired), [session.sessionToken, lifecycle])
+  const naturalCmsApi = useMemo(() => new NaturalCmsApi(session.sessionToken, lifecycle.refreshed, lifecycle.expired), [session.sessionToken, lifecycle])
 
   function go(route: RouteId) { navigate(pathForRoute(route)); setMenuOpen(false) }
 
@@ -170,4 +191,22 @@ function AuthenticatedAdmin({ session, onRefresh, onExpired, onSignOut }: {
       </main>
     </div>
   </div>
+}
+
+function sessionLifecycle(
+  initialToken: string,
+  onRefresh: (expectedToken: string, session: AdminSession) => void,
+  onExpired: (expectedToken: string) => void,
+) {
+  let activeToken = initialToken
+  return {
+    refreshed(next: AdminSession) {
+      const expectedToken = activeToken
+      activeToken = next.sessionToken
+      onRefresh(expectedToken, next)
+    },
+    expired() {
+      onExpired(activeToken)
+    },
+  }
 }

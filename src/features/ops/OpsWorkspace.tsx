@@ -3,7 +3,7 @@ import type { OpsRouteId } from '../../app/routes'
 import { describeFailure } from '../../shared/api/error'
 import { Icon, type IconName } from '../../shared/ui/icons'
 import {
-  Badge, Callout, FilterChip, PageHead, Pagination, PanelTitle, SearchField, Tabs, Tag,
+  Badge, Callout, FilterChip, PageHead, PanelTitle, SearchField,
   control, panel, primaryButton, secondaryButton, smallButton, type Tone,
 } from '../../shared/ui/primitives'
 import type { ProfileVersion, ProfileVersionApiClient } from '../orchestration/api'
@@ -14,7 +14,6 @@ import type { CmsSite, CmsSiteSettings, CmsSiteSettingsApiClient } from '../site
 export default function OpsWorkspace({ route, actorName, roleLabel, profileApi, siteSettingsApi }: { route: OpsRouteId; actorName: string; roleLabel: string; profileApi: ProfileVersionApiClient; siteSettingsApi: CmsSiteSettingsApiClient }) {
   if (route === 'home') return <Home actorName={actorName} />
   if (route === 'agents') return <Agents />
-  if (route === 'models') return <Models />
   if (route === 'rag') return <Rag />
   if (route === 'devops') return <Devops />
   if (route === 'approvals') return <Approvals />
@@ -123,81 +122,6 @@ function Agents() {
           </div>)}
         </div>
       </div>
-    </section>
-  </>
-}
-
-/* ------------------------------------------------------------------ 모델 및 Provider */
-
-const providers = [
-  { initial: 'O', name: 'OpenAI', models: 7, agents: 1, key: 'TOUR-••••-9A2F', markBg: '#eef4f8', markFg: '#2c6d94' },
-  { initial: 'A', name: 'Anthropic', models: 6, agents: 1, key: 'TOUR-••••-4C71', markBg: '#f8f1ea', markFg: '#a56a3c' },
-  { initial: 'G', name: 'Google', models: 5, agents: 1, key: 'TOUR-••••-B0D3', markBg: '#f1f4f9', markFg: '#4a5f8a' },
-]
-
-const modelRows: { name: string; provider: string; placed: string; placedMuted: boolean; tag: string; at: string; color: string; tone: Tone; state: string }[] = [
-  { name: 'GPT-4o', provider: 'OpenAI', placed: 'Agent 1 · 요구사항 분석', placedMuted: false, tag: '분석', at: '2026.08.24', color: '#4a97c4', tone: 'ok', state: '활성' },
-  { name: 'GPT-4o mini', provider: 'OpenAI', placed: '미배치', placedMuted: true, tag: '경량', at: '2026.08.21', color: '#4a97c4', tone: 'idle', state: '대기' },
-  { name: 'Claude Sonnet', provider: 'Anthropic', placed: 'Agent 2 · 코드 작성', placedMuted: false, tag: '코딩', at: '2026.08.24', color: '#c98a5e', tone: 'ok', state: '활성' },
-  { name: 'Claude Haiku', provider: 'Anthropic', placed: '미배치', placedMuted: true, tag: '경량', at: '2026.08.18', color: '#c98a5e', tone: 'idle', state: '대기' },
-  { name: 'Gemini 1.5 Pro', provider: 'Google', placed: 'Agent 3 · 코드 리뷰', placedMuted: false, tag: '리뷰', at: '2026.08.23', color: '#7b9ac4', tone: 'ok', state: '활성' },
-  { name: 'Gemini 1.5 Flash', provider: 'Google', placed: '미배치', placedMuted: true, tag: '경량', at: '2026.08.16', color: '#7b9ac4', tone: 'idle', state: '대기' },
-]
-
-const modelColumns = 'grid-cols-[1.5fr_.9fr_1.1fr_.8fr_.9fr_.9fr]'
-
-function Models() {
-  return <>
-    <PageHead title="모델 및 Provider 관리" description="LLM Provider를 등록하고 모델을 Agent 단계에 배치합니다.">
-      <button className={secondaryButton}>Provider 등록</button>
-      <button className={primaryButton}><Icon name="plus" />모델 추가</button>
-    </PageHead>
-    <MockNote>정적 데모 화면입니다. API Key는 마스킹된 예시 값입니다.</MockNote>
-
-    <Tabs items={[{ label: 'Provider', count: '3' }, { label: '모델', count: '18' }, { label: 'Agent 배치', count: '3' }]} active={1} />
-
-    <div className={`${grid} mb-[0.875rem] md:grid-cols-3`}>
-      {providers.map((provider) => <div key={provider.name} className={`${panel} px-4 py-[0.9375rem]`}>
-        <div className="flex items-center gap-[0.5625rem]">
-          <span className="grid h-7 w-7 shrink-0 place-items-center rounded-md text-xs font-bold" style={{ background: provider.markBg, color: provider.markFg }}>{provider.initial}</span>
-          <span className="min-w-0 flex-1">
-            <b className="block text-[0.8125rem] font-semibold">{provider.name}</b>
-            <small className="block text-[0.6875rem] text-muted-2">모델 {provider.models}개 · Agent {provider.agents}개 배치</small>
-          </span>
-          <Badge tone="ok">연결됨</Badge>
-        </div>
-        <div className="mt-[0.8125rem] flex items-center justify-between border-t border-[#f0f2f5] pt-[0.6875rem] text-[0.71875rem] text-muted">
-          <span>API Key</span>
-          <b className="font-mono font-medium text-body">{provider.key}</b>
-        </div>
-      </div>)}
-    </div>
-
-    <section className={panel}>
-      <div className="flex flex-wrap items-center gap-[0.625rem] border-b border-line-soft px-4 py-3">
-        <SearchField placeholder="모델명, Provider 검색" className="min-w-[13.75rem] max-w-[22.5rem] flex-1" />
-        {['Provider 전체', '활성 상태', '배치 여부'].map((label, index) => <FilterChip key={label} label={label} active={index === 0} />)}
-        <button className={`${smallButton} ml-auto`}><Icon name="sliders-horizontal" size={13} />표시 항목</button>
-      </div>
-      <div className="overflow-x-auto">
-        <div className="min-w-[55rem]">
-          <div className={`${headRow} ${modelColumns}`}>
-            <span>모델</span><span>Provider</span><span>Agent 배치</span><span>활성 상태</span><span>태그</span><span className="text-right">최근 수정일</span>
-          </div>
-          {modelRows.map((model) => <div key={model.name} className={`${bodyRow} ${modelColumns}`}>
-            <span className="flex items-center gap-2">
-              <i className="block h-[0.4375rem] w-[0.4375rem] rounded-sm" style={{ background: model.color }} />
-              <b className="text-[0.78125rem] font-semibold text-ink">{model.name}</b>
-            </span>
-            <span>{model.provider}</span>
-            <span className={model.placedMuted ? 'text-muted-3' : ''}>{model.placed}</span>
-            <span><Badge tone={model.tone}>{model.state}</Badge></span>
-            <span><Tag>{model.tag}</Tag></span>
-            <span className="text-right text-[0.71875rem] text-muted-2">{model.at}</span>
-          </div>)}
-        </div>
-      </div>
-      <Pagination summary="전체 18건 중 1–6건" />
     </section>
   </>
 }
@@ -513,6 +437,7 @@ function Sites({ api }: { api: CmsSiteSettingsApiClient }) {
   const [items, setItems] = useState<CmsSite[]>([])
   const [templates, setTemplates] = useState<SiteTemplate[]>([])
   const [selected, setSelected] = useState<CmsSite | null>(null)
+  const [creating, setCreating] = useState(false)
   const [failure, setFailure] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -533,11 +458,14 @@ function Sites({ api }: { api: CmsSiteSettingsApiClient }) {
     if (!selected) return
     setSaving(true); setFailure(null); setSuccess(null)
     try {
-      const saved = await api.saveSite(selected.key, selected)
-      setItems((current) => current.map((item) => item.key === saved.key ? saved : item))
-      setSelected(saved); notifySiteUpdated(); setSuccess('사이트 설정을 저장하고 사용자 화면에 반영했습니다.')
+      const saved = creating
+        ? await api.createSite({ key: selected.key, name: selected.name, publicPath: selected.publicPath, templateKey: selected.templateKey, enabled: selected.enabled })
+        : await api.saveSite(selected.key, selected)
+      setItems((current) => creating ? [...current, saved] : current.map((item) => item.key === saved.key ? saved : item))
+      setSelected(saved); setCreating(false); notifySiteUpdated()
+      setSuccess(creating ? '사이트를 생성하고 사용자 화면에 반영했습니다.' : '사이트 설정을 저장하고 사용자 화면에 반영했습니다.')
     } catch (error) {
-      setFailure(`사이트 설정을 저장하지 못했습니다. ${describeFailure(error)}`)
+      setFailure(`${creating ? '사이트를 생성' : '사이트 설정을 저장'}하지 못했습니다. ${describeFailure(error)}`)
     } finally {
       setSaving(false)
     }
@@ -552,13 +480,24 @@ function Sites({ api }: { api: CmsSiteSettingsApiClient }) {
 
     <div className="grid items-start gap-[0.875rem] lg:grid-cols-[18rem_minmax(0,1fr)]">
       <section className={panel}>
-        <PanelTitle title="사이트" sub={loading ? '불러오는 중' : `${items.length}개`} />
+        <PanelTitle title="사이트" sub={loading ? '불러오는 중' : `${items.length}개`}>
+          <button
+            type="button"
+            className={smallButton}
+            disabled={loading || saving || templates.length === 0}
+            onClick={() => {
+              setCreating(true)
+              setSelected({ key: '', name: '', publicPath: '/', templateKey: templates[0]?.key ?? '', enabled: true, defaultSite: false, updatedAt: '' })
+              setFailure(null); setSuccess(null)
+            }}
+          >새 사이트</button>
+        </PanelTitle>
         <div className="grid gap-2 p-3">
           {items.map((site) => <button
             key={site.key}
             type="button"
             className={`rounded-md border p-3 text-left ${selected?.key === site.key ? 'border-primary bg-sub' : 'border-line-soft bg-white hover:bg-sub'}`}
-            onClick={() => { setSelected(site); setFailure(null); setSuccess(null) }}
+            onClick={() => { setSelected(site); setCreating(false); setFailure(null); setSuccess(null) }}
           >
             <span className="flex items-center gap-2"><b className="min-w-0 flex-1 truncate text-xs">{site.name}</b>{site.defaultSite && <Badge tone="run">기본</Badge>}</span>
             <small className="mt-2 block text-[0.6875rem] text-muted-2">{site.publicPath} · {site.enabled ? '사용' : '중지'}</small>
@@ -568,8 +507,11 @@ function Sites({ api }: { api: CmsSiteSettingsApiClient }) {
       </section>
 
       <form className={panel} onSubmit={save}>
-        <PanelTitle title="사이트 설정" sub={selected ? selected.key : '선택 필요'} />
+        <PanelTitle title={creating ? '사이트 생성' : '사이트 설정'} sub={selected ? selected.key || '새 Site' : '선택 필요'} />
         {selected ? <div className="grid gap-4 p-4 md:grid-cols-2">
+          {creating && <label className="text-xs font-semibold">사이트 키
+            <input className={`${control} mt-2 font-mono`} value={selected.key} maxLength={40} pattern="[A-Za-z0-9_-]+" required onChange={(event) => setSelected({ ...selected, key: event.target.value })} />
+          </label>}
           <label className="text-xs font-semibold">사이트명
             <input className={`${control} mt-2`} value={selected.name} maxLength={100} required onChange={(event) => setSelected({ ...selected, name: event.target.value })} />
           </label>
@@ -588,7 +530,7 @@ function Sites({ api }: { api: CmsSiteSettingsApiClient }) {
             {selected.defaultSite && <small className="ml-auto font-normal text-muted-2">기본 사이트는 중지할 수 없습니다.</small>}
           </label>
           <div className="flex justify-end md:col-span-2">
-            <button className={primaryButton} disabled={saving || templates.length === 0}>{saving ? '저장 중…' : '사이트 설정 저장'}</button>
+            <button className={primaryButton} disabled={saving || templates.length === 0}>{saving ? '저장 중…' : creating ? '사이트 생성' : '사이트 설정 저장'}</button>
           </div>
         </div> : <p className="p-4 text-xs text-muted-2">편집할 사이트를 선택하세요.</p>}
       </form>

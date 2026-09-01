@@ -19,11 +19,13 @@ export type CmsSite = {
 }
 
 export type CmsSiteUpdate = Pick<CmsSite, 'name' | 'publicPath' | 'templateKey' | 'enabled'>
+export type CmsSiteCreate = Pick<CmsSite, 'key' | 'name' | 'publicPath' | 'templateKey' | 'enabled'>
 
 export interface CmsSiteSettingsApiClient {
   settings(): Promise<CmsSiteSettings>
   saveSettings(value: Pick<CmsSiteSettings, 'defaultSiteKey' | 'defaultTemplateKey'>): Promise<CmsSiteSettings>
   sites(): Promise<CmsSite[]>
+  createSite(value: CmsSiteCreate): Promise<CmsSite>
   saveSite(key: string, value: CmsSiteUpdate): Promise<CmsSite>
   templates(): Promise<SiteTemplate[]>
 }
@@ -70,6 +72,11 @@ export class CmsSiteSettingsApi implements CmsSiteSettingsApiClient {
   )
 
   sites = () => this.request<CmsSite[]>('/api/admin/cms/sites')
+
+  createSite = (value: CmsSiteCreate) => this.request<CmsSite>(
+    '/api/admin/cms/sites',
+    { method: 'POST', body: JSON.stringify({ key: value.key, siteName: value.name, publicPath: value.publicPath, templateKey: value.templateKey, enabled: value.enabled }) },
+  )
 
   saveSite = (key: string, value: CmsSiteUpdate) => this.request<CmsSite>(
     `/api/admin/cms/sites/${encodeURIComponent(key)}`,

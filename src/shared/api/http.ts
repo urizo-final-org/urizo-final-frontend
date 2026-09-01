@@ -19,12 +19,3 @@ export async function parseBody(response: Response): Promise<unknown> {
   if (response.status === 204) return undefined
   return response.json().catch(() => undefined)
 }
-
-export function normalizeCollection<T>(value: unknown, keys: string[]): T[] {
-  if (Array.isArray(value)) return value as T[]
-  const record = asRecord(value)
-  for (const key of ['items', ...keys]) {
-    if (Array.isArray(record[key])) return record[key] as T[]
-  }
-  return []
-}
