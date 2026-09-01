@@ -1,0 +1,762 @@
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
+import { describeFailure } from '../../shared/api/error'
+import { Icon } from '../../shared/ui/icons'
+import {
+  Badge, Callout, Tag, control, dangerButton, panel, primaryButton, secondaryButton,
+} from '../../shared/ui/primitives'
+import type {
+  ProfileAuthoringSnapshot, ProfileKey, ProfileModelBinding, ProfileNodeType, ProfileSnapshotConfig,
+  ProfileSnapshotEdge, ProfileSnapshotNode, ProfileVersion, ProfileVersionApiClient,
+} from './api'
+
+interface WorkflowNode extends ProfileSnapshotNode {
+  x: number
+  y: number
+}
+
+interface HandlerDefinition {
+  key: string
+  type: ProfileNodeType
+  label: string
+  resultPorts: string[]
+  config: Record<string, unknown>
+  locked?: true
+}
+
+const nodeTypes = {
+  start: { icon: 'play' as const, meta: '요청 시작', skin: 'bg-ok-bg text-ok-fg' },
+  agent: { icon: 'bot' as const, meta: 'Model Binding', skin: 'bg-run-bg text-run-fg' },
+  tool: { icon: 'plug' as const, meta: '고정 Tool 정책', skin: 'bg-wait-bg text-wait-fg' },
+  guardrail: { icon: 'shield-check' as const, meta: 'Snapshot 잠금 계약', skin: 'bg-[#f2ecf8] text-[#765a91]' },
+  approval: { icon: 'shield-check' as const, meta: 'production Handler', skin: 'bg-[#f2ecf8] text-[#765a91]' },
+  check: { icon: 'check-check' as const, meta: 'production Handler', skin: 'bg-[#f2ecf8] text-[#765a91]' },
+  end: { icon: 'inbox' as const, meta: '결과 종료', skin: 'bg-idle-bg text-idle-fg' },
+}
+
+const handlerCatalog: Record<ProfileKey, HandlerDefinition[]> = {
+  LLM_OPS: [
+    { key: 'common.start', type: 'start', label: 'Start', resultPorts: ['next'], config: {}, locked: true },
+    { key: 'common.guardrail', type: 'guardrail', label: '잠금 Guardrail', resultPorts: ['passed', 'failed'], config: { locked: true }, locked: true },
+    { key: 'coding.analyze', type: 'agent', label: '요청 분석', resultPorts: ['feasible', 'infeasible'], config: {} },
+    { key: 'coding.approval', type: 'approval', label: 'Coding Approval', resultPorts: ['approved'], config: { stage: 'SCOPE', requiredRole: 'GENERAL_ADMIN' } },
+    { key: 'coding.code', type: 'agent', label: '코드 생성', resultPorts: ['completed'], config: {} },
+    { key: 'coding.review', type: 'agent', label: '코드 검토', resultPorts: ['passed', 'changes_requested'], config: {} },
+    { key: 'coding.rework_gate', type: 'check', label: '재작업 Check', resultPorts: ['retry', 'handover'], config: { maxReworkRounds: 3 } },
+    { key: 'common.check', type: 'check', label: '공통 Check', resultPorts: ['passed', 'failed'], config: {} },
+    { key: 'coding.preview', type: 'tool', label: '변경 Preview', resultPorts: ['ready'], config: {} },
+    { key: 'coding.preview_approval', type: 'approval', label: 'Preview Approval', resultPorts: ['approved', 'rejected'], config: { stage: 'CANDIDATE', requiredRole: 'GENERAL_ADMIN' } },
+    { key: 'coding.pr_request', type: 'tool', label: 'PR 요청', resultPorts: ['requested'], config: {} },
+    { key: 'coding.deploy_request', type: 'tool', label: '배포 요청 기록', resultPorts: ['recorded'], config: { mode: 'request_record_only' } },
+    { key: 'common.end', type: 'end', label: 'End', resultPorts: [], config: {}, locked: true },
+  ],
+  NATURAL_CMS: [
+    { key: 'common.start', type: 'start', label: 'Start', resultPorts: ['next'], config: {}, locked: true },
+    { key: 'common.guardrail', type: 'guardrail', label: '잠금 Guardrail', resultPorts: ['passed', 'failed'], config: { locked: true }, locked: true },
+    { key: 'cms.analyze', type: 'agent', label: 'CMS 요청 분석', resultPorts: ['feasible', 'infeasible'], config: {} },
+    { key: 'cms.preview', type: 'agent', label: 'CMS Preview 생성', resultPorts: ['ready'], config: {} },
+    { key: 'cms.approval', type: 'approval', label: 'CMS Preview Approval', resultPorts: ['approved', 'rejected'], config: { stage: 'PREVIEW', requiredRole: 'GENERAL_ADMIN' } },
+    { key: 'cms.discard', type: 'tool', label: 'CMS Preview 폐기', resultPorts: ['retry', 'discarded'], config: {} },
+    { key: 'cms.apply', type: 'tool', label: 'CMS Preview 반영', resultPorts: ['applied'], config: {} },
+    { key: 'common.check', type: 'check', label: '공통 Check', resultPorts: ['passed', 'failed'], config: {} },
+    { key: 'common.end', type: 'end', label: 'End', resultPorts: [], config: {}, locked: true },
+  ],
+}
+
+const modelBindingCatalog: Record<ProfileKey, string[]> = {
+  LLM_OPS: ['llm-ops-analyze', 'llm-ops-code', 'llm-ops-review', 'llm-ops-claude'],
+  NATURAL_CMS: ['natural-cms-analyze', 'natural-cms-command', 'natural-cms-claude'],
+}
+
+const toolCatalog: Record<ProfileKey, string[]> = {
+  LLM_OPS: ['read_file', 'search_code', 'read_diff', 'apply_patch', 'run_check', 'check_package_allowlist', 'scan_changed_files'],
+  NATURAL_CMS: ['resolve_cms_target', 'validate_cms_command', 'create_cms_preview', 'discard_cms_preview', 'revalidate_cms_preview', 'apply_cms_preview'],
+}
+
+export const starterSnapshots: Record<ProfileKey, ProfileAuthoringSnapshot> = {
+  LLM_OPS: {
+    nodes: [
+      { id: 'start', type: 'start', handlerKey: 'common.start', resultPorts: ['next'], config: {} },
+      { id: 'guardrail', type: 'guardrail', handlerKey: 'common.guardrail', resultPorts: ['passed', 'failed'], config: { locked: true } },
+      { id: 'analyze', type: 'agent', handlerKey: 'coding.analyze', resultPorts: ['feasible', 'infeasible'], config: {} },
+      { id: 'scope_approval', type: 'approval', handlerKey: 'coding.approval', resultPorts: ['approved'], config: { stage: 'SCOPE', requiredRole: 'GENERAL_ADMIN' } },
+      { id: 'code', type: 'agent', handlerKey: 'coding.code', resultPorts: ['completed'], config: {} },
+      { id: 'review', type: 'agent', handlerKey: 'coding.review', resultPorts: ['passed', 'changes_requested'], config: {} },
+      { id: 'rework_gate', type: 'check', handlerKey: 'coding.rework_gate', resultPorts: ['retry', 'handover'], config: { maxReworkRounds: 3 } },
+      { id: 'preview', type: 'tool', handlerKey: 'coding.preview', resultPorts: ['ready'], config: {} },
+      { id: 'preview_approval', type: 'approval', handlerKey: 'coding.preview_approval', resultPorts: ['approved', 'rejected'], config: { stage: 'CANDIDATE', requiredRole: 'GENERAL_ADMIN' } },
+      { id: 'pr_request', type: 'tool', handlerKey: 'coding.pr_request', resultPorts: ['requested'], config: {} },
+      { id: 'github_approval', type: 'approval', handlerKey: 'coding.approval', resultPorts: ['approved'], config: { stage: 'GITHUB', requiredRole: 'SUPER_ADMIN' } },
+      { id: 'cms_approval', type: 'approval', handlerKey: 'coding.approval', resultPorts: ['approved'], config: { stage: 'CMS', requiredRole: 'GENERAL_ADMIN' } },
+      { id: 'deploy_approval', type: 'approval', handlerKey: 'coding.approval', resultPorts: ['approved'], config: { stage: 'DEPLOY', requiredRole: 'SUPER_ADMIN' } },
+      { id: 'deploy_request', type: 'tool', handlerKey: 'coding.deploy_request', resultPorts: ['recorded'], config: { mode: 'request_record_only' } },
+      { id: 'end', type: 'end', handlerKey: 'common.end', resultPorts: [], config: {} },
+    ],
+    edges: [
+      { from: 'start', resultPort: 'next', to: 'guardrail' },
+      { from: 'guardrail', resultPort: 'passed', to: 'analyze' },
+      { from: 'guardrail', resultPort: 'failed', to: 'end' },
+      { from: 'analyze', resultPort: 'feasible', to: 'scope_approval' },
+      { from: 'analyze', resultPort: 'infeasible', to: 'end' },
+      { from: 'scope_approval', resultPort: 'approved', to: 'code' },
+      { from: 'code', resultPort: 'completed', to: 'review' },
+      { from: 'review', resultPort: 'passed', to: 'preview' },
+      { from: 'review', resultPort: 'changes_requested', to: 'rework_gate' },
+      { from: 'rework_gate', resultPort: 'retry', to: 'code' },
+      { from: 'rework_gate', resultPort: 'handover', to: 'end' },
+      { from: 'preview', resultPort: 'ready', to: 'preview_approval' },
+      { from: 'preview_approval', resultPort: 'approved', to: 'pr_request' },
+      { from: 'preview_approval', resultPort: 'rejected', to: 'analyze' },
+      { from: 'pr_request', resultPort: 'requested', to: 'github_approval' },
+      { from: 'github_approval', resultPort: 'approved', to: 'cms_approval' },
+      { from: 'cms_approval', resultPort: 'approved', to: 'deploy_approval' },
+      { from: 'deploy_approval', resultPort: 'approved', to: 'deploy_request' },
+      { from: 'deploy_request', resultPort: 'recorded', to: 'end' },
+    ],
+    config: {
+      maxNodes: 15,
+      maxAttempts: 3,
+      loopLimits: [
+        { from: 'rework_gate', resultPort: 'retry', to: 'code', maxIterations: 2 },
+        { from: 'preview_approval', resultPort: 'rejected', to: 'analyze', maxIterations: 2 },
+      ],
+    },
+    modelBindings: {
+      analyze: { primary: 'llm-ops-analyze', fallback: [] },
+      code: { primary: 'llm-ops-code', fallback: [] },
+      review: { primary: 'llm-ops-review', fallback: [] },
+    },
+    toolPolicy: { allowedTools: [...toolCatalog.LLM_OPS] },
+    guardrailProfileKey: 'central.default',
+  },
+  NATURAL_CMS: {
+    nodes: [
+      { id: 'start', type: 'start', handlerKey: 'common.start', resultPorts: ['next'], config: {} },
+      { id: 'guardrail', type: 'guardrail', handlerKey: 'common.guardrail', resultPorts: ['passed', 'failed'], config: { locked: true } },
+      { id: 'analyze', type: 'agent', handlerKey: 'cms.analyze', resultPorts: ['feasible', 'infeasible'], config: {} },
+      { id: 'preview', type: 'agent', handlerKey: 'cms.preview', resultPorts: ['ready'], config: {} },
+      { id: 'approval', type: 'approval', handlerKey: 'cms.approval', resultPorts: ['approved', 'rejected'], config: { stage: 'PREVIEW', requiredRole: 'GENERAL_ADMIN' } },
+      { id: 'discard', type: 'tool', handlerKey: 'cms.discard', resultPorts: ['retry', 'discarded'], config: {} },
+      { id: 'apply', type: 'tool', handlerKey: 'cms.apply', resultPorts: ['applied'], config: {} },
+      { id: 'end', type: 'end', handlerKey: 'common.end', resultPorts: [], config: {} },
+    ],
+    edges: [
+      { from: 'start', resultPort: 'next', to: 'guardrail' },
+      { from: 'guardrail', resultPort: 'passed', to: 'analyze' },
+      { from: 'guardrail', resultPort: 'failed', to: 'end' },
+      { from: 'analyze', resultPort: 'feasible', to: 'preview' },
+      { from: 'analyze', resultPort: 'infeasible', to: 'end' },
+      { from: 'preview', resultPort: 'ready', to: 'approval' },
+      { from: 'approval', resultPort: 'approved', to: 'apply' },
+      { from: 'approval', resultPort: 'rejected', to: 'discard' },
+      { from: 'discard', resultPort: 'retry', to: 'analyze' },
+      { from: 'discard', resultPort: 'discarded', to: 'end' },
+      { from: 'apply', resultPort: 'applied', to: 'end' },
+    ],
+    config: {
+      maxNodes: 8,
+      maxAttempts: 3,
+      loopLimits: [{ from: 'discard', resultPort: 'retry', to: 'analyze', maxIterations: 2 }],
+    },
+    modelBindings: {
+      analyze: { primary: 'natural-cms-analyze', fallback: [] },
+      preview: { primary: 'natural-cms-command', fallback: [] },
+    },
+    toolPolicy: { allowedTools: [...toolCatalog.NATURAL_CMS] },
+    guardrailProfileKey: 'central.default',
+  },
+}
+
+export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient }) {
+  const [profileKey, setProfileKey] = useState<ProfileKey>('LLM_OPS')
+  const [versions, setVersions] = useState<ProfileVersion[]>([])
+  const [selectedVersionId, setSelectedVersionId] = useState<string | null>(null)
+  const [nodes, setNodes] = useState<WorkflowNode[]>([])
+  const [edges, setEdges] = useState<ProfileSnapshotEdge[]>([])
+  const [config, setConfig] = useState<ProfileSnapshotConfig>(starterSnapshots.LLM_OPS.config)
+  const [modelBindings, setModelBindings] = useState<Record<string, ProfileModelBinding>>({})
+  const [allowedTools, setAllowedTools] = useState<string[]>([])
+  const [guardrailProfileKey, setGuardrailProfileKey] = useState('central.default')
+  const [selectedId, setSelectedId] = useState('')
+  const [connectFrom, setConnectFrom] = useState<{ nodeId: string; resultPort: string } | null>(null)
+  const [connectPort, setConnectPort] = useState('')
+  const [status, setStatus] = useState('저장된 Profile Version을 조회하고 있습니다.')
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [failure, setFailure] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
+  const versionRequest = useRef(0)
+  const drag = useRef<{ id: string; pointerX: number; pointerY: number; x: number; y: number; moved: boolean } | null>(null)
+  const ignoreClick = useRef<string | null>(null)
+
+  const selected = nodes.find((node) => node.id === selectedId) ?? null
+  const selectedDefinition = selected ? definitionFor(profileKey, selected.handlerKey) : null
+  const selectedVersion = versions.find((version) => version.profileVersionId === selectedVersionId) ?? null
+  const supported = nodes.every((node) => matchesDefinition(profileKey, node))
+    && allowedTools.every((tool) => toolCatalog[profileKey].includes(tool))
+    && nodes.filter((node) => node.type === 'agent').every((node) => {
+      const binding = modelBindings[node.id]
+      return binding !== undefined
+        && modelBindingCatalog[profileKey].includes(binding.primary)
+        && binding.fallback.every((item) => modelBindingCatalog[profileKey].includes(item))
+    })
+
+  useEffect(() => {
+    void loadVersions(profileKey)
+    return () => { versionRequest.current += 1 }
+  }, [api, profileKey])
+
+  async function loadVersions(key: ProfileKey, preferredId?: string) {
+    const request = ++versionRequest.current
+    setLoading(true)
+    setFailure(null)
+    setNotice(null)
+    try {
+      const items = [...await api.list(key)].sort((left, right) => right.profileVersion - left.profileVersion)
+      if (request !== versionRequest.current) return false
+      const preferred = items.find((item) => item.profileVersionId === preferredId)
+        ?? items[0]
+        ?? null
+      setVersions(items)
+      if (preferred) applySnapshot(preferred.snapshot, preferred.profileVersionId)
+      else applySnapshot(starterSnapshots[key], null)
+      setStatus(preferred
+        ? `${key} v${preferred.profileVersion} ${preferred.status} Snapshot을 불러왔습니다.`
+        : `${key} 저장 Version이 없어 production 기본 Snapshot을 불러왔습니다.`)
+      return true
+    } catch (error) {
+      if (request === versionRequest.current) {
+        setVersions([])
+        setSelectedVersionId(null)
+        setNodes([])
+        setEdges([])
+        setFailure(describeFailure(error))
+        setStatus('Profile Version을 불러오지 못했습니다.')
+      }
+      return false
+    } finally {
+      if (request === versionRequest.current) setLoading(false)
+    }
+  }
+
+  function applySnapshot(snapshot: ProfileAuthoringSnapshot, versionId: string | null) {
+    const nextNodes = snapshot.nodes.map((node, index) => ({
+      ...node,
+      resultPorts: [...node.resultPorts],
+      config: { ...node.config },
+      x: 24 + (index % 4) * 176,
+      y: 48 + Math.floor(index / 4) * 118,
+    }))
+    const nextSelected = nextNodes.find((node) => node.type === 'guardrail') ?? nextNodes[0] ?? null
+    setSelectedVersionId(versionId)
+    setNodes(nextNodes)
+    setEdges(snapshot.edges.map((edge) => ({ ...edge })))
+    setConfig({
+      ...snapshot.config,
+      loopLimits: snapshot.config.loopLimits.map((limit) => ({ ...limit })),
+    })
+    setModelBindings(Object.fromEntries(Object.entries(snapshot.modelBindings).map(([nodeId, binding]) => [
+      nodeId,
+      { primary: binding.primary, fallback: [...binding.fallback] },
+    ])))
+    setAllowedTools([...snapshot.toolPolicy.allowedTools])
+    setGuardrailProfileKey(snapshot.guardrailProfileKey)
+    setSelectedId(nextSelected?.id ?? '')
+    setConnectPort(nextSelected?.resultPorts[0] ?? '')
+    setConnectFrom(null)
+  }
+
+  function chooseVersion(versionId: string) {
+    const version = versions.find((item) => item.profileVersionId === versionId)
+    if (!version) return
+    applySnapshot(version.snapshot, version.profileVersionId)
+    setFailure(null)
+    setNotice(null)
+    setStatus(`${version.profileKey} v${version.profileVersion} ${version.status} Snapshot을 불러왔습니다.`)
+  }
+
+  function authoringSnapshot(): ProfileAuthoringSnapshot {
+    const routes = new Set(edges.map((edge) => `${edge.from}:${edge.resultPort}:${edge.to}`))
+    const agentBindings = Object.fromEntries(nodes.filter((node) => node.type === 'agent').map((node) => {
+      const binding = modelBindings[node.id] ?? { primary: defaultBinding(profileKey, node.handlerKey), fallback: [] }
+      return [node.id, { primary: binding.primary, fallback: [...binding.fallback] }]
+    }))
+    return {
+      nodes: nodes.map(({ x: _x, y: _y, ...node }) => ({
+        ...node,
+        resultPorts: [...node.resultPorts],
+        config: { ...node.config },
+      })),
+      edges: edges.map((edge) => ({ ...edge })),
+      config: {
+        ...config,
+        loopLimits: config.loopLimits
+          .filter((limit) => routes.has(`${limit.from}:${limit.resultPort}:${limit.to}`))
+          .map((limit) => ({ ...limit })),
+      },
+      modelBindings: agentBindings,
+      toolPolicy: { allowedTools: [...allowedTools] },
+      guardrailProfileKey,
+    }
+  }
+
+  async function saveDraft() {
+    if (!supported || nodes.length === 0) return
+    setSaving(true)
+    setFailure(null)
+    setNotice(null)
+    try {
+      const created = await api.create(profileKey, authoringSnapshot())
+      if (await loadVersions(profileKey, created.profileVersionId)) {
+        setNotice(`v${created.profileVersion} DRAFT를 저장하고 다시 조회했습니다.`)
+      }
+    } catch (error) {
+      setFailure(describeFailure(error))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function activateSelected() {
+    if (!selectedVersion || selectedVersion.status !== 'DRAFT') return
+    setSaving(true)
+    setFailure(null)
+    setNotice(null)
+    try {
+      const activated = await api.activate(selectedVersion.profileVersionId)
+      if (await loadVersions(profileKey, activated.profileVersionId)) {
+        setNotice(`v${activated.profileVersion}을 ACTIVE로 전환하고 다시 조회했습니다.`)
+      }
+    } catch (error) {
+      setFailure(describeFailure(error))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  function addNode(definition: HandlerDefinition) {
+    if (!supported || loading || saving) return
+    if (nodes.length >= config.maxNodes) {
+      setStatus(`현재 Snapshot의 maxNodes ${config.maxNodes}개를 초과할 수 없습니다.`)
+      return
+    }
+    if (definition.locked && nodes.some((node) => node.type === definition.type)) return
+    const id = uniqueNodeId(definition.key.split('.').at(-1) ?? definition.type, nodes)
+    const node: WorkflowNode = {
+      id,
+      type: definition.type,
+      handlerKey: definition.key,
+      resultPorts: [...definition.resultPorts],
+      config: { ...definition.config },
+      x: 24 + (nodes.length % 4) * 176,
+      y: 48 + Math.floor(nodes.length / 4) * 118,
+    }
+    setNodes((current) => [...current, node])
+    if (node.type === 'agent') {
+      setModelBindings((current) => ({
+        ...current,
+        [node.id]: { primary: defaultBinding(profileKey, node.handlerKey), fallback: [] },
+      }))
+    }
+    setSelectedId(node.id)
+    setConnectPort(node.resultPorts[0] ?? '')
+    setConnectFrom(null)
+    setNotice(null)
+    setStatus(`${definition.label} Node를 추가했습니다.`)
+  }
+
+  function selectNode(id: string) {
+    if (ignoreClick.current === id) {
+      ignoreClick.current = null
+      return
+    }
+    const target = nodes.find((node) => node.id === id)
+    if (!target) return
+    if (connectFrom) {
+      const source = nodes.find((node) => node.id === connectFrom.nodeId)
+      if (!source || source.id === target.id) {
+        setStatus('같은 Node에는 연결할 수 없습니다.')
+        return
+      }
+      if (target.type === 'start') {
+        setStatus('Start Node는 연결 대상이 될 수 없습니다.')
+        return
+      }
+      if (connectFrom.resultPort === 'failed'
+        && ['common.guardrail', 'common.check'].includes(source.handlerKey)
+        && target.type !== 'end') {
+        setStatus('Guardrail·공통 Check의 failed Port는 End Node에만 연결할 수 있습니다.')
+        return
+      }
+      setEdges((current) => [...current, { from: source.id, resultPort: connectFrom.resultPort, to: target.id }])
+      setConnectFrom(null)
+      setSelectedId(target.id)
+      setConnectPort(target.resultPorts[0] ?? '')
+      setStatus(`${source.id}.${connectFrom.resultPort} → ${target.id} 연결을 추가했습니다.`)
+      return
+    }
+    setSelectedId(target.id)
+    setConnectPort(target.resultPorts[0] ?? '')
+    setStatus(`${target.id} Node를 선택했습니다.`)
+  }
+
+  function updateSelectedConfig(patch: Record<string, unknown>) {
+    if (!selected) return
+    setNodes((current) => current.map((node) => node.id === selected.id
+      ? { ...node, config: { ...node.config, ...patch } }
+      : node))
+  }
+
+  function updatePrimaryBinding(primary: string) {
+    if (!selected || selected.type !== 'agent') return
+    setModelBindings((current) => {
+      const binding = current[selected.id] ?? { primary, fallback: [] }
+      return { ...current, [selected.id]: { primary, fallback: binding.fallback.filter((item) => item !== primary) } }
+    })
+  }
+
+  function toggleFallback(bindingKey: string) {
+    if (!selected || selected.type !== 'agent') return
+    setModelBindings((current) => {
+      const binding = current[selected.id]
+      if (!binding || binding.primary === bindingKey) return current
+      return {
+        ...current,
+        [selected.id]: {
+          ...binding,
+          fallback: binding.fallback.includes(bindingKey)
+            ? binding.fallback.filter((item) => item !== bindingKey)
+            : [...binding.fallback, bindingKey],
+        },
+      }
+    })
+  }
+
+  function toggleTool(tool: string) {
+    setAllowedTools((current) => current.includes(tool)
+      ? current.filter((item) => item !== tool)
+      : [...current, tool])
+  }
+
+  function deleteSelected() {
+    if (!selected || selectedDefinition?.locked) return
+    const remaining = nodes.filter((node) => node.id !== selected.id)
+    setNodes(remaining)
+    setEdges((current) => current.filter((edge) => edge.from !== selected.id && edge.to !== selected.id))
+    setModelBindings((current) => Object.fromEntries(Object.entries(current).filter(([nodeId]) => nodeId !== selected.id)))
+    const nextSelected = remaining[0] ?? null
+    setSelectedId(nextSelected?.id ?? '')
+    setConnectPort(nextSelected?.resultPorts[0] ?? '')
+    setConnectFrom(null)
+    setStatus(`${selected.id} Node를 삭제했습니다.`)
+  }
+
+  function beginConnect() {
+    if (!selected || !connectPort) return
+    if (edges.some((edge) => edge.from === selected.id && edge.resultPort === connectPort)) {
+      setStatus(`${selected.id}.${connectPort} Port는 이미 연결되어 있습니다. 기존 연결을 먼저 해제하세요.`)
+      return
+    }
+    setConnectFrom({ nodeId: selected.id, resultPort: connectPort })
+    setStatus(`${selected.id}.${connectPort}에서 연결할 대상 Node를 선택하세요.`)
+  }
+
+  function disconnect(edge: ProfileSnapshotEdge) {
+    setEdges((current) => current.filter((item) => item !== edge))
+    setConnectFrom(null)
+    setStatus(`${edge.from}.${edge.resultPort} → ${edge.to} 연결을 해제했습니다.`)
+  }
+
+  function startDrag(event: ReactPointerEvent<HTMLButtonElement>, node: WorkflowNode) {
+    event.preventDefault()
+    event.stopPropagation()
+    event.currentTarget.setPointerCapture?.(event.pointerId)
+    drag.current = { id: node.id, pointerX: event.clientX, pointerY: event.clientY, x: node.x, y: node.y, moved: false }
+    setSelectedId(node.id)
+    setConnectPort(node.resultPorts[0] ?? '')
+  }
+
+  function moveDrag(event: ReactPointerEvent<HTMLButtonElement>) {
+    const active = drag.current
+    if (!active) return
+    const deltaX = event.clientX - active.pointerX
+    const deltaY = event.clientY - active.pointerY
+    if (Math.abs(deltaX) + Math.abs(deltaY) > 3) active.moved = true
+    setNodes((current) => current.map((node) => node.id === active.id
+      ? { ...node, x: Math.max(12, Math.min(730, active.x + deltaX)), y: Math.max(12, Math.min(470, active.y + deltaY)) }
+      : node))
+  }
+
+  function endDrag(event: ReactPointerEvent<HTMLButtonElement>, node: WorkflowNode) {
+    const active = drag.current
+    if (!active) return
+    if (event.currentTarget.hasPointerCapture?.(event.pointerId)) event.currentTarget.releasePointerCapture?.(event.pointerId)
+    drag.current = null
+    if (active.moved) {
+      ignoreClick.current = node.id
+      setNodes((current) => [...current].sort((left, right) => left.y - right.y || left.x - right.x))
+      setStatus(`${node.id} Node 위치와 Snapshot 순서를 변경했습니다.`)
+    }
+  }
+
+  const relatedEdges = selected ? edges.filter((edge) => edge.from === selected.id || edge.to === selected.id) : []
+  const selectedBinding = selected?.type === 'agent' ? modelBindings[selected.id] : null
+
+  return <section id="agent-settings-panel-workflow" role="tabpanel" aria-labelledby="agent-settings-tab-workflow">
+    <Callout tone="ok" icon="shield-check">
+      저장된 LLM_OPS·NATURAL_CMS Snapshot을 편집해 새 불변 DRAFT로 저장합니다. 활성화 검증은 Backend Validator가 최종 강제합니다.
+    </Callout>
+
+    <section className={`${panel} mt-3 p-4`} aria-label="Workflow Profile Version">
+      <div className="flex flex-wrap items-end gap-3">
+        <label className="min-w-48 flex-1 text-[0.71875rem] font-semibold text-body">기능 Profile
+          <select aria-label="Workflow Profile" className={control} value={profileKey} disabled={saving} onChange={(event) => setProfileKey(event.target.value as ProfileKey)}>
+            <option value="LLM_OPS">LLM_OPS · LLM Ops</option>
+            <option value="NATURAL_CMS">NATURAL_CMS · Natural CMS</option>
+          </select>
+        </label>
+        <label className="min-w-56 flex-[2] text-[0.71875rem] font-semibold text-body">저장된 Version
+          <select
+            aria-label="저장된 Workflow Version"
+            className={control}
+            value={selectedVersionId ?? ''}
+            disabled={loading || saving || versions.length === 0}
+            onChange={(event) => chooseVersion(event.target.value)}
+          >
+            {versions.length === 0 && <option value="">저장 Version 없음 · 기본 Snapshot</option>}
+            {versions.map((version) => <option key={version.profileVersionId} value={version.profileVersionId}>v{version.profileVersion} · {version.status}</option>)}
+          </select>
+        </label>
+        <Badge tone={selectedVersion?.status === 'ACTIVE' ? 'ok' : selectedVersion?.status === 'DRAFT' ? 'wait' : 'idle'} dot={false}>
+          {loading ? '조회 중' : selectedVersion?.status ?? '기본 Snapshot'}
+        </Badge>
+      </div>
+      {failure && <div role="alert" className="mt-3 rounded border border-[#ead2d2] bg-fail-bg px-3 py-2 text-[0.71875rem] text-fail-fg">{failure}</div>}
+      {notice && <div role="status" className="mt-3 rounded border border-[#cfe8db] bg-ok-bg px-3 py-2 text-[0.71875rem] text-ok-fg">{notice}</div>}
+      {!supported && nodes.length > 0 && <div role="alert" className="mt-3 rounded border border-[#ead2d2] bg-fail-bg px-3 py-2 text-[0.71875rem] text-fail-fg">현재 UI 허용 목록에 없는 Handler·Model Binding·Tool이 포함되어 편집과 저장을 중단했습니다.</div>}
+      <div className="mt-3 flex flex-wrap gap-2">
+        <button type="button" className={primaryButton} disabled={loading || saving || !supported || nodes.length === 0} onClick={() => void saveDraft()}>새 DRAFT 저장</button>
+        <button type="button" className={secondaryButton} disabled={saving || selectedVersion?.status !== 'DRAFT'} onClick={() => void activateSelected()}>선택 DRAFT 활성화</button>
+        <button type="button" className={secondaryButton} disabled={loading || saving} onClick={() => void loadVersions(profileKey, selectedVersionId ?? undefined)}>다시 조회</button>
+      </div>
+    </section>
+
+    <div className={`${panel} mt-3 grid min-h-[39rem] overflow-hidden xl:grid-cols-[15rem_minmax(0,1fr)_18rem]`}>
+      <aside className="border-b border-line-soft bg-sub p-4 xl:border-b-0 xl:border-r" aria-label="Node Palette">
+        <b className="text-[0.84375rem] font-semibold">등록 Handler Palette</b>
+        <small className="mt-1 block text-[0.6875rem] text-muted-2">Backend production 계약에 등록된 Node만 추가</small>
+        <div className="mt-3 grid gap-2">
+          {handlerCatalog[profileKey].map((definition) => {
+            const info = nodeTypes[definition.type]
+            const exists = definition.locked && nodes.some((node) => node.type === definition.type)
+            return <button
+              key={definition.key}
+              type="button"
+              className="flex items-center gap-2 rounded-md border border-btn-line bg-white px-3 py-[0.625rem] text-left text-xs font-semibold enabled:hover:bg-page disabled:opacity-45"
+              disabled={exists || loading || saving || !supported}
+              onClick={() => addNode(definition)}
+            >
+              <span className={`grid h-6 w-6 shrink-0 place-items-center rounded ${info.skin}`}><Icon name={info.icon} size={13} /></span>
+              <span className="min-w-0"><span className="block truncate">{definition.label}</span><code className="block truncate text-[0.5625rem] font-normal text-muted-2">{definition.key}</code></span>
+            </button>
+          })}
+        </div>
+
+        <fieldset className="mt-4 border-t border-row-line pt-3" disabled={loading || saving || !supported}>
+          <legend className="text-[0.71875rem] font-semibold text-body">Profile 허용 Tool</legend>
+          <p className="mt-1 text-[0.625rem] leading-4 text-muted-2">Snapshot toolPolicy에 저장됩니다.</p>
+          <div className="mt-2 space-y-2">
+            {toolCatalog[profileKey].map((tool) => <label key={tool} className="flex items-start gap-2 text-[0.65625rem] text-body">
+              <input type="checkbox" aria-label={`허용 Tool ${tool}`} checked={allowedTools.includes(tool)} onChange={() => toggleTool(tool)} />
+              <code className="break-all">{tool}</code>
+            </label>)}
+          </div>
+        </fieldset>
+      </aside>
+
+      <div className="min-w-0 bg-[#f8fafc]">
+        <div className="flex flex-wrap items-center gap-2 border-b border-line-soft bg-white px-4 py-3">
+          <b className="text-[0.8125rem] font-semibold">{profileKey} Snapshot</b>
+          <Tag>등록 Handler</Tag><Tag>Version API</Tag>
+          <span className="ml-auto text-[0.6875rem] text-muted-2">Node {nodes.length} · Edge {edges.length}</span>
+        </div>
+        <div className="overflow-auto p-3">
+          <div className="relative h-[35rem] min-w-[56rem] overflow-hidden rounded-md border border-line bg-[radial-gradient(circle,#dfe5eb_1px,transparent_1px)] [background-size:18px_18px]" aria-label="Node 편집 Canvas">
+            <svg className="pointer-events-none absolute inset-0 h-full w-full" viewBox="0 0 896 560" preserveAspectRatio="none" aria-hidden="true">
+              {edges.map((edge) => {
+                const from = nodes.find((node) => node.id === edge.from)
+                const to = nodes.find((node) => node.id === edge.to)
+                if (!from || !to) return null
+                const x1 = from.x + 152
+                const y1 = from.y + 36
+                const x2 = to.x
+                const y2 = to.y + 36
+                const bend = Math.max(42, Math.abs(x2 - x1) * 0.45)
+                return <path key={`${edge.from}-${edge.resultPort}-${edge.to}`} d={`M ${x1} ${y1} C ${x1 + bend} ${y1}, ${x2 - bend} ${y2}, ${x2} ${y2}`} fill="none" stroke="var(--primary)" strokeWidth="2" opacity=".62" />
+              })}
+            </svg>
+
+            {nodes.map((node, index) => {
+              const info = nodeTypes[node.type]
+              const definition = definitionFor(profileKey, node.handlerKey)
+              const active = selectedId === node.id
+              const source = connectFrom?.nodeId === node.id
+              return <article
+                key={node.id}
+                aria-label={`${node.id} Node`}
+                className={`absolute w-[9.5rem] rounded-md border bg-white p-[0.625rem] shadow-[0_5px_14px_#1426381f] ${active ? 'border-primary ring-2 ring-accent/45' : source ? 'border-wait-dot ring-2 ring-wait-bg' : 'border-line'}`}
+                style={{ left: node.x, top: node.y }}
+                onClick={() => selectNode(node.id)}
+              >
+                <span className="absolute -left-[0.25rem] top-1/2 h-2 w-2 -translate-y-1/2 rounded-full border border-primary bg-white" aria-hidden="true" />
+                <span className="absolute -right-[0.25rem] top-1/2 h-2 w-2 -translate-y-1/2 rounded-full border border-primary bg-white" aria-hidden="true" />
+                <button
+                  type="button"
+                  aria-label={`${node.id} Node 이동`}
+                  className="flex w-full cursor-grab touch-none items-center gap-2 bg-transparent p-0 text-left active:cursor-grabbing"
+                  onPointerDown={(event) => startDrag(event, node)}
+                  onPointerMove={moveDrag}
+                  onPointerUp={(event) => endDrag(event, node)}
+                  onPointerCancel={(event) => endDrag(event, node)}
+                >
+                  <span className={`grid h-6 w-6 place-items-center rounded ${info.skin}`}><Icon name={info.icon} size={13} /></span>
+                  <span className="min-w-0 flex-1 truncate text-[0.75rem] font-semibold">{definition?.label ?? node.handlerKey}</span>
+                </button>
+                <div className="mt-2 text-[0.625rem] text-muted-2"><code className="block truncate">{node.id}</code><span>{info.meta} · 순서 {index + 1}</span></div>
+              </article>
+            })}
+          </div>
+        </div>
+        <div className="border-t border-line-soft bg-white px-4 py-2 text-[0.6875rem] text-muted" aria-live="polite">{status}</div>
+      </div>
+
+      <aside className="border-t border-line-soft bg-white p-4 xl:border-l xl:border-t-0" aria-label="선택 Node 설정">
+        <b className="text-[0.84375rem] font-semibold">Node 설정</b>
+        {!selected && <p className="mt-3 text-xs text-muted-2">Node를 선택하세요.</p>}
+        {selected && <div className="mt-3">
+          <label className="block text-[0.71875rem] font-semibold text-body">Node ID
+            <input aria-label="선택 Node ID" className={control} value={selected.id} readOnly />
+          </label>
+          <label className="mt-3 block text-[0.71875rem] font-semibold text-body">등록 Handler
+            <input aria-label="선택 Handler" className={control} value={selected.handlerKey} readOnly />
+          </label>
+
+          {selected.type === 'agent' && selectedBinding && <div className="mt-3 border-t border-row-line pt-3">
+            <label className="block text-[0.71875rem] font-semibold text-body">Primary Model Binding
+              <select aria-label="선택 Agent Model Binding" className={control} value={selectedBinding.primary} onChange={(event) => updatePrimaryBinding(event.target.value)}>
+                {modelBindingCatalog[profileKey].map((binding) => <option key={binding}>{binding}</option>)}
+              </select>
+            </label>
+            <fieldset className="mt-3">
+              <legend className="text-[0.71875rem] font-semibold text-body">Fallback Binding</legend>
+              <div className="mt-2 space-y-2">
+                {modelBindingCatalog[profileKey].filter((binding) => binding !== selectedBinding.primary).map((binding) => <label key={binding} className="flex items-start gap-2 text-[0.65625rem] text-body">
+                  <input type="checkbox" aria-label={`Fallback ${binding}`} checked={selectedBinding.fallback.includes(binding)} onChange={() => toggleFallback(binding)} />
+                  <code className="break-all">{binding}</code>
+                </label>)}
+              </div>
+            </fieldset>
+          </div>}
+
+          {selected.handlerKey === 'coding.approval' && <div className="mt-3 border-t border-row-line pt-3">
+            <label className="block text-[0.71875rem] font-semibold text-body">승인 Stage
+              <select aria-label="Coding 승인 Stage" className={control} value={String(selected.config.stage)} onChange={(event) => updateSelectedConfig({ stage: event.target.value })}>
+                {['SCOPE', 'GITHUB', 'CMS', 'DEPLOY'].map((stage) => <option key={stage}>{stage}</option>)}
+              </select>
+            </label>
+            <ApprovalRole value={String(selected.config.requiredRole)} onChange={(requiredRole) => updateSelectedConfig({ requiredRole })} />
+          </div>}
+
+          {selected.handlerKey === 'coding.preview_approval' && <div className="mt-3 border-t border-row-line pt-3">
+            <Badge tone="ok" dot={false}>CANDIDATE Approval</Badge>
+            <ApprovalRole value={String(selected.config.requiredRole)} onChange={(requiredRole) => updateSelectedConfig({ requiredRole })} />
+          </div>}
+
+          {selected.handlerKey === 'coding.rework_gate' && <label className="mt-3 block border-t border-row-line pt-3 text-[0.71875rem] font-semibold text-body">최대 재작업 Round
+            <input
+              type="number"
+              min={1}
+              aria-label="최대 재작업 Round"
+              className={control}
+              value={Number(selected.config.maxReworkRounds)}
+              onChange={(event) => updateSelectedConfig({ maxReworkRounds: Math.max(1, Number(event.target.value) || 1) })}
+            />
+          </label>}
+
+          {(selected.type === 'approval' || selected.type === 'check') && <div className="mt-3"><Badge tone="ok" dot={false}>production Handler 연결</Badge></div>}
+          {selected.type === 'guardrail' && <div className="mt-3 text-[0.6875rem] leading-5 text-muted-2"><Badge tone="idle" dot={false}>Snapshot 잠금 계약</Badge><p className="mt-2">Guardrail은 삭제하거나 비활성화할 수 없습니다.</p></div>}
+
+          {selected.resultPorts.length > 0 && <div className="mt-4 border-t border-row-line pt-3">
+            <label className="block text-[0.71875rem] font-semibold text-body">연결 Result Port
+              <select aria-label="연결 Result Port" className={control} value={connectPort} onChange={(event) => setConnectPort(event.target.value)}>
+                {selected.resultPorts.map((port) => <option key={port}>{port}</option>)}
+              </select>
+            </label>
+            <button type="button" className={`${connectFrom?.nodeId === selected.id ? secondaryButton : primaryButton} mt-2 w-full justify-center`} onClick={() => {
+              if (connectFrom?.nodeId === selected.id) {
+                setConnectFrom(null)
+                setStatus('Node 연결 선택을 취소했습니다.')
+              } else beginConnect()
+            }}>{connectFrom?.nodeId === selected.id ? '연결 선택 취소' : '이 Port에서 연결'}</button>
+          </div>}
+
+          <button
+            type="button"
+            className={`${dangerButton} mt-3 w-full justify-center`}
+            disabled={selectedDefinition?.locked}
+            title={selectedDefinition?.locked ? 'Start·Guardrail·End 필수 Node는 삭제할 수 없습니다.' : undefined}
+            onClick={deleteSelected}
+          >Node 삭제</button>
+
+          <div className="mt-4 border-t border-row-line pt-3">
+            <b className="text-[0.71875rem] font-semibold">Edge</b>
+            {relatedEdges.length === 0 && <p className="mt-2 text-[0.6875rem] text-muted-2">연결 없음</p>}
+            <div className="mt-2 space-y-2">
+              {relatedEdges.map((edge) => {
+                const outgoing = edge.from === selected.id
+                return <div key={`${edge.from}-${edge.resultPort}-${edge.to}`} className="flex items-center gap-2 rounded border border-line-soft bg-sub px-2 py-[0.4375rem] text-[0.6875rem]">
+                  <span className="min-w-0 flex-1 truncate">{outgoing ? `${edge.resultPort} → ${edge.to}` : `${edge.from}.${edge.resultPort} →`}</span>
+                  <button type="button" className="font-semibold text-fail-fg" aria-label={`${edge.from}.${edge.resultPort}에서 ${edge.to} 연결 해제`} onClick={() => disconnect(edge)}>해제</button>
+                </div>
+              })}
+            </div>
+          </div>
+        </div>}
+      </aside>
+    </div>
+  </section>
+}
+
+function ApprovalRole({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  return <label className="mt-3 block text-[0.71875rem] font-semibold text-body">필수 역할
+    <select aria-label="승인 필수 역할" className={control} value={value} onChange={(event) => onChange(event.target.value)}>
+      <option>GENERAL_ADMIN</option>
+      <option>SUPER_ADMIN</option>
+    </select>
+  </label>
+}
+
+function definitionFor(profileKey: ProfileKey, handlerKey: string) {
+  return handlerCatalog[profileKey].find((definition) => definition.key === handlerKey) ?? null
+}
+
+function matchesDefinition(profileKey: ProfileKey, node: ProfileSnapshotNode) {
+  const definition = definitionFor(profileKey, node.handlerKey)
+  return definition !== null
+    && definition.type === node.type
+    && definition.resultPorts.length === node.resultPorts.length
+    && definition.resultPorts.every((port) => node.resultPorts.includes(port))
+}
+
+function defaultBinding(profileKey: ProfileKey, handlerKey: string) {
+  if (handlerKey === 'coding.code') return 'llm-ops-code'
+  if (handlerKey === 'coding.review') return 'llm-ops-review'
+  if (handlerKey === 'cms.preview') return 'natural-cms-command'
+  return modelBindingCatalog[profileKey][0]
+}
+
+function uniqueNodeId(base: string, nodes: WorkflowNode[]) {
+  if (!nodes.some((node) => node.id === base)) return base
+  let suffix = 2
+  while (nodes.some((node) => node.id === `${base}_${suffix}`)) suffix += 1
+  return `${base}_${suffix}`
+}

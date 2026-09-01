@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, expect, test, vi } from 'vitest'
 import AgentSettingsWorkspace from './AgentSettingsWorkspace'
+import { starterSnapshots } from './WorkflowPanel'
 import type { AgentSettingsApiClient, ProfileVersion, ProviderConnectionTestResult } from './api'
 
 afterEach(() => vi.unstubAllGlobals())
@@ -9,7 +10,7 @@ const activeVersion: ProfileVersion = {
   profileVersionId: 'version-2', profileKey: 'LLM_OPS', profileVersion: 2, status: 'ACTIVE', createdAt: '2026-08-31T00:00:00Z',
   snapshot: {
     contractVersion: '1.0', profileVersionId: 'version-2', profileKey: 'LLM_OPS', profileVersion: 2,
-    nodes: [{ id: 'guardrail', type: 'guardrail', config: { locked: true } }], edges: [], config: {}, modelBindings: {}, toolPolicy: {}, guardrailProfileKey: 'central.default',
+    ...starterSnapshots.LLM_OPS,
   },
 }
 
@@ -39,7 +40,7 @@ test('the five Agent settings tabs expose runtime status without fake controls o
 
   expect(screen.getByRole('heading', { name: 'Agent 설정' })).toBeInTheDocument()
   expect(screen.getByText('최고관리자 전용')).toBeInTheDocument()
-  expect(screen.getByText(/자연어 기능 Profile은 실제 API를 사용합니다/)).toBeInTheDocument()
+  expect(screen.getByText(/Agent·Workflow Profile Version은 실제 API를 사용합니다/)).toBeInTheDocument()
 
   const tabs = within(screen.getByRole('tablist', { name: 'Agent 설정 영역' })).getAllByRole('tab')
   expect(tabs).toHaveLength(5)
@@ -143,7 +144,8 @@ test('provider status load failure stays failed and locks credential actions unt
 
   expect(await screen.findByRole('alert')).toHaveTextContent('Provider 상태 조회 실패 [PROVIDER_STATUS_UNAVAILABLE]')
   expect(screen.getByText('상태 조회 실패')).toBeInTheDocument()
-  expect(screen.queryByText('실제 API 연결')).not.toBeInTheDocument()
+  const providerSection = screen.getByText('Provider Credential').closest('section') as HTMLElement
+  expect(within(providerSection).queryByText('실제 API 연결')).not.toBeInTheDocument()
   expect(screen.queryByText('미등록')).not.toBeInTheDocument()
   expect(screen.queryByText('저장된 Key가 없습니다.')).not.toBeInTheDocument()
   for (const input of screen.getAllByLabelText(/API Key$/)) expect(input).toBeDisabled()
@@ -152,7 +154,7 @@ test('provider status load failure stays failed and locks credential actions unt
   fireEvent.click(screen.getByRole('button', { name: '상태 다시 조회' }))
 
   await waitFor(() => expect(api.listProviderCredentials).toHaveBeenCalledTimes(2))
-  expect(await screen.findByText('실제 API 연결')).toBeInTheDocument()
+  await waitFor(() => expect(within(providerSection).getByText('실제 API 연결')).toBeInTheDocument())
   expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   expect(screen.getAllByText('미등록')).toHaveLength(3)
   for (const input of screen.getAllByLabelText(/API Key$/)) expect(input).toBeEnabled()
@@ -288,58 +290,129 @@ test('a Profile with no stored versions can create its first DRAFT from the curr
   expect(api.create).toHaveBeenCalledWith('LLM_OPS', expect.objectContaining({ guardrailProfileKey: 'central.default' }))
 })
 
-test('the Node Palette adds and deletes every supported kind through local state', () => {
-  render(<AgentSettingsWorkspace api={profileApi()} />)
-  const palette = screen.getByLabelText('Node Palette')
+test('the Workflow Canvas loads the latest stored Snapshot with exact edges, bindings, and Tool policy', async () => {
+  const api = profileApi()
+  render(<AgentSettingsWorkspace api={api} />)
 
-  for (const kind of ['Start', 'Agent', 'MCP Tool', 'Guardrail', 'Approval', 'Check', 'End']) {
-    expect(within(palette).getByRole('button', { name: kind })).toBeInTheDocument()
+  await screen.findByLabelText('analyze Node')
+  expect(api.list).toHaveBeenCalledWith('LLM_OPS')
+  expect(screen.getByLabelText('저장된 Workflow Version')).toHaveValue('version-2')
+  fireEvent.click(screen.getByLabelText('analyze Node'))
+  expect(screen.getByLabelText('선택 Handler')).toHaveValue('coding.analyze')
+  expect(screen.getByLabelText('선택 Agent Model Binding')).toHaveValue('llm-ops-analyze')
+  expect(screen.getByLabelText('허용 Tool apply_patch')).toBeChecked()
+  expect(screen.getByRole('button', { name: 'analyze.feasible에서 scope_approval 연결 해제' })).toBeInTheDocument()
+})
+
+test('the Workflow Profile selector loads the saved NATURAL_CMS production contract', async () => {
+  const naturalVersion: ProfileVersion = {
+    profileVersionId: 'natural-version-4', profileKey: 'NATURAL_CMS', profileVersion: 4,
+    status: 'ACTIVE', createdAt: '2026-09-01T00:00:00Z',
+    snapshot: {
+      contractVersion: '1.0', profileVersionId: 'natural-version-4', profileKey: 'NATURAL_CMS', profileVersion: 4,
+      ...starterSnapshots.NATURAL_CMS,
+    },
   }
+  const api = profileApi({
+    list: vi.fn().mockImplementation((profileKey) => Promise.resolve(profileKey === 'NATURAL_CMS' ? [naturalVersion] : [activeVersion])),
+  })
+  render(<AgentSettingsWorkspace api={api} />)
+  await screen.findByLabelText('analyze Node')
 
-  fireEvent.click(within(palette).getByRole('button', { name: 'End' }))
-  expect(screen.getByLabelText('End 2 Node')).toBeInTheDocument()
-  expect(screen.getByLabelText('선택 Node 이름')).toHaveValue('End 2')
+  fireEvent.change(screen.getByLabelText('Workflow Profile'), { target: { value: 'NATURAL_CMS' } })
 
-  fireEvent.change(screen.getByLabelText('선택 Node 이름'), { target: { value: '배포 종료' } })
-  expect(screen.getByLabelText('배포 종료 Node')).toBeInTheDocument()
-  fireEvent.click(screen.getByRole('button', { name: 'Node 삭제' }))
-  expect(screen.queryByLabelText('배포 종료 Node')).not.toBeInTheDocument()
-  expect(screen.getByText('배포 종료 Node를 삭제했습니다.')).toBeInTheDocument()
+  await screen.findByLabelText('apply Node')
+  expect(api.list).toHaveBeenCalledWith('NATURAL_CMS')
+  expect(screen.getByLabelText('저장된 Workflow Version')).toHaveValue('natural-version-4')
+  fireEvent.click(screen.getByLabelText('preview Node'))
+  expect(screen.getByLabelText('선택 Agent Model Binding')).toHaveValue('natural-cms-command')
+  expect(screen.getByLabelText('허용 Tool apply_cms_preview')).toBeChecked()
 })
 
-test('nodes can connect, disconnect, move, and change sequence order', () => {
-  render(<AgentSettingsWorkspace api={profileApi()} />)
+test('Workflow edits save a new immutable DRAFT, activate it explicitly, and restore after remount', async () => {
+  let stored = [activeVersion]
+  const create = vi.fn().mockImplementation(async (profileKey, snapshot) => {
+    const created: ProfileVersion = {
+      profileVersionId: 'version-3', profileKey, profileVersion: 3, status: 'DRAFT', createdAt: '2026-09-01T01:00:00Z',
+      snapshot: { contractVersion: '1.0', profileVersionId: 'version-3', profileKey, profileVersion: 3, ...snapshot },
+    }
+    stored = [created, ...stored]
+    return created
+  })
+  const activate = vi.fn().mockImplementation(async (profileVersionId) => {
+    const activated = { ...stored.find((version) => version.profileVersionId === profileVersionId)!, status: 'ACTIVE' as const }
+    stored = stored.map((version) => version.profileVersionId === profileVersionId
+      ? activated
+      : version.status === 'ACTIVE' ? { ...version, status: 'INACTIVE' as const } : version)
+    return activated
+  })
+  const api = profileApi({ list: vi.fn().mockImplementation(async () => stored), create, activate })
+  const first = render(<AgentSettingsWorkspace api={api} />)
+  await screen.findByLabelText('analyze Node')
 
-  fireEvent.click(screen.getByLabelText('잠금 Guardrail Node'))
-  fireEvent.click(screen.getByRole('button', { name: '결과 Check 연결 해제' }))
-  expect(screen.getByText('Node 연결을 해제했습니다.')).toBeInTheDocument()
+  fireEvent.click(screen.getByLabelText('analyze Node'))
+  fireEvent.change(screen.getByLabelText('선택 Agent Model Binding'), { target: { value: 'llm-ops-claude' } })
+  fireEvent.click(screen.getByLabelText('Fallback llm-ops-review'))
+  fireEvent.click(screen.getByLabelText('허용 Tool apply_patch'))
+  fireEvent.click(screen.getByRole('button', { name: '새 DRAFT 저장' }))
 
-  fireEvent.click(screen.getByLabelText('결과 Check Node'))
-  fireEvent.click(screen.getByRole('button', { name: '이 Node에서 연결' }))
-  fireEvent.click(screen.getByLabelText('End Node'))
-  expect(screen.getByText('결과 Check → End 연결을 추가했습니다.')).toBeInTheDocument()
+  expect(await screen.findByRole('status')).toHaveTextContent('v3 DRAFT를 저장하고 다시 조회했습니다.')
+  expect(create).toHaveBeenCalledWith('LLM_OPS', expect.objectContaining({
+    nodes: expect.arrayContaining([expect.objectContaining({ id: 'analyze', handlerKey: 'coding.analyze' })]),
+    edges: expect.arrayContaining([expect.objectContaining({ from: 'analyze', resultPort: 'feasible', to: 'scope_approval' })]),
+    modelBindings: expect.objectContaining({ analyze: { primary: 'llm-ops-claude', fallback: ['llm-ops-review'] } }),
+    toolPolicy: expect.objectContaining({ allowedTools: expect.not.arrayContaining(['apply_patch']) }),
+  }))
+  fireEvent.click(screen.getByLabelText('analyze Node'))
+  expect(screen.getByLabelText('선택 Agent Model Binding')).toHaveValue('llm-ops-claude')
+  expect(screen.getByLabelText('허용 Tool apply_patch')).not.toBeChecked()
 
-  const grip = screen.getByRole('button', { name: '잠금 Guardrail Node 이동' })
-  fireEvent.pointerDown(grip, { pointerId: 1, clientX: 200, clientY: 48 })
-  fireEvent.pointerMove(grip, { pointerId: 1, clientX: 260, clientY: 470 })
-  fireEvent.pointerUp(grip, { pointerId: 1, clientX: 260, clientY: 470 })
-  expect(screen.getByText('잠금 Guardrail Node 위치와 순서를 변경했습니다.')).toBeInTheDocument()
-  expect(within(screen.getByLabelText('잠금 Guardrail Node')).getByText('순서 5')).toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: '선택 DRAFT 활성화' }))
+  expect(await screen.findByRole('status')).toHaveTextContent('v3을 ACTIVE로 전환하고 다시 조회했습니다.')
+  expect(activate).toHaveBeenCalledWith('version-3')
+
+  first.unmount()
+  render(<AgentSettingsWorkspace api={api} />)
+  await screen.findByLabelText('analyze Node')
+  expect(screen.getByLabelText('저장된 Workflow Version')).toHaveValue('version-3')
+  fireEvent.click(screen.getByLabelText('analyze Node'))
+  expect(screen.getByLabelText('선택 Agent Model Binding')).toHaveValue('llm-ops-claude')
+  expect(screen.getByLabelText('Fallback llm-ops-review')).toBeChecked()
+  expect(screen.getByLabelText('허용 Tool apply_patch')).not.toBeChecked()
 })
 
-test('selected Agent settings update the model and fixed Tool mapping locally', () => {
+test('the Canvas exposes only registered handlers and result-port edges while locking required nodes', async () => {
   render(<AgentSettingsWorkspace api={profileApi()} />)
+  await screen.findByLabelText('guardrail Node')
 
-  expect(screen.getByLabelText('선택 Node 유형')).toBeDisabled()
+  fireEvent.click(screen.getByLabelText('guardrail Node'))
   expect(screen.getByRole('button', { name: 'Node 삭제' })).toBeDisabled()
   expect(screen.getByText('Guardrail은 삭제하거나 비활성화할 수 없습니다.')).toBeInTheDocument()
+  expect(screen.queryByText(/custom handler/i)).not.toBeInTheDocument()
 
-  fireEvent.click(within(screen.getByLabelText('Node Palette')).getByRole('button', { name: 'Agent' }))
-  fireEvent.change(screen.getByLabelText('선택 Agent Model'), { target: { value: 'Gemini Pro' } })
-  expect(screen.getByLabelText('선택 Agent Model')).toHaveValue('Gemini Pro')
-  expect(screen.getByLabelText('apply_patch')).not.toBeChecked()
-  fireEvent.click(screen.getByLabelText('apply_patch'))
-  expect(screen.getByLabelText('apply_patch')).toBeChecked()
+  fireEvent.click(screen.getByRole('button', { name: 'guardrail.passed에서 analyze 연결 해제' }))
+  fireEvent.click(screen.getByLabelText('guardrail Node'))
+  fireEvent.change(screen.getByLabelText('연결 Result Port'), { target: { value: 'passed' } })
+  fireEvent.click(screen.getByRole('button', { name: '이 Port에서 연결' }))
+  fireEvent.click(screen.getByLabelText('preview Node'))
+  expect(screen.getByText('guardrail.passed → preview 연결을 추가했습니다.')).toBeInTheDocument()
+
+  fireEvent.click(screen.getByLabelText('deploy_request Node'))
+  fireEvent.click(screen.getByRole('button', { name: 'Node 삭제' }))
+  expect(screen.queryByLabelText('deploy_request Node')).not.toBeInTheDocument()
+  fireEvent.click(within(screen.getByLabelText('Node Palette')).getByRole('button', { name: /공통 Check/ }))
+  expect(screen.getByLabelText('check Node')).toBeInTheDocument()
+  expect(screen.getByLabelText('선택 Handler')).toHaveValue('common.check')
+})
+
+test('Workflow DRAFT validation failures remain visible with the Backend error code', async () => {
+  const api = profileApi({ create: vi.fn().mockRejectedValue(new Error('Snapshot 검증 실패 [CONTRACT_VALIDATION_FAILED]')) })
+  render(<AgentSettingsWorkspace api={api} />)
+  await screen.findByLabelText('guardrail Node')
+
+  fireEvent.click(screen.getByRole('button', { name: '새 DRAFT 저장' }))
+
+  expect(await screen.findByRole('alert')).toHaveTextContent('Snapshot 검증 실패 [CONTRACT_VALIDATION_FAILED]')
 })
 
 function deferred<T>() {

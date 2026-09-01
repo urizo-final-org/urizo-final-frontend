@@ -188,7 +188,7 @@ test('only a super administrator can open Agent settings', async () => {
   expect(screen.getByRole('tab', { name: 'Agent·Workflow' })).toHaveAttribute('aria-selected', 'true')
   const agentSettingsItem = within(screen.getByRole('navigation', { name: '관리자 메뉴' })).getByRole('button', { name: /Agent 설정/ })
   expect(within(agentSettingsItem).queryByText('임시')).not.toBeInTheDocument()
-  expect(screen.getByText('부분 연결')).toBeInTheDocument()
+  expect(screen.getByText('실제 API 연결')).toBeInTheDocument()
 })
 
 test('a general administrator is redirected away from Agent settings', async () => {

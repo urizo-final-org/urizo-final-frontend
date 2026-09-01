@@ -12,7 +12,9 @@ const activeVersion: ProfileVersion = {
   profileVersionId: 'version-2', profileKey: 'LLM_OPS', profileVersion: 2, status: 'ACTIVE', createdAt: '2026-08-31T00:00:00Z',
   snapshot: {
     contractVersion: '1.0', profileVersionId: 'version-2', profileKey: 'LLM_OPS', profileVersion: 2,
-    nodes: [{ type: 'guardrail', config: { locked: true } }], edges: [], config: {}, modelBindings: {}, toolPolicy: {}, guardrailProfileKey: 'central.default',
+    nodes: [{ id: 'guardrail', type: 'guardrail', handlerKey: 'common.guardrail', resultPorts: ['passed', 'failed'], config: { locked: true } }],
+    edges: [], config: { maxNodes: 1, maxAttempts: 3, loopLimits: [] }, modelBindings: {},
+    toolPolicy: { allowedTools: [] }, guardrailProfileKey: 'central.default',
   },
 }
 
