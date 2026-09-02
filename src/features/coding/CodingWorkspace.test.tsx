@@ -314,6 +314,8 @@ const githubDetail: JobDetail = {
     candidateSha: `sha1:${'2'.repeat(40)}`,
     diffDigest: `sha256:${'3'.repeat(64)}`,
     changedPaths: ['src/main/java/.../CmsPostService.java', 'src/main/resources/schema.sql'],
+    diff: 'diff --git a/README.md b/README.md
++데모 확인',
     checkProfile: 'maven-verify',
     baseShaFreshness: { stale: false },
   },
@@ -334,7 +336,18 @@ test('the code approval names the gate it is on and shows the changed files', as
   expect(screen.getByText('최고관리자 전용')).toBeInTheDocument()
   expect(screen.getByText('바뀐 파일 2개')).toBeInTheDocument()
   expect(screen.getByText('src/main/resources/schema.sql')).toBeInTheDocument()
+  // The approval is judged on the patch itself, not on its fingerprint.
+  expect(screen.getByText(/\+데모 확인/)).toBeInTheDocument()
   expect(screen.getByRole('button', { name: '네, 이 코드를 반영합니다' })).toBeInTheDocument()
+})
+
+test('a missing diff warns the approver instead of leaving a silent gap', async () => {
+  render(<CodingWorkspace api={finalApi({
+    ...githubDetail,
+    technical: { ...githubDetail.technical!, diff: undefined },
+  })} />)
+
+  expect(await screen.findByText(/변경 내용\(diff\)을 불러오지 못했습니다/)).toBeInTheDocument()
 })
 
 test('a moved dev branch is warned about before the merge is approved', async () => {

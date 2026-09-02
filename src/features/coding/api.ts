@@ -112,6 +112,8 @@ export interface Technical {
   candidateSha?: string
   diffDigest?: string
   changedPaths: string[]
+  /** The actual patch, truncated server-side past 60k chars. The digest verifies the rest. */
+  diff?: string
   checkProfile?: string
   pullRequestUrl?: string
   baseShaFreshness?: BaseShaFreshness

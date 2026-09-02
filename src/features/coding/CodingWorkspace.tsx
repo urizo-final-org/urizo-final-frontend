@@ -545,6 +545,19 @@ function FinalApproval({ detail, pending, busy, onDecide }: {
             <dd className="text-body">{technical.checkProfile ?? '없음'}</dd>
           </dl>
 
+          {/* A digest proves the bytes; only the diff says what they are. Without it this
+            * screen asked for an approval of code nobody could read. */}
+          {technical.diff
+            ? <div className="mt-[0.875rem]">
+              <b className={`${fieldLabel} block`}>변경 내용</b>
+              <pre className="mt-[0.375rem] max-h-[24rem] overflow-auto rounded-[0.3125rem] border border-line bg-sub p-3 font-mono text-[0.6875rem] leading-[1.7] text-body">{technical.diff}</pre>
+            </div>
+            : <div className="mt-[0.875rem]">
+              <Callout tone="warn" icon="triangle-alert">
+                변경 내용(diff)을 불러오지 못했습니다. 내용을 확인할 수 없다면 승인을 미뤄 주세요.
+              </Callout>
+            </div>}
+
           {/* Queuing CREATE_PR is a later slice, so this stays empty rather than pretending. */}
           <div className="mt-[0.875rem]">
             {technical.pullRequestUrl
