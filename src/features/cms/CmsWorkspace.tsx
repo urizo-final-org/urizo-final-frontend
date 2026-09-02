@@ -7,8 +7,9 @@ import {
   control, fieldLabel, panel, primaryButton, secondaryButton, smallButton, textarea, type Tone,
 } from '../../shared/ui/primitives'
 import { CmsApi, notifySiteUpdated, type Article, type Board, type Member, type Menu, type MenuTargetType, type Post, type SiteTemplate } from './api'
-import CmsAiAssistant, { type CmsAssistantTarget } from './assistant/CmsAiAssistant'
+import CmsAiAssistant, { NEW_MENU_TARGET, type CmsAssistantTarget } from './assistant/CmsAiAssistant'
 import type { NaturalCmsApi } from './assistant/api'
+import type { AssistantMenu } from './assistant/menuTree'
 
 const dangerButton = 'inline-flex h-8 items-center gap-[0.375rem] rounded-[0.3125rem] border border-[#f0d5d1] bg-fail-bg px-[0.6875rem] text-xs font-semibold text-fail-fg enabled:hover:bg-[#f8e0dc]'
 const recordRow = 'flex w-full items-center gap-[0.625rem] border-b border-row-line px-4 py-[0.625rem] text-left text-body hover:bg-sub'
@@ -20,6 +21,8 @@ export default function CmsWorkspace({ route, api, assistantApi }: { route: CmsR
   const [assistantCollapsed, setAssistantCollapsed] = useState(false)
   const [assistantTarget, setAssistantTarget] = useState<CmsAssistantTarget | null>(null)
   const [assistantCandidates, setAssistantCandidates] = useState<CmsAssistantTarget[]>([])
+  /** 메뉴 미리보기 트리는 화면이 가진 전체 목록으로 결과 순서를 계산한다. */
+  const [assistantMenus, setAssistantMenus] = useState<AssistantMenu[]>([])
   useEffect(() => {
     const showSuccess = (event: Event) => setSuccess({ id: `${Date.now()}-${Math.random()}`, message: (event as CustomEvent<string>).detail })
     window.addEventListener(CMS_SUCCESS_EVENT, showSuccess)
@@ -30,9 +33,9 @@ export default function CmsWorkspace({ route, api, assistantApi }: { route: CmsR
     const timer = window.setTimeout(() => setSuccess(null), 2600)
     return () => window.clearTimeout(timer)
   }, [success])
-  useEffect(() => { setSuccess(null); setAssistantTarget(null); setAssistantCandidates([]) }, [route])
+  useEffect(() => { setSuccess(null); setAssistantTarget(null); setAssistantCandidates([]); setAssistantMenus([]) }, [route])
   const workspace = route === 'members' ? <Members api={api} />
-    : route === 'menus' ? <Menus api={api} />
+    : route === 'menus' ? <Menus api={api} onSelect={setAssistantTarget} onCandidates={setAssistantCandidates} onMenus={setAssistantMenus} />
       : route === 'contents' ? <Contents api={api} onSelect={setAssistantTarget} onCandidates={setAssistantCandidates} />
         : route === 'boards' ? <Boards api={api} />
           : <Templates api={api} />
@@ -42,7 +45,7 @@ export default function CmsWorkspace({ route, api, assistantApi }: { route: CmsR
     {assistantRoute
       ? <div className={`grid items-start gap-[0.875rem] ${assistantCollapsed ? 'min-[1240px]:grid-cols-[minmax(0,1fr)_4rem]' : 'min-[1240px]:grid-cols-[minmax(0,1fr)_22rem]'}`}>
         <div className="min-w-0">{workspace}</div>
-        <CmsAiAssistant key={assistantRoute} route={assistantRoute} target={assistantTarget} candidates={assistantCandidates} onTarget={setAssistantTarget} api={assistantApi} collapsed={assistantCollapsed} onToggle={() => setAssistantCollapsed((value) => !value)} />
+        <CmsAiAssistant key={assistantRoute} route={assistantRoute} target={assistantTarget} candidates={assistantCandidates} menus={assistantMenus} onTarget={setAssistantTarget} api={assistantApi} collapsed={assistantCollapsed} onToggle={() => setAssistantCollapsed((value) => !value)} />
       </div>
       : workspace}
   </>
@@ -107,7 +110,12 @@ function Members({ api }: { api: CmsApi }) {
   </>
 }
 
-function Menus({ api }: { api: CmsApi }) {
+function Menus({ api, onSelect, onCandidates, onMenus }: {
+  api: CmsApi
+  onSelect: (target: CmsAssistantTarget | null) => void
+  onCandidates: (candidates: CmsAssistantTarget[]) => void
+  onMenus: (menus: AssistantMenu[]) => void
+}) {
   const [items, setItems] = useState<Menu[]>([])
   const [contents, setContents] = useState<Article[]>([])
   const [boards, setBoards] = useState<Board[]>([])
@@ -121,9 +129,21 @@ function Menus({ api }: { api: CmsApi }) {
   const [failure, setFailure] = useState<string | null>(null)
   const load = () => Promise.all([api.menus(), api.contents(), api.boards()]).then(([m, c, b]) => { setItems(m); setContents(c); setBoards(b) }).catch((e) => setFailure(`불러오지 못했습니다. ${describeFailure(e)}`))
   useEffect(() => { void load() }, [api])
+  /** 되묻기 후보와 미리보기 트리는 화면이 이미 가진 목록에서 나온다. 등록은 고정 표식으로 고른다. */
+  useEffect(() => {
+    onCandidates([NEW_MENU_TARGET, ...items.map(menuTarget)])
+    onMenus(items.map((item) => ({
+      id: item.id,
+      name: item.name,
+      path: item.path,
+      parentId: item.parentId,
+      link: targetLabel(item, contents, boards),
+    })))
+  }, [items, contents, boards, onCandidates, onMenus])
   function select(item: Menu | null) {
     setEditing(item); setName(item?.name ?? ''); setPath(item?.path ?? '/'); setParentId(item?.parentId?.toString() ?? '')
     setOrder(item?.displayOrder ?? 0); setTargetType(item?.targetType ?? 'NONE'); setTargetId(item?.targetId?.toString() ?? '')
+    onSelect(item ? menuTarget(item) : null)
   }
   async function submit(event: FormEvent) {
     event.preventDefault(); setFailure(null)
@@ -429,6 +449,21 @@ export function TemplatePreview({ value, onClose }: { value: SiteTemplate; onClo
   </div>
 }
 
+/** 미리보기가 변경 전으로 쓸 수 있도록 현재 값을 함께 넘긴다. */
+function menuTarget(item: Menu): CmsAssistantTarget {
+  return {
+    type: 'MENU',
+    id: String(item.id),
+    label: item.name,
+    fields: {
+      name: item.name,
+      path: item.path,
+      parentId: item.parentId === null ? '' : String(item.parentId),
+      targetType: item.targetType,
+      targetId: item.targetId === null ? '' : String(item.targetId),
+    },
+  }
+}
 function targetLabel(menu: Menu, contents: Article[], boards: Board[]) {
   if (menu.targetType === 'CONTENT') return `컨텐츠 · ${contents.find((item) => item.id === menu.targetId)?.title ?? '미지정'}`
   if (menu.targetType === 'BOARD') return `게시판 · ${boards.find((item) => item.id === menu.targetId)?.name ?? '미지정'}`

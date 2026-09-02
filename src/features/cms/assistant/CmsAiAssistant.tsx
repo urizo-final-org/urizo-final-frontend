@@ -4,8 +4,11 @@ import { describeFailure } from '../../../shared/api/error'
 import { Icon } from '../../../shared/ui/icons'
 import { Badge, control, panel, primaryButton, secondaryButton, textarea } from '../../../shared/ui/primitives'
 import AssistantPreviewModal from './AssistantPreviewModal'
+import MenuRemovalNotice from './MenuRemovalNotice'
+import MenuTreePreview from './MenuTreePreview'
 import type { NaturalCmsApi, NaturalCmsJob } from './api'
 import { hasChange, lineDiff } from './diff'
+import { menuPreviewTree, menuRemoval, type AssistantMenu, type MenuCommand } from './menuTree'
 
 /** 되묻기에 한 번에 보여줄 후보 최대 갯수. 더 많으면 목록에서 직접 고르게 한다. */
 const MAX_CANDIDATES = 5
@@ -61,9 +64,9 @@ const profiles: Record<AssistedRoute, AssistantProfile> = {
     section: '메뉴 관리',
     title: '메뉴 AI',
     description: '메뉴 구조와 연결 상태를 자연어로 정리해 보세요.',
-    capabilities: ['메뉴 등록·수정', '상·하위 구조', '노출 순서', '콘텐츠·게시판 연결'],
+    capabilities: ['메뉴 등록·수정·삭제', '상·하위 구조', '노출 순서', '콘텐츠·게시판 연결'],
     excluded: '컨텐츠 본문, 게시글, 템플릿은 변경하지 않아요.',
-    suggestions: ['Products 아래에 새 메뉴를 추가해 줘', '연결되지 않은 메뉴만 찾아줘', '하위 메뉴 노출 순서를 정리해 줘'],
+    suggestions: ['고객지원 아래에 자료실 메뉴를 만들어 줘', '비전을 맨 위로 올려 줘', '소개 메뉴에 회사 소개 컨텐츠를 연결해 줘'],
   },
   contents: {
     section: '컨텐츠 관리',
@@ -103,12 +106,24 @@ type Phase =
   | { kind: 'failed'; message: string }
 
 /** 지금 자연어 변경이 가능한 리소스. 나머지 화면은 안내만 한다. */
-const SUPPORTED: ReadonlySet<CmsAssistantTarget['type']> = new Set(['CONTENT'])
+const SUPPORTED: ReadonlySet<CmsAssistantTarget['type']> = new Set(['CONTENT', 'MENU'])
 
-export default function CmsAiAssistant({ route, target, candidates, onTarget, api, collapsed, onToggle }: {
+/** 자연어 변경을 받는 화면. 리소스별 작업이 끝난 화면부터 연다. */
+const SUPPORTED_ROUTES: ReadonlySet<AssistedRoute> = new Set<AssistedRoute>(['contents', 'menus'])
+
+/** 등록은 만들기 전이라 가리킬 id가 없다. 대상 자리에 고정 표식을 보낸다. */
+export const NEW_MENU_TARGET: CmsAssistantTarget = {
+  type: 'MENU',
+  id: 'new',
+  label: '새 메뉴 만들기',
+  fields: {},
+}
+
+export default function CmsAiAssistant({ route, target, candidates, menus, onTarget, api, collapsed, onToggle }: {
   route: AssistedRoute
   target: CmsAssistantTarget | null
   candidates: CmsAssistantTarget[]
+  menus: AssistantMenu[]
   onTarget: (target: CmsAssistantTarget) => void
   api: NaturalCmsApi
   collapsed: boolean
@@ -121,7 +136,7 @@ export default function CmsAiAssistant({ route, target, candidates, onTarget, ap
   const [phase, setPhase] = useState<Phase>({ kind: 'input' })
   const [feedback, setFeedback] = useState('')
   const [detail, setDetail] = useState(false)
-  const routeSupported = route === 'contents'
+  const routeSupported = SUPPORTED_ROUTES.has(route)
   const supported = target !== null && SUPPORTED.has(target.type)
 
   /** 말에 대상이 없으면 이름이 겹치는 후보를 고르게 한다. 선택지는 코드가 만든다. */
@@ -195,6 +210,34 @@ export default function CmsAiAssistant({ route, target, candidates, onTarget, ap
   function commandFields(job: NaturalCmsJob) {
     const command = job.structuredCommand as { fields?: Record<string, unknown> } | null
     return Object.entries(command?.fields ?? {}).map(([name, value]) => [name, String(value)] as const)
+  }
+
+  /** 명령서가 아직 없을 수 있다. 미리보기 전에는 `null`이다. */
+  function menuCommand(job: NaturalCmsJob): MenuCommand | null {
+    const command = job.structuredCommand as Partial<MenuCommand> | null
+    if (!command || typeof command.operation !== 'string') return null
+    return { operation: command.operation, fields: command.fields ?? {} }
+  }
+
+  function removes(job: NaturalCmsJob) {
+    return target?.type === 'MENU' && menuCommand(job)?.operation === 'DELETE'
+  }
+
+  /**
+   * 메뉴 미리보기. 위치가 곧 정보라 트리로 보여주고, 삭제만 목록으로 센다.
+   *
+   * 결과 순서는 화면이 계산한다. 파이프라인이 주는 미리보기는 대상 한 행뿐이다.
+   */
+  function menuPreview(job: NaturalCmsJob) {
+    const command = menuCommand(job)
+    if (!command || !target) return <p className="m-0 text-[0.71875rem] text-muted-2">아직 변경 내용을 받지 못했습니다.</p>
+    if (command.operation === 'DELETE') {
+      const removal = menuRemoval(menus, target.id)
+      return removal
+        ? <MenuRemovalNotice target={removal.target} removed={removal.children} />
+        : <p className="m-0 text-[0.71875rem] text-muted-2">삭제할 메뉴를 찾지 못했습니다.</p>
+    }
+    return <MenuTreePreview nodes={menuPreviewTree(menus, command, target.id)} />
   }
 
   if (collapsed) return <aside
@@ -297,7 +340,11 @@ export default function CmsAiAssistant({ route, target, candidates, onTarget, ap
             <small className="block text-[0.65625rem] text-muted-3">요청</small>
             <span className="mt-[0.1875rem] block text-[0.71875rem] text-body">{phase.job.requestText}</span>
           </div>
-          <button type="button" className={`${secondaryButton} mt-[0.625rem] w-full justify-center`} onClick={() => setDetail(true)}>변경 내용 자세히 보기</button>
+          <button
+            type="button"
+            className={`${secondaryButton} mt-[0.625rem] w-full justify-center`}
+            onClick={() => setDetail(true)}
+          >{removes(phase.job) ? '삭제 내용 확인하기' : '변경 내용 자세히 보기'}</button>
           <label className="mt-[0.875rem] block text-[0.71875rem] font-semibold text-body" htmlFor={feedbackId}>반려 사유</label>
           <input
             id={feedbackId}
@@ -355,9 +402,13 @@ export default function CmsAiAssistant({ route, target, candidates, onTarget, ap
     </form>
 
     {detail && (phase.kind === 'waiting' || phase.kind === 'deciding') && <AssistantPreviewModal
-      title={`${profile.section} 변경 미리보기`}
-      subtitle="승인하면 기존 CMS 저장 경로로 반영됩니다."
+      title={removes(phase.job) ? `${profile.section} 삭제 확인` : `${profile.section} 변경 미리보기`}
+      subtitle={removes(phase.job)
+        ? '삭제한 메뉴는 되돌릴 수 없습니다.'
+        : '승인하면 기존 CMS 저장 경로로 반영됩니다.'}
       busy={phase.kind === 'deciding'}
+      approveLabel={removes(phase.job) ? '삭제하고 반영' : undefined}
+      danger={removes(phase.job)}
       onApprove={() => { setDetail(false); void decide(phase.job, 'APPROVED') }}
       onClose={() => setDetail(false)}
     >
@@ -365,13 +416,15 @@ export default function CmsAiAssistant({ route, target, candidates, onTarget, ap
         <small className="block text-[0.65625rem] text-muted-3">요청</small>
         <span className="mt-[0.1875rem] block text-[0.8125rem] text-body">{phase.job.requestText}</span>
       </div>
-      <div className="mt-3 grid gap-3">
-        {commandFields(phase.job).map(([name, value]) => <section key={name}>
-          <small className="block text-[0.65625rem] font-semibold text-muted-2">{name}</small>
-          <FieldDiff before={target?.fields[name] ?? ''} after={value} />
-        </section>)}
-        {commandFields(phase.job).length === 0 && <p className="m-0 text-[0.71875rem] text-muted-2">아직 변경 내용을 받지 못했습니다.</p>}
-      </div>
+      {target?.type === 'MENU'
+        ? <div className="mt-3">{menuPreview(phase.job)}</div>
+        : <div className="mt-3 grid gap-3">
+          {commandFields(phase.job).map(([name, value]) => <section key={name}>
+            <small className="block text-[0.65625rem] font-semibold text-muted-2">{name}</small>
+            <FieldDiff before={target?.fields[name] ?? ''} after={value} />
+          </section>)}
+          {commandFields(phase.job).length === 0 && <p className="m-0 text-[0.71875rem] text-muted-2">아직 변경 내용을 받지 못했습니다.</p>}
+        </div>}
     </AssistantPreviewModal>}
   </aside>
 }

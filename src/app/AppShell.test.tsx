@@ -320,17 +320,42 @@ test('the assistant asks which item to change when no target is selected', async
   expect(within(panel).queryByRole('button', { name: '문의하기' })).not.toBeInTheDocument()
 })
 
-test('the assistant only accepts requests on the screen that supports them', async () => {
-  window.history.pushState({}, '', '/admin/menus')
+test('the assistant only accepts requests on the screens that support them', async () => {
+  window.history.pushState({}, '', '/admin/boards')
   vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => {
     if (String(input) === '/api/auth/refresh') return Promise.resolve(json(session()))
     return Promise.resolve(json([]))
   }))
 
   render(<AppShell />)
+  expect(await screen.findByRole('heading', { name: '게시판 관리' })).toBeInTheDocument()
+  const panel = screen.getByRole('complementary', { name: '게시판 관리 자연어 도우미' })
+  expect(within(panel).getByText('게시판 관리 화면은 아직 자연어 변경을 지원하지 않습니다.')).toBeInTheDocument()
+})
+
+test('the menu assistant opens and offers a new menu beside the existing ones', async () => {
+  window.history.pushState({}, '', '/admin/menus')
+  const menus = [
+    { id: 10, name: '소개', path: '/about', parentId: null, displayOrder: 10, targetType: 'NONE', targetId: null },
+    { id: 11, name: '회사 소개', path: '/about/company', parentId: 10, displayOrder: 11, targetType: 'NONE', targetId: null },
+  ]
+  vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => {
+    const url = String(input)
+    if (url === '/api/auth/refresh') return Promise.resolve(json(session()))
+    if (url === '/api/cms/menus') return Promise.resolve(json(menus))
+    return Promise.resolve(json([]))
+  }))
+
+  render(<AppShell />)
   expect(await screen.findByRole('heading', { name: '메뉴 관리' })).toBeInTheDocument()
   const panel = screen.getByRole('complementary', { name: '메뉴 관리 자연어 도우미' })
-  expect(within(panel).getByText('메뉴 관리 화면은 아직 자연어 변경을 지원하지 않습니다.')).toBeInTheDocument()
+  expect(within(panel).queryByText('메뉴 관리 화면은 아직 자연어 변경을 지원하지 않습니다.')).not.toBeInTheDocument()
+
+  fireEvent.change(within(panel).getByPlaceholderText('CMS 변경 요청을 입력하세요'), { target: { value: '자료실 메뉴 만들어 줘' } })
+  fireEvent.click(within(panel).getByRole('button', { name: '요청 분석하기' }))
+
+  expect(await within(panel).findByText('어느 것을 바꿀까요?')).toBeInTheDocument()
+  expect(within(panel).getByRole('button', { name: '새 메뉴 만들기' })).toBeInTheDocument()
 })
 
 test('the page-scoped AI panel collapses to a rail and expands again', async () => {
