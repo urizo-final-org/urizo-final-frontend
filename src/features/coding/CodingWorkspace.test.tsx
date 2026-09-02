@@ -33,14 +33,20 @@ function consoleApi(overrides: Partial<CodingConsoleApiClient> = {}): CodingCons
   }
 }
 
-test('with nothing in flight the card is the request form, and it only offers the backend', async () => {
+/**
+ * The screen asks for a sentence in Korean. It used to ask the writer to first classify that
+ * sentence as "backend" or "frontend" - developer words, in a choice that had exactly one
+ * selectable answer. The server is told the only supported value without asking.
+ */
+test('the form asks for a sentence and nothing else', async () => {
   render(<CodingWorkspace api={consoleApi()} />)
 
   const send = await screen.findByRole('button', { name: '요청 보내기' })
   expect(send).toBeDisabled()
 
-  expect(screen.getByRole('radio', { name: /백엔드/ })).toBeEnabled()
-  expect(screen.getByRole('radio', { name: /프론트엔드/ })).toBeDisabled()
+  expect(screen.queryAllByRole('radio')).toHaveLength(0)
+  expect(screen.queryByText('백엔드')).not.toBeInTheDocument()
+  expect(screen.queryByText('프론트엔드')).not.toBeInTheDocument()
 })
 
 test('sending a Korean sentence creates a backend Job and the same card becomes that request', async () => {
@@ -72,6 +78,11 @@ test('an unfinished Job is shown without locking the operator out of a new reque
   expect(await screen.findByText('공지사항에 첨부파일을 붙일 수 있게 해줘')).toBeInTheDocument()
   expect(screen.getByText('승인 대기')).toBeInTheDocument()
   expect(screen.getByRole('button', { name: '요청 보내기' })).toBeInTheDocument()
+
+  // The card must say what the reader is being asked to do, not only what the server thinks.
+  expect(screen.getByText('아래에서 내용을 확인하고 승인해 주세요.')).toBeInTheDocument()
+  // The Job id is not something an administrator can act on.
+  expect(screen.queryByText(/99999999/)).not.toBeInTheDocument()
 })
 
 test('a finished Job does not block a new request', async () => {
