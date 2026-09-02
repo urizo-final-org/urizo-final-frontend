@@ -117,6 +117,8 @@ const failureReasons: Record<string, string> = {
     '고정 금지 구역(로그인·DB 구조 등)의 파일을 변경해서 중단됐습니다. 이 구역은 설정으로도 열 수 없습니다.',
   CODING_GUARDRAIL_RULE_DENIED:
     '부가 규칙(새 라이브러리 금지 또는 변경 크기 상한)을 넘어서 중단됐습니다.',
+  MODEL_RESPONSE_INVALID:
+    'AI가 정해진 한도 안에 작업을 마치지 못해 중단됐습니다. 다시 시도하거나 요청을 더 작게 나눠 보세요.',
 }
 
 function failureReason(code?: string): string {
