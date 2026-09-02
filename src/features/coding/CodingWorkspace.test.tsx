@@ -502,7 +502,7 @@ test('a silent runner puts a large warning at the top of the screen', async () =
 
   expect(await screen.findByText('실행기가 응답하지 않습니다.')).toBeInTheDocument()
   expect(screen.getByText(/서버가 켜진 뒤 신호가 없습니다/)).toBeInTheDocument()
-  expect(screen.getByText(/담당자에게 실행기 실행을 요청해 주세요/)).toBeInTheDocument()
+  expect(screen.getByText(/시스템 운영 담당자에게 실행기 실행을 요청해 주세요/)).toBeInTheDocument()
 })
 
 test('a healthy runner shows no warning', async () => {

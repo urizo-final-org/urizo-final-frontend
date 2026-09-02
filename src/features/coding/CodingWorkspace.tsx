@@ -296,7 +296,7 @@ export default function CodingWorkspace({ api, role }: { api: CodingConsoleApiCl
           ? `마지막 신호가 ${elapsedLabel(runner.lastSeenAt, undefined, nowMs)} 전입니다.`
           : '서버가 켜진 뒤 신호가 없습니다.'}{' '}
         실행기를 켜기 전에는 요청이 접수되지 않고, 진행 중이던 작업도 멈춰 있습니다.
-        담당자에게 실행기 실행을 요청해 주세요.
+        시스템 운영 담당자에게 실행기 실행을 요청해 주세요.
       </Callout>
     </div>}
 
