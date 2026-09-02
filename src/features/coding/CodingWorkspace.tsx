@@ -7,7 +7,7 @@ import {
 } from '../../shared/ui/primitives'
 import type {
   ApprovalDecision, ApprovalStage, CodingConsoleApiClient, CodingJobStatus, CodingRepository,
-  JobDetail, JobSummary, PendingApproval,
+  JobDetail, JobSummary, PendingApproval, RunnerStatus,
 } from './api'
 
 /**
@@ -106,6 +106,23 @@ function openJob(items: JobSummary[]): JobSummary | null {
 }
 
 /**
+ * The screen refreshes itself on the bell's cadence, so a request that finishes or starts
+ * waiting for approval shows up without the administrator hammering the refresh button.
+ */
+const POLL_INTERVAL_MS = 15_000
+
+/** "몇 분째 돌고 있나"를 사람 단위로. 초 단위 정밀함은 여기서 아무것도 결정하지 않는다. */
+function elapsedLabel(fromIso: string, toIso: string | undefined, nowMs: number): string {
+  const from = Date.parse(fromIso)
+  const to = toIso ? Date.parse(toIso) : nowMs
+  if (!Number.isFinite(from) || !Number.isFinite(to) || to < from) return ''
+  const minutes = Math.floor((to - from) / 60_000)
+  if (minutes < 1) return '1분 미만'
+  if (minutes < 60) return `${minutes}분`
+  return `${Math.floor(minutes / 60)}시간 ${minutes % 60}분`
+}
+
+/**
  * Why a job stopped, said for the person who asked for it. The guardrail refusals carry their
  * own next step — the fence is opened by a super administrator, and without that sentence the
  * general administrator has no way to know who to ask.
@@ -140,7 +157,12 @@ export default function CodingWorkspace({ api, role }: { api: CodingConsoleApiCl
   const [requestText, setRequestText] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [deciding, setDeciding] = useState(false)
-  const [reloadToken, setReloadToken] = useState(0)
+  /* silent marks the automatic ticks: they update the data but never blank the screen with
+   * "불러오는 중", which every 15 seconds would read as the page breaking. */
+  const [reload, setReload] = useState({ token: 0, silent: false })
+  const [history, setHistory] = useState<JobSummary[]>([])
+  const [runner, setRunner] = useState<RunnerStatus | null>(null)
+  const [nowMs, setNowMs] = useState(() => Date.now())
 
   /**
    * The list says which request is open; the detail says what it is waiting for. Two calls
@@ -149,8 +171,10 @@ export default function CodingWorkspace({ api, role }: { api: CodingConsoleApiCl
    */
   useEffect(() => {
     let active = true
-    setLoading(true)
-    setFailure(null)
+    if (!reload.silent) {
+      setLoading(true)
+      setFailure(null)
+    }
     void (async () => {
       let open: JobSummary | null = null
       let newest: JobSummary | null = null
@@ -158,31 +182,54 @@ export default function CodingWorkspace({ api, role }: { api: CodingConsoleApiCl
         const items = (await api.listJobs()).items
         open = openJob(items)
         newest = items[0] ?? null
+        if (active) setHistory(items)
       }
       catch (error: unknown) {
-        if (active) { setCurrent(null); setDetail(null); setFailure(describeFailure(error)) }
-        if (active) setLoading(false)
+        // A failed automatic tick keeps the last known screen; a wrong blank is worse.
+        if (active && !reload.silent) {
+          setCurrent(null)
+          setDetail(null)
+          setFailure(describeFailure(error))
+          setLoading(false)
+        }
         return
       }
       if (!active) return
+      setNowMs(Date.now())
       setCurrent(open)
       // Only the newest request, and only while nothing newer runs: an old failure from a
       // previous day must not become a permanent banner over a screen that has moved on.
       setLastFailed(!open && newest?.status === 'FAILED' ? newest : null)
-      setDetail(null)
+      if (!open) setDetail(null)
       if (open) {
         try {
           const loaded = await api.getJob(open.jobId)
           if (active) setDetail(loaded ?? null)
         }
         catch (error: unknown) {
-          if (active) setFailure(describeFailure(error))
+          if (active && !reload.silent) setFailure(describeFailure(error))
         }
       }
-      if (active) setLoading(false)
+      if (active && !reload.silent) setLoading(false)
+      // The runner warning rides the same tick. A failed read keeps the last known verdict
+      // rather than flickering between "off" and "on".
+      try {
+        const status = await api.runnerStatus()
+        if (active) setRunner(status)
+      }
+      catch { /* keep the last known status */ }
     })()
     return () => { active = false }
-  }, [api, reloadToken])
+  }, [api, reload])
+
+  /** F6: the automatic tick. A hidden tab is not being read, so it is not polled. */
+  useEffect(() => {
+    const timer = setInterval(() => {
+      if (document.hidden || submitting || deciding) return
+      setReload((prev) => ({ token: prev.token + 1, silent: true }))
+    }, POLL_INTERVAL_MS)
+    return () => clearInterval(timer)
+  }, [submitting, deciding])
 
   /**
    * The screen returns the pendingApproval it was handed. approvalId is a deterministic hash
@@ -195,7 +242,7 @@ export default function CodingWorkspace({ api, role }: { api: CodingConsoleApiCl
     setFailure(null)
     try {
       await api.decideApproval(current.jobId, pending, decision, feedback)
-      setReloadToken((token) => token + 1)
+      setReload((prev) => ({ token: prev.token + 1, silent: false }))
     }
     catch (error: unknown) {
       setFailure(describeFailure(error))
@@ -238,8 +285,20 @@ export default function CodingWorkspace({ api, role }: { api: CodingConsoleApiCl
 
   return <>
     <PageHead title="LLM DevOps" description="한국어로 개발을 요청하고 단계마다 사람이 승인합니다.">
-      <button type="button" className={smallButton} onClick={() => setReloadToken((token) => token + 1)}>새로고침</button>
+      <button type="button" className={smallButton} onClick={() => setReload((prev) => ({ token: prev.token + 1, silent: false }))}>새로고침</button>
     </PageHead>
+
+    {/* E6: 실행기가 죽으면 접수·진행이 조용히 멈춘다. "실패는 조용하지 않게" — 맨 위에 크게. */}
+    {runner && !runner.alive && <div className="mb-[0.875rem]">
+      <Callout tone="warn" icon="triangle-alert">
+        <b>실행기가 응답하지 않습니다.</b>{' '}
+        {runner.lastSeenAt
+          ? `마지막 신호가 ${elapsedLabel(runner.lastSeenAt, undefined, nowMs)} 전입니다.`
+          : '서버가 켜진 뒤 신호가 없습니다.'}{' '}
+        실행기를 켜기 전에는 요청이 접수되지 않고, 진행 중이던 작업도 멈춰 있습니다.
+        담당자에게 실행기 실행을 요청해 주세요.
+      </Callout>
+    </div>}
 
     {failure && <div className="mb-[0.875rem]"><Callout tone="warn" icon="triangle-alert">{failure}</Callout></div>}
 
@@ -313,8 +372,44 @@ export default function CodingWorkspace({ api, role }: { api: CodingConsoleApiCl
             </button>
           </form>
         </section>
+
+        <ExecutionHistory items={history} nowMs={nowMs} />
       </>}
   </>
+}
+
+/**
+ * E6, the execution history. Each row answers the two questions a waiting administrator has:
+ * "어디까지 갔나"(진행 상태) and "얼마나 걸리고 있나"(경과 시간). The runner warning lives at
+ * the top of the page, not here, because it concerns every row at once.
+ */
+function ExecutionHistory({ items, nowMs }: { items: JobSummary[]; nowMs: number }) {
+  return <section className={`${panel} mt-[0.875rem]`}>
+    <PanelTitle title="실행 이력" sub="최근 요청이 어디까지 갔는지, 얼마나 걸렸는지 보여줍니다" />
+    {items.length === 0
+      ? <p className="px-4 pb-4 pt-[0.375rem] text-[0.71875rem] text-muted-2">아직 보낸 요청이 없습니다.</p>
+      : <ul className="px-4 pb-4 pt-[0.375rem]">
+        {items.slice(0, 8).map((job) => {
+          const presentation = statusPresentation[job.status]
+          const elapsed = elapsedLabel(job.createdAt, job.finishedAt, nowMs)
+          return <li
+            key={job.jobId}
+            className="flex flex-wrap items-center justify-between gap-x-5 gap-y-1 border-b border-row-line py-[0.5625rem] last:border-b-0"
+          >
+            <span className="min-w-0 flex-1 truncate text-[0.78125rem] leading-[1.6] text-body">
+              {job.requestText}
+            </span>
+            <span className="flex shrink-0 items-center gap-[0.625rem]">
+              {job.currentStage && <small className="text-[0.6875rem] text-muted-2">{job.currentStage}</small>}
+              {elapsed && <small className="text-[0.6875rem] text-muted-2">
+                {job.finishedAt ? `${elapsed} 걸림` : `${elapsed}째 진행`}
+              </small>}
+              <Badge tone={presentation.tone}>{presentation.label}</Badge>
+            </span>
+          </li>
+        })}
+      </ul>}
+  </section>
 }
 
 function CurrentRequest({ job }: { job: JobSummary }) {

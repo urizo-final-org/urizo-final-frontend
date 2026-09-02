@@ -217,10 +217,22 @@ export interface GuardrailRules {
   maxChangedLines: number | null
 }
 
+/**
+ * Whether the runner — the host process a person has to start — is answering.
+ * lastSeenAt is absent when the server has not heard from it since starting, which the
+ * screen must treat as "off", not "unknown": a silent runner is the failure this exists for.
+ */
+export interface RunnerStatus {
+  schemaVersion: string
+  alive: boolean
+  lastSeenAt?: string
+}
+
 export interface CodingConsoleApiClient {
   createJob(repository: CodingRepository, requestText: string): Promise<CreateJobResponse>
   listJobs(limit?: number): Promise<JobList>
   getJob(jobId: string): Promise<JobDetail>
+  runnerStatus(): Promise<RunnerStatus>
   decideApproval(
     jobId: string,
     pending: PendingApproval,
@@ -287,6 +299,8 @@ export class CodingConsoleApi implements CodingConsoleApiClient {
   getJob = (jobId: string) => this.request<JobDetail>(
     `/api/admin/coding/jobs/${encodeURIComponent(jobId)}`,
   )
+
+  runnerStatus = () => this.request<RunnerStatus>('/api/admin/coding/jobs/runner-status')
 
   decideApproval = (
     jobId: string,

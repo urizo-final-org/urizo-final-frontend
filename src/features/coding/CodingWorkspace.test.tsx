@@ -28,6 +28,8 @@ function consoleApi(overrides: Partial<CodingConsoleApiClient> = {}): CodingCons
     createJob: vi.fn().mockResolvedValue(created),
     listJobs: vi.fn().mockResolvedValue({ schemaVersion: '1.0', items: [] }),
     getJob: vi.fn(),
+    runnerStatus: vi.fn().mockResolvedValue(
+      { schemaVersion: '1.0', alive: true, lastSeenAt: '2026-09-02T02:00:00Z' }),
     decideApproval: vi.fn(),
     guardrailSelections: vi.fn(),
     saveGuardrailSelections: vi.fn(),
@@ -136,8 +138,9 @@ test('an unfinished Job is shown without locking the operator out of a new reque
   })
   render(<CodingWorkspace role="SUPER_ADMIN" api={api} />)
 
-  expect(await screen.findByText('공지사항에 첨부파일을 붙일 수 있게 해줘')).toBeInTheDocument()
-  expect(screen.getByText('승인 대기')).toBeInTheDocument()
+  // The sentence appears twice by design: once as the open request card, once in the history.
+  expect(await screen.findAllByText('공지사항에 첨부파일을 붙일 수 있게 해줘')).not.toHaveLength(0)
+  expect(screen.getAllByText('승인 대기')).not.toHaveLength(0)
   expect(screen.getByRole('button', { name: '요청 보내기' })).toBeInTheDocument()
 
   // The card must say what the reader is being asked to do, not only what the server thinks.
@@ -268,7 +271,7 @@ test('an approval from a later stage does not borrow the plan screen', async () 
   })
   render(<CodingWorkspace role="SUPER_ADMIN" api={api} />)
 
-  expect(await screen.findByText(openJob.requestText)).toBeInTheDocument()
+  expect(await screen.findAllByText(openJob.requestText)).not.toHaveLength(0)
   expect(screen.queryByRole('button', { name: '네, 진행하세요' })).not.toBeInTheDocument()
 })
 
@@ -486,4 +489,61 @@ test('rejecting a merge cancels the request and says the PR must be closed by ha
   await waitFor(() => expect(api.decideApproval).toHaveBeenCalledWith(
     openJob.jobId, pendingGithub, 'REJECTED', '스키마 변경은 별도 검토가 필요합니다.',
   ))
+})
+
+/*
+ * E6, the execution history. The runner is a host process a person has to start; when it is
+ * off, requests silently wait forever. "실패는 조용하지 않게" — the screen must say it loudly.
+ */
+test('a silent runner puts a large warning at the top of the screen', async () => {
+  render(<CodingWorkspace role="GENERAL_ADMIN" api={consoleApi({
+    runnerStatus: vi.fn().mockResolvedValue({ schemaVersion: '1.0', alive: false }),
+  })} />)
+
+  expect(await screen.findByText('실행기가 응답하지 않습니다.')).toBeInTheDocument()
+  expect(screen.getByText(/서버가 켜진 뒤 신호가 없습니다/)).toBeInTheDocument()
+  expect(screen.getByText(/담당자에게 실행기 실행을 요청해 주세요/)).toBeInTheDocument()
+})
+
+test('a healthy runner shows no warning', async () => {
+  render(<CodingWorkspace role="GENERAL_ADMIN" api={consoleApi()} />)
+
+  await screen.findByRole('button', { name: '요청 보내기' })
+  expect(screen.queryByText('실행기가 응답하지 않습니다.')).not.toBeInTheDocument()
+})
+
+test('the execution history lists each request with its status and elapsed time', async () => {
+  const items: JobSummary[] = [
+    {
+      jobId: 'aaaaaaaa-1111-4111-8111-111111111111',
+      repository: 'backend',
+      requestText: '회원 목록에 가입일도 보이게 해줘',
+      status: 'COMPLETED',
+      createdAt: '2026-09-02T01:00:00Z',
+      finishedAt: '2026-09-02T01:42:00Z',
+    },
+    {
+      jobId: 'bbbbbbbb-2222-4222-8222-222222222222',
+      repository: 'backend',
+      requestText: '상태 점검 응답에 서버 버전도 넣어줘',
+      status: 'FAILED',
+      createdAt: '2026-09-02T00:00:00Z',
+      finishedAt: '2026-09-02T00:03:00Z',
+      failureCode: 'CODING_GUARDRAIL_PATH_NOT_SELECTED',
+    },
+  ]
+  render(<CodingWorkspace role="GENERAL_ADMIN" api={consoleApi({
+    listJobs: vi.fn().mockResolvedValue({ schemaVersion: '1.0', items }),
+  })} />)
+
+  expect(await screen.findByText('실행 이력')).toBeInTheDocument()
+  expect(screen.getByText('회원 목록에 가입일도 보이게 해줘')).toBeInTheDocument()
+  expect(screen.getByText('42분 걸림')).toBeInTheDocument()
+  expect(screen.getByText('3분 걸림')).toBeInTheDocument()
+})
+
+test('an empty history says so instead of showing a bare panel', async () => {
+  render(<CodingWorkspace role="GENERAL_ADMIN" api={consoleApi()} />)
+
+  expect(await screen.findByText('아직 보낸 요청이 없습니다.')).toBeInTheDocument()
 })
