@@ -45,13 +45,17 @@ export interface PendingApproval {
   validationHash?: string
 }
 
+/**
+ * A list row deliberately does not carry the approval a Job waits on: that costs a readiness
+ * computation per row on the server, and the screen opens one request before it needs it.
+ * Read the detail for that.
+ */
 export interface JobSummary {
   jobId: string
   repository: string
   requestText: string
   status: CodingJobStatus
   currentStage?: string
-  pendingApproval?: PendingApproval
   createdAt: string
   finishedAt?: string
 }
