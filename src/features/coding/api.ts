@@ -35,6 +35,8 @@ export type ApprovalDecision = 'APPROVED' | 'REJECTED'
  */
 export interface PendingApproval {
   approvalId: string
+  /** The Job's own trace. The decision endpoint refuses any other value. */
+  traceId: string
   nodeId: string
   stage: ApprovalStage
   stageRound: number
@@ -234,7 +236,8 @@ export class CodingConsoleApi implements CodingConsoleApiClient {
       headers: { 'Idempotency-Key': crypto.randomUUID() },
       body: JSON.stringify({
         schemaVersion: CODING_SCHEMA_VERSION,
-        traceId: crypto.randomUUID(),
+        // Echoed, never minted: the server binds the decision to the Job's own trace.
+        traceId: pending.traceId,
         expectedStateVersion: pending.expectedStateVersion,
         pipelineAttempt: pending.pipelineAttempt,
         approvalId: pending.approvalId,

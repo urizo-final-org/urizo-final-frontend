@@ -117,6 +117,7 @@ test('a refused request shows the server reason instead of pretending it was acc
 
 const pendingScope = {
   approvalId: 'aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa',
+  traceId: 'dddddddd-4444-4444-8444-dddddddddddd',
   nodeId: 'scope_approval',
   stage: 'SCOPE' as const,
   stageRound: 1,
