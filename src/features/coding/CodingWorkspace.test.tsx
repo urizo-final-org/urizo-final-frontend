@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { expect, test, vi } from 'vitest'
 import CodingWorkspace from './CodingWorkspace'
 import { ProductApiError } from '../../shared/api/error'
@@ -546,4 +546,25 @@ test('an empty history says so instead of showing a bare panel', async () => {
   render(<CodingWorkspace role="GENERAL_ADMIN" api={consoleApi()} />)
 
   expect(await screen.findByText('아직 보낸 요청이 없습니다.')).toBeInTheDocument()
+})
+
+/* F6: the screen must refetch on its own — the whole point is no refresh-button hammering. */
+test('the screen refetches by itself on the polling cadence', async () => {
+  vi.useFakeTimers()
+  try {
+    const api = consoleApi()
+    render(<CodingWorkspace role="GENERAL_ADMIN" api={api} />)
+    await act(async () => { await vi.advanceTimersByTimeAsync(50) })
+    const initialCalls = (api.listJobs as ReturnType<typeof vi.fn>).mock.calls.length
+    expect(initialCalls).toBeGreaterThanOrEqual(1)
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(16_000) })
+    expect((api.listJobs as ReturnType<typeof vi.fn>).mock.calls.length)
+      .toBeGreaterThan(initialCalls)
+    expect((api.runnerStatus as ReturnType<typeof vi.fn>).mock.calls.length)
+      .toBeGreaterThanOrEqual(2)
+  }
+  finally {
+    vi.useRealTimers()
+  }
 })
