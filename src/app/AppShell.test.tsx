@@ -12,26 +12,65 @@ beforeEach(() => {
   vi.restoreAllMocks()
 })
 
-test('the public URL renders a complete user-facing home page without login', async () => {
+test('the public URL renders the tour portal home without login', async () => {
   vi.stubGlobal('fetch', publicFetch())
   render(<AppShell />)
-  expect(await screen.findByRole('heading', { name: 'Technology for a Better Tomorrow' })).toBeInTheDocument()
+  expect(await screen.findByRole('heading', { name: '이번 여행, 어디로 갈까요?' })).toBeInTheDocument()
   expect(screen.getByRole('link', { name: 'CMS 관리자' })).toHaveAttribute('href', '/admin')
-  expect(screen.getAllByRole('link', { name: '소개' }).length).toBeGreaterThan(0)
-  expect(screen.getByRole('contentinfo')).toHaveTextContent('AX Bio Studio')
+  expect(screen.getByRole('navigation', { name: '카테고리' })).toBeInTheDocument()
+  expect(screen.getByRole('heading', { name: '이번 주 인기 여행지' })).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: '관광 도우미 열기' })).toBeInTheDocument()
 })
 
-test.each(['MINIMAL', 'BOLD', 'CLASSIC'])('the public home renders the %s template layout', async (layout) => {
-  vi.stubGlobal('fetch', publicFetch({ ...siteTemplate(), layout }))
+test('a home search moves to the results screen with ten cards and category tabs', async () => {
+  vi.stubGlobal('fetch', publicFetch())
+  render(<AppShell />)
+  fireEvent.change(await screen.findByPlaceholderText('어디로 떠나볼까요?'), { target: { value: '전주 한옥스테이' } })
+  fireEvent.click(screen.getByRole('button', { name: '검색' }))
+  expect(await screen.findByText(/검색 결과/)).toBeInTheDocument()
+  expect(screen.getAllByRole('article')).toHaveLength(10)
+  const tabs = () => screen.getByRole('navigation', { name: '카테고리 탭' })
+  fireEvent.click(within(tabs()).getByRole('button', { name: '숙박' }))
+  await waitFor(() => expect(within(tabs()).getByRole('button', { name: '숙박' })).toHaveAttribute('aria-current', 'true'))
+  // 탭 전환은 프론트 필터링이 아니라 category 파라미터가 붙은 재검색 URL이다(I7 연동 지점).
+  expect(window.location.search).toContain('category=stay')
+  expect(window.location.search).toContain('q=')
+})
+
+test('a home category shortcut opens the results screen with that tab active', async () => {
+  vi.stubGlobal('fetch', publicFetch())
+  render(<AppShell />)
+  fireEvent.click(await screen.findByRole('button', { name: '숙박' }))
+  await waitFor(() => expect(within(screen.getByRole('navigation', { name: '카테고리 탭' })).getByRole('button', { name: '숙박' })).toHaveAttribute('aria-current', 'true'))
+  expect(window.location.search).toBe('?category=stay')
+})
+
+test('the tour helper opens as a floating panel and closes back to the launcher', async () => {
+  vi.stubGlobal('fetch', publicFetch())
+  render(<AppShell />)
+  fireEvent.click(await screen.findByRole('button', { name: '관광 도우미 열기' }))
+  const panel = screen.getByRole('complementary', { name: '관광 도우미' })
+  expect(within(panel).getByText('답변 근거')).toBeInTheDocument()
+  expect(within(panel).getByLabelText('관광 도우미 메시지')).toBeDisabled()
+  fireEvent.click(within(panel).getByRole('button', { name: '관광 도우미 닫기' }))
+  expect(screen.queryByRole('complementary', { name: '관광 도우미' })).not.toBeInTheDocument()
+  expect(screen.getByRole('button', { name: '관광 도우미 열기' })).toBeInTheDocument()
+})
+
+// 루트 사이트는 관광 포털(I8)이므로 Template Layout은 publicPath가 지정된 부속 사이트에서 확인한다.
+test.each(['MINIMAL', 'BOLD', 'CLASSIC'])('a configured sub-site home renders the %s template layout', async (layout) => {
+  window.history.pushState({}, '', '/campaign')
+  vi.stubGlobal('fetch', publicFetch({ ...siteTemplate(), layout }, '/campaign'))
   render(<AppShell />)
   expect(await screen.findByRole('region', { name: `${layout} 템플릿 메인` })).toBeInTheDocument()
 })
 
 test('an open public page refreshes when CMS data changes', async () => {
+  window.history.pushState({}, '', '/campaign')
   let template = siteTemplate()
   vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => {
     const path = String(input)
-    if (path.startsWith('/api/site/context?path=')) return Promise.resolve(json(siteContext(template)))
+    if (path.startsWith('/api/site/context?path=')) return Promise.resolve(json(siteContext(template, '/campaign')))
     if (path === '/api/site/menus' || path === '/api/site/boards') return Promise.resolve(json([]))
     return Promise.resolve(json([]))
   }))
@@ -61,7 +100,7 @@ test('an initial public Site failure is visible and retry recovers the page', as
 
   expect(await screen.findByRole('alert')).toHaveTextContent('일시적인 Site 장애입니다.')
   fireEvent.click(screen.getByRole('button', { name: '다시 시도' }))
-  expect(await screen.findByRole('heading', { name: 'Technology for a Better Tomorrow' })).toBeInTheDocument()
+  expect(await screen.findByRole('heading', { name: '이번 여행, 어디로 갈까요?' })).toBeInTheDocument()
   expect(contextCalls).toBe(2)
 })
 

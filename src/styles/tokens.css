@@ -61,6 +61,13 @@
   --fail-bg: #fbece9; --fail-fg: #a5453e; --fail-dot: #c8776f;
   --idle-bg: #f0f2f5; --idle-fg: #65727e; --idle-dot: #a0aab4;
   --teal-bg: #e2f2f2; --teal-fg: #2c8a91; --teal-ink: #2c6d75;
+
+  /* Tour portal (I8) surfaces: the hero wash, its hairline, and the image-placeholder stripes/label. */
+  --site-hero: #f4fafa;
+  --site-line: #e8eeeb;
+  --site-ph: #eef3f5;
+  --site-ph-line: #e6edef;
+  --site-ph-ink: #93a6ad;
 }
 
 /*
@@ -104,6 +111,12 @@
   --color-fail-bg: var(--fail-bg); --color-fail-fg: var(--fail-fg); --color-fail-dot: var(--fail-dot);
   --color-idle-bg: var(--idle-bg); --color-idle-fg: var(--idle-fg); --color-idle-dot: var(--idle-dot);
   --color-teal-bg: var(--teal-bg); --color-teal-fg: var(--teal-fg); --color-teal-ink: var(--teal-ink);
+
+  --color-site-hero: var(--site-hero);
+  --color-site-line: var(--site-line);
+  --color-site-ph: var(--site-ph);
+  --color-site-ph-line: var(--site-ph-line);
+  --color-site-ph-ink: var(--site-ph-ink);
 }
 
 * { box-sizing: border-box; }
@@ -143,6 +156,13 @@ a:focus-visible {
 }
 
 .cms-success-toast { animation: cms-success-toast 2.6s ease-in-out both; }
+
+@keyframes portal-chat-pop {
+  from { opacity: 0; transform: translateY(14px) scale(0.98); }
+  to { opacity: 1; transform: none; }
+}
+
+.portal-chat-pop { animation: portal-chat-pop 0.18s ease both; }
 
 .cms-ai-scrollbar {
   scrollbar-color: #c6d0da transparent;
