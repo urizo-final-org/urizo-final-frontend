@@ -15,6 +15,12 @@ export const CODING_SCHEMA_VERSION = '1.0'
 /** The runner only implements a backend checkout today, so the server rejects anything else. */
 export type CodingRepository = 'backend'
 
+/**
+ * The guardrail endpoints are wider than the job endpoints: the fence for both repositories is
+ * set today, even though only backend jobs run, so a frontend job never starts unfenced later.
+ */
+export type GuardrailRepository = 'backend' | 'frontend'
+
 export type CodingJobStatus =
   | 'PENDING'
   | 'RUNNING'
@@ -60,6 +66,8 @@ export interface JobSummary {
   currentStage?: string
   createdAt: string
   finishedAt?: string
+  /** Present only when the job failed; the screen turns it into a sentence. */
+  failureCode?: string
 }
 
 export interface JobList {
@@ -164,6 +172,51 @@ export interface ApprovalDecisionResult {
   status: CodingJobStatus
 }
 
+/** One folder the administrator may let the Coding model into. */
+export interface GuardrailSelection {
+  path: string
+  enabled: boolean
+  label?: string
+}
+
+export interface GuardrailSelectionList {
+  repository: string
+  selections: GuardrailSelection[]
+}
+
+export interface GuardrailScanAccepted {
+  scanId: string
+  repository: string
+}
+
+/**
+ * A scan is a runner command, so it has the runner's states: PENDING, RUNNING, SUCCEEDED,
+ * FAILED. With no runner up it simply waits in PENDING, which the screen has to explain
+ * rather than treat as a failure.
+ */
+export type GuardrailScanStatus = 'PENDING' | 'RUNNING' | 'SUCCEEDED' | 'FAILED'
+
+export interface GuardrailScanResult {
+  scanId: string
+  repository: string
+  status: GuardrailScanStatus
+  /** The origin/dev commit the folders were read from; absent until the scan finishes. */
+  sha?: string
+  folders: string[]
+  errorCode?: string
+}
+
+/**
+ * The path-independent rules. Build and test success are deliberately absent: the pipeline
+ * requires them unconditionally, and a stored toggle could only contradict that.
+ * A null limit means no limit — distinguishable from a number somebody chose.
+ */
+export interface GuardrailRules {
+  allowNewDependency: boolean
+  maxChangedFiles: number | null
+  maxChangedLines: number | null
+}
+
 export interface CodingConsoleApiClient {
   createJob(repository: CodingRepository, requestText: string): Promise<CreateJobResponse>
   listJobs(limit?: number): Promise<JobList>
@@ -174,6 +227,15 @@ export interface CodingConsoleApiClient {
     decision: ApprovalDecision,
     feedback?: string,
   ): Promise<ApprovalDecisionResult>
+  guardrailSelections(repository: GuardrailRepository): Promise<GuardrailSelectionList>
+  saveGuardrailSelections(
+    repository: GuardrailRepository,
+    selections: GuardrailSelection[],
+  ): Promise<GuardrailSelectionList>
+  startGuardrailScan(repository: GuardrailRepository): Promise<GuardrailScanAccepted>
+  guardrailScan(scanId: string, repository: GuardrailRepository): Promise<GuardrailScanResult>
+  guardrailRules(): Promise<GuardrailRules>
+  saveGuardrailRules(rules: GuardrailRules): Promise<GuardrailRules>
 }
 
 async function responseBody<T>(response: Response): Promise<T> {
@@ -252,5 +314,38 @@ export class CodingConsoleApi implements CodingConsoleApiClient {
         feedback,
       }),
     },
+  )
+
+  guardrailSelections = (repository: GuardrailRepository) => this.request<GuardrailSelectionList>(
+    `/api/admin/coding/guardrail/selections?repository=${encodeURIComponent(repository)}`,
+  )
+
+  /**
+   * Replaces the whole stored choice for one repository. A path the request omits stops being
+   * allowed, so the caller sends every folder it is showing rather than only the ones it changed.
+   */
+  saveGuardrailSelections = (
+    repository: GuardrailRepository,
+    selections: GuardrailSelection[],
+  ) => this.request<GuardrailSelectionList>(
+    '/api/admin/coding/guardrail/selections',
+    { method: 'PUT', body: JSON.stringify({ repository, selections }) },
+  )
+
+  startGuardrailScan = (repository: GuardrailRepository) => this.request<GuardrailScanAccepted>(
+    '/api/admin/coding/guardrail/scans',
+    { method: 'POST', body: JSON.stringify({ repository }) },
+  )
+
+  guardrailScan = (scanId: string, repository: GuardrailRepository) => this.request<GuardrailScanResult>(
+    `/api/admin/coding/guardrail/scans/${encodeURIComponent(scanId)}`
+      + `?repository=${encodeURIComponent(repository)}`,
+  )
+
+  guardrailRules = () => this.request<GuardrailRules>('/api/admin/coding/guardrail/rules')
+
+  saveGuardrailRules = (rules: GuardrailRules) => this.request<GuardrailRules>(
+    '/api/admin/coding/guardrail/rules',
+    { method: 'PUT', body: JSON.stringify(rules) },
   )
 }

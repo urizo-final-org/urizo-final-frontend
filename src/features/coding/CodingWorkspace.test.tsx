@@ -29,6 +29,12 @@ function consoleApi(overrides: Partial<CodingConsoleApiClient> = {}): CodingCons
     listJobs: vi.fn().mockResolvedValue({ schemaVersion: '1.0', items: [] }),
     getJob: vi.fn(),
     decideApproval: vi.fn(),
+    guardrailSelections: vi.fn(),
+    saveGuardrailSelections: vi.fn(),
+    startGuardrailScan: vi.fn(),
+    guardrailScan: vi.fn(),
+    guardrailRules: vi.fn(),
+    saveGuardrailRules: vi.fn(),
     ...overrides,
   }
 }
@@ -39,7 +45,7 @@ function consoleApi(overrides: Partial<CodingConsoleApiClient> = {}): CodingCons
  * selectable answer. The server is told the only supported value without asking.
  */
 test('the form asks for a sentence and nothing else', async () => {
-  render(<CodingWorkspace api={consoleApi()} />)
+  render(<CodingWorkspace role="SUPER_ADMIN" api={consoleApi()} />)
 
   const send = await screen.findByRole('button', { name: '요청 보내기' })
   expect(send).toBeDisabled()
@@ -49,9 +55,64 @@ test('the form asks for a sentence and nothing else', async () => {
   expect(screen.queryByText('프론트엔드')).not.toBeInTheDocument()
 })
 
+/*
+ * A failed job leaves the open statuses, so it used to vanish from this screen entirely —
+ * "my request disappeared" instead of "my request was stopped, and here is why". The guardrail
+ * refusal names the next step, because only a super administrator can widen the fence.
+ */
+test('a fence-stopped request explains itself and says who can open the fence', async () => {
+  render(<CodingWorkspace role="GENERAL_ADMIN" api={consoleApi({
+    listJobs: vi.fn().mockResolvedValue({
+      schemaVersion: '1.0',
+      items: [{
+        jobId: '99999999-8888-7777-6666-000000000001',
+        repository: 'backend',
+        requestText: '상태 점검 응답에 서버 버전도 넣어줘',
+        status: 'FAILED' as const,
+        createdAt: '2026-09-02T09:00:00Z',
+        finishedAt: '2026-09-02T09:05:00Z',
+        failureCode: 'CODING_GUARDRAIL_PATH_NOT_SELECTED',
+      }],
+    }),
+  })} />)
+
+  expect(await screen.findByText('직전 요청이 중단됐습니다')).toBeInTheDocument()
+  expect(screen.getByText(/허용되지 않은 폴더의 파일을 변경해서 중단됐습니다/)).toBeInTheDocument()
+  expect(screen.getByText(/최고관리자에게 울타리 설정/)).toBeInTheDocument()
+})
+
+test('an old failure stays quiet once a newer request has moved on', async () => {
+  render(<CodingWorkspace role="GENERAL_ADMIN" api={consoleApi({
+    listJobs: vi.fn().mockResolvedValue({
+      schemaVersion: '1.0',
+      items: [
+        {
+          jobId: '99999999-8888-7777-6666-000000000002',
+          repository: 'backend',
+          requestText: '공지사항에 첨부파일을 붙일 수 있게 해줘',
+          status: 'COMPLETED' as const,
+          createdAt: '2026-09-02T10:00:00Z',
+          finishedAt: '2026-09-02T10:30:00Z',
+        },
+        {
+          jobId: '99999999-8888-7777-6666-000000000001',
+          repository: 'backend',
+          requestText: '상태 점검 응답에 서버 버전도 넣어줘',
+          status: 'FAILED' as const,
+          createdAt: '2026-09-02T09:00:00Z',
+          failureCode: 'CODING_GUARDRAIL_PATH_NOT_SELECTED',
+        },
+      ],
+    }),
+  })} />)
+
+  await screen.findByRole('button', { name: '요청 보내기' })
+  expect(screen.queryByText('직전 요청이 중단됐습니다')).not.toBeInTheDocument()
+})
+
 test('sending a Korean sentence creates a backend Job and the same card becomes that request', async () => {
   const api = consoleApi()
-  render(<CodingWorkspace api={api} />)
+  render(<CodingWorkspace role="SUPER_ADMIN" api={api} />)
 
   await screen.findByRole('button', { name: '요청 보내기' })
   fireEvent.change(screen.getByLabelText('무엇을 바꿀까요'), {
@@ -73,7 +134,7 @@ test('an unfinished Job is shown without locking the operator out of a new reque
   const api = consoleApi({
     listJobs: vi.fn().mockResolvedValue({ schemaVersion: '1.0', items: [openJob] }),
   })
-  render(<CodingWorkspace api={api} />)
+  render(<CodingWorkspace role="SUPER_ADMIN" api={api} />)
 
   expect(await screen.findByText('공지사항에 첨부파일을 붙일 수 있게 해줘')).toBeInTheDocument()
   expect(screen.getByText('승인 대기')).toBeInTheDocument()
@@ -92,7 +153,7 @@ test('a finished Job does not block a new request', async () => {
       items: [{ ...openJob, status: 'COMPLETED' as const }],
     }),
   })
-  render(<CodingWorkspace api={api} />)
+  render(<CodingWorkspace role="SUPER_ADMIN" api={api} />)
 
   expect(await screen.findByRole('button', { name: '요청 보내기' })).toBeInTheDocument()
 })
@@ -105,7 +166,7 @@ test('a refused request shows the server reason instead of pretending it was acc
       message: '실행기가 응답하지 않습니다.',
     })),
   })
-  render(<CodingWorkspace api={api} />)
+  render(<CodingWorkspace role="SUPER_ADMIN" api={api} />)
 
   await screen.findByRole('button', { name: '요청 보내기' })
   fireEvent.change(screen.getByLabelText('무엇을 바꿀까요'), { target: { value: '뭐라도 해줘' } })
@@ -154,7 +215,7 @@ function waitingApi(overrides: Partial<CodingConsoleApiClient> = {}): CodingCons
 }
 
 test('a plan waiting on approval shows the summary and every acceptance criterion', async () => {
-  render(<CodingWorkspace api={waitingApi()} />)
+  render(<CodingWorkspace role="SUPER_ADMIN" api={waitingApi()} />)
 
   expect(await screen.findByText(/첨부파일 목록을 붙이고/)).toBeInTheDocument()
   expect(screen.getByText('공지 글에 첨부파일을 올릴 수 있다')).toBeInTheDocument()
@@ -163,7 +224,7 @@ test('a plan waiting on approval shows the summary and every acceptance criterio
 
 test('approving echoes the pendingApproval the server handed down, unchanged', async () => {
   const api = waitingApi()
-  render(<CodingWorkspace api={api} />)
+  render(<CodingWorkspace role="SUPER_ADMIN" api={api} />)
 
   fireEvent.click(await screen.findByRole('button', { name: '네, 진행하세요' }))
 
@@ -174,7 +235,7 @@ test('approving echoes the pendingApproval the server handed down, unchanged', a
 
 test('rejecting a plan warns that the request is cancelled and refuses an empty reason', async () => {
   const api = waitingApi()
-  render(<CodingWorkspace api={api} />)
+  render(<CodingWorkspace role="SUPER_ADMIN" api={api} />)
 
   fireEvent.click(await screen.findByRole('button', { name: '아니요' }))
 
@@ -185,7 +246,7 @@ test('rejecting a plan warns that the request is cancelled and refuses an empty 
 
 test('a rejection carries the typed reason to the server', async () => {
   const api = waitingApi()
-  render(<CodingWorkspace api={api} />)
+  render(<CodingWorkspace role="SUPER_ADMIN" api={api} />)
 
   fireEvent.click(await screen.findByRole('button', { name: '아니요' }))
   fireEvent.change(screen.getByLabelText('반려 사유'), {
@@ -205,7 +266,7 @@ test('an approval from a later stage does not borrow the plan screen', async () 
       pendingApproval: { ...pendingScope, stage: 'CANDIDATE' as const, nodeId: 'preview_approval' },
     }),
   })
-  render(<CodingWorkspace api={api} />)
+  render(<CodingWorkspace role="SUPER_ADMIN" api={api} />)
 
   expect(await screen.findByText(openJob.requestText)).toBeInTheDocument()
   expect(screen.queryByRole('button', { name: '네, 진행하세요' })).not.toBeInTheDocument()
@@ -246,7 +307,7 @@ function candidateApi(detail: JobDetail = candidateDetail): CodingConsoleApiClie
 }
 
 test('the result screen shows every criterion verdict, and an undecided one is not a pass', async () => {
-  render(<CodingWorkspace api={candidateApi()} />)
+  render(<CodingWorkspace role="SUPER_ADMIN" api={candidateApi()} />)
 
   expect(await screen.findByText(/첨부파일 업로드를 붙이고/)).toBeInTheDocument()
   expect(screen.getByText('충족')).toBeInTheDocument()
@@ -255,7 +316,7 @@ test('the result screen shows every criterion verdict, and an undecided one is n
 })
 
 test('the preview is offered as a link the administrator can actually open', async () => {
-  render(<CodingWorkspace api={candidateApi()} />)
+  render(<CodingWorkspace role="SUPER_ADMIN" api={candidateApi()} />)
 
   const link = await screen.findByRole('link', { name: '미리보기 열기' })
   expect(link).toHaveAttribute('href', 'http://127.0.0.1:18081/')
@@ -263,14 +324,14 @@ test('the preview is offered as a link the administrator can actually open', asy
 })
 
 test('an unready preview warns instead of offering a dead link', async () => {
-  render(<CodingWorkspace api={candidateApi({ ...candidateDetail, preview: { ready: false } })} />)
+  render(<CodingWorkspace role="SUPER_ADMIN" api={candidateApi({ ...candidateDetail, preview: { ready: false } })} />)
 
   expect(await screen.findByText(/미리보기가 아직 준비되지 않았습니다/)).toBeInTheDocument()
   expect(screen.queryByRole('link', { name: '미리보기 열기' })).not.toBeInTheDocument()
 })
 
 test('rejecting with attempts left promises another try, and says which one', async () => {
-  render(<CodingWorkspace api={candidateApi()} />)
+  render(<CodingWorkspace role="SUPER_ADMIN" api={candidateApi()} />)
 
   fireEvent.click(await screen.findByRole('button', { name: '아니요' }))
   expect(screen.getByText(/2번째 시도가 됩니다/)).toBeInTheDocument()
@@ -278,7 +339,7 @@ test('rejecting with attempts left promises another try, and says which one', as
 })
 
 test('rejecting the last attempt says the request is cancelled, not retried', async () => {
-  render(<CodingWorkspace api={candidateApi({ ...candidateDetail, pipelineAttempt: 3 })} />)
+  render(<CodingWorkspace role="SUPER_ADMIN" api={candidateApi({ ...candidateDetail, pipelineAttempt: 3 })} />)
 
   fireEvent.click(await screen.findByRole('button', { name: '아니요' }))
   expect(screen.getByText(/다시 만들지 않고 이 요청은 취소됩니다/)).toBeInTheDocument()
@@ -287,7 +348,7 @@ test('rejecting the last attempt says the request is cancelled, not retried', as
 
 test('a candidate decision carries the sha and validation hash the server minted', async () => {
   const api = candidateApi()
-  render(<CodingWorkspace api={api} />)
+  render(<CodingWorkspace role="SUPER_ADMIN" api={api} />)
 
   fireEvent.click(await screen.findByRole('button', { name: '네, 이대로 좋습니다' }))
 
@@ -330,7 +391,7 @@ function finalApi(detail: JobDetail): CodingConsoleApiClient {
 }
 
 test('the code approval names the gate it is on and shows the changed files', async () => {
-  render(<CodingWorkspace api={finalApi(githubDetail)} />)
+  render(<CodingWorkspace role="SUPER_ADMIN" api={finalApi(githubDetail)} />)
 
   expect(await screen.findByText('코드 승인')).toBeInTheDocument()
   expect(screen.getByText('최고관리자 전용')).toBeInTheDocument()
@@ -342,7 +403,7 @@ test('the code approval names the gate it is on and shows the changed files', as
 })
 
 test('a missing diff warns the approver instead of leaving a silent gap', async () => {
-  render(<CodingWorkspace api={finalApi({
+  render(<CodingWorkspace role="SUPER_ADMIN" api={finalApi({
     ...githubDetail,
     technical: { ...githubDetail.technical!, diff: undefined },
   })} />)
@@ -351,7 +412,7 @@ test('a missing diff warns the approver instead of leaving a silent gap', async 
 })
 
 test('a moved dev branch is warned about before the merge is approved', async () => {
-  render(<CodingWorkspace api={finalApi({
+  render(<CodingWorkspace role="SUPER_ADMIN" api={finalApi({
     ...githubDetail,
     technical: {
       ...githubDetail.technical!,
@@ -363,14 +424,14 @@ test('a moved dev branch is warned about before the merge is approved', async ()
 })
 
 test('an administrator the server sent no evidence to is told so, not shown an empty table', async () => {
-  render(<CodingWorkspace api={finalApi({ ...githubDetail, technical: undefined })} />)
+  render(<CodingWorkspace role="SUPER_ADMIN" api={finalApi({ ...githubDetail, technical: undefined })} />)
 
   expect(await screen.findByText(/코드 근거는 최고관리자에게만 전달됩니다/)).toBeInTheDocument()
   expect(screen.queryByText(/바뀐 파일/)).not.toBeInTheDocument()
 })
 
 test('the deploy gate is its own approval, so merging is not deploying', async () => {
-  render(<CodingWorkspace api={finalApi({
+  render(<CodingWorkspace role="SUPER_ADMIN" api={finalApi({
     ...githubDetail,
     currentStage: 'deploy_approval',
     pendingApproval: { ...pendingGithub, stage: 'DEPLOY' as const, nodeId: 'deploy_approval' },
@@ -380,9 +441,41 @@ test('the deploy gate is its own approval, so merging is not deploying', async (
   expect(screen.getByRole('button', { name: '네, 배포합니다' })).toBeInTheDocument()
 })
 
+/*
+ * The deploy gate is the last click of the demo and the server answers APPROVAL_ROLE_FORBIDDEN
+ * to a general administrator. The screen used to offer the button anyway, so the refusal was
+ * discovered as a red error at the end of the run.
+ */
+test('a stage this role cannot decide locks both buttons and says which account is needed', async () => {
+  const api = finalApi({
+    ...githubDetail,
+    currentStage: 'deploy_approval',
+    pendingApproval: { ...pendingGithub, stage: 'DEPLOY' as const, nodeId: 'deploy_approval' },
+  })
+  render(<CodingWorkspace role="GENERAL_ADMIN" api={api} />)
+
+  expect(await screen.findByText('배포 승인')).toBeInTheDocument()
+  expect(screen.getByText(/최고관리자만 결정할 수 있습니다/)).toBeInTheDocument()
+  expect(screen.getByText(/지금 로그인한 계정은 일반관리자입니다/)).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: '네, 배포합니다' })).toBeDisabled()
+  expect(screen.getByRole('button', { name: '아니요' })).toBeDisabled()
+
+  fireEvent.click(screen.getByRole('button', { name: '네, 배포합니다' }))
+  expect(api.decideApproval).not.toHaveBeenCalled()
+})
+
+test('a general administrator still decides the stages that admit that role', async () => {
+  render(<CodingWorkspace role="GENERAL_ADMIN" api={finalApi({
+    ...githubDetail,
+    pendingApproval: { ...pendingGithub, requiredRole: 'GENERAL_ADMIN' },
+  })} />)
+
+  expect(await screen.findByRole('button', { name: '네, 이 코드를 반영합니다' })).toBeEnabled()
+})
+
 test('rejecting a merge cancels the request and says the PR must be closed by hand', async () => {
   const api = finalApi(githubDetail)
-  render(<CodingWorkspace api={api} />)
+  render(<CodingWorkspace role="SUPER_ADMIN" api={api} />)
 
   fireEvent.click(await screen.findByRole('button', { name: '아니요' }))
   expect(screen.getByText(/이미 올라간 PR 이 있다면 사람이 직접 닫아야 합니다/)).toBeInTheDocument()

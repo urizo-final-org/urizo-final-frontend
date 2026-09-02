@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { describeFailure } from '../../shared/api/error'
+import { ROLE_LABELS, type AdminRole } from '../../shared/api/session'
 import {
   Badge, Callout, PageHead, PanelTitle, dangerButton, fieldLabel, panel, primaryButton,
   secondaryButton, smallButton, textarea, type Tone,
@@ -56,6 +57,18 @@ const finalStageCopy: Record<string, { title: string; sub: string; approve: stri
   },
 }
 
+/**
+ * Mirrors the server's `requireRole`: a SUPER_ADMIN stage admits only SUPER_ADMIN, a GENERAL_ADMIN
+ * stage admits both administrators. This decides nothing — the server checks again and is the only
+ * authority. It exists so the screen can say why a button is locked instead of letting the operator
+ * discover it as a 403 on the last gate of a demo.
+ */
+function canDecide(role: AdminRole, requiredRole: string): boolean {
+  if (requiredRole === 'SUPER_ADMIN') return role === 'SUPER_ADMIN'
+  if (requiredRole === 'GENERAL_ADMIN') return role === 'SUPER_ADMIN' || role === 'GENERAL_ADMIN'
+  return false
+}
+
 /** A Job in any other status is finished, and a finished Job is not shown as in flight. */
 const openStatuses: CodingJobStatus[] = ['PENDING', 'RUNNING', 'WAITING_APPROVAL']
 
@@ -92,10 +105,35 @@ function openJob(items: JobSummary[]): JobSummary | null {
   return items.find((item) => openStatuses.includes(item.status)) ?? null
 }
 
-export default function CodingWorkspace({ api }: { api: CodingConsoleApiClient }) {
+/**
+ * Why a job stopped, said for the person who asked for it. The guardrail refusals carry their
+ * own next step — the fence is opened by a super administrator, and without that sentence the
+ * general administrator has no way to know who to ask.
+ */
+const failureReasons: Record<string, string> = {
+  CODING_GUARDRAIL_PATH_NOT_SELECTED:
+    '허용되지 않은 폴더의 파일을 변경해서 중단됐습니다. 이 작업이 꼭 필요하면 최고관리자에게 울타리 설정(허용 폴더 추가)을 요청해 주세요.',
+  CODING_GUARDRAIL_PATH_DENIED:
+    '고정 금지 구역(로그인·DB 구조 등)의 파일을 변경해서 중단됐습니다. 이 구역은 설정으로도 열 수 없습니다.',
+  CODING_GUARDRAIL_RULE_DENIED:
+    '부가 규칙(새 라이브러리 금지 또는 변경 크기 상한)을 넘어서 중단됐습니다.',
+}
+
+function failureReason(code?: string): string {
+  if (code && failureReasons[code]) return failureReasons[code]
+  return code
+    ? `요청을 완료하지 못했습니다. (코드: ${code})`
+    : '요청을 완료하지 못했습니다.'
+}
+
+export default function CodingWorkspace({ api, role }: { api: CodingConsoleApiClient; role: AdminRole }) {
   const [loading, setLoading] = useState(true)
   const [failure, setFailure] = useState<string | null>(null)
   const [current, setCurrent] = useState<JobSummary | null>(null)
+  /* The most recent request when it failed and nothing newer is running. Without it a failed
+   * job simply left this list of open statuses and vanished, which read as "my request
+   * disappeared" rather than "my request was stopped, and here is why". */
+  const [lastFailed, setLastFailed] = useState<JobSummary | null>(null)
   const [detail, setDetail] = useState<JobDetail | null>(null)
   const [requestText, setRequestText] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -113,8 +151,11 @@ export default function CodingWorkspace({ api }: { api: CodingConsoleApiClient }
     setFailure(null)
     void (async () => {
       let open: JobSummary | null = null
+      let newest: JobSummary | null = null
       try {
-        open = openJob((await api.listJobs()).items)
+        const items = (await api.listJobs()).items
+        open = openJob(items)
+        newest = items[0] ?? null
       }
       catch (error: unknown) {
         if (active) { setCurrent(null); setDetail(null); setFailure(describeFailure(error)) }
@@ -123,6 +164,9 @@ export default function CodingWorkspace({ api }: { api: CodingConsoleApiClient }
       }
       if (!active) return
       setCurrent(open)
+      // Only the newest request, and only while nothing newer runs: an old failure from a
+      // previous day must not become a permanent banner over a screen that has moved on.
+      setLastFailed(!open && newest?.status === 'FAILED' ? newest : null)
       setDetail(null)
       if (open) {
         try {
@@ -172,6 +216,7 @@ export default function CodingWorkspace({ api }: { api: CodingConsoleApiClient }
     try {
       const created = await api.createJob(REPOSITORY, text)
       setDetail(null)
+      setLastFailed(null)
       setCurrent({
         jobId: created.job.jobId,
         repository: REPOSITORY,
@@ -217,16 +262,26 @@ export default function CodingWorkspace({ api }: { api: CodingConsoleApiClient }
             detail={detail}
             pending={detail.pendingApproval}
             busy={deciding}
+            role={role}
             onDecide={decide}
           />}
         </>}
+
+        {/* A stopped request answers here instead of disappearing. The sentence carries the
+          * next step, because "실패" alone leaves the writer with nothing to do about it. */}
+        {!current && lastFailed && <section className={panel}>
+          <PanelTitle title="직전 요청이 중단됐습니다" sub={lastFailed.requestText} />
+          <div className="px-4 pb-4 pt-[0.375rem]">
+            <Callout tone="warn" icon="triangle-alert">{failureReason(lastFailed.failureCode)}</Callout>
+          </div>
+        </section>}
 
         {/*
           * The form is always here. Hiding it while a request was open sounded tidy until an
           * abandoned Job from a previous day sat in WAITING_APPROVAL forever and no new request
           * could be typed at all. The server never refused a second Job; only this screen did.
           */}
-        <section className={current ? `${panel} mt-[0.875rem]` : panel}>
+        <section className={current || lastFailed ? `${panel} mt-[0.875rem]` : panel}>
           <PanelTitle title="새 개발 요청" sub="한국어로 적으면 AI 가 계획부터 세웁니다" />
           <form className="px-4 pb-4 pt-[0.375rem]" onSubmit={submit}>
             <label className="block">
@@ -494,16 +549,20 @@ function CandidateApproval({ detail, pending, busy, onDecide }: {
  * The technical block is absent for a general administrator because the server omits it, so
  * this reads the evidence it was given rather than deciding who may see what.
  */
-function FinalApproval({ detail, pending, busy, onDecide }: {
+function FinalApproval({ detail, pending, busy, role, onDecide }: {
   detail: JobDetail
   pending: PendingApproval
   busy: boolean
+  role: AdminRole
   onDecide: (pending: PendingApproval, decision: ApprovalDecision, feedback?: string) => void
 }) {
   const [rejecting, setRejecting] = useState(false)
   const [feedback, setFeedback] = useState('')
   const copy = finalStageCopy[pending.stage]
   const technical = detail.technical
+  /* The server refuses both decisions of a stage this role cannot decide, so rejecting is locked
+   * with approving rather than left as the one button that still returns a 403. */
+  const permitted = canDecide(role, pending.requiredRole)
 
   return <section className={`${panel} mt-[0.875rem]`}>
     <PanelTitle title={copy.title} sub={copy.sub}>
@@ -603,20 +662,29 @@ function FinalApproval({ detail, pending, busy, onDecide }: {
             >되돌아가기</button>
           </div>
         </div>
-        : <div className="mt-[0.875rem] flex flex-wrap gap-2">
-          <button
-            type="button"
-            className={primaryButton}
-            disabled={busy}
-            onClick={() => onDecide(pending, 'APPROVED')}
-          >{busy ? '보내는 중입니다…' : copy.approve}</button>
-          <button
-            type="button"
-            className={secondaryButton}
-            disabled={busy}
-            onClick={() => setRejecting(true)}
-          >아니요</button>
-        </div>}
+        : <>
+          {!permitted && <div className="mt-[0.875rem]">
+            <Callout tone="warn" icon="triangle-alert">
+              이 단계는 {ROLE_LABELS[pending.requiredRole as AdminRole] ?? pending.requiredRole}만
+              결정할 수 있습니다. 지금 로그인한 계정은 {ROLE_LABELS[role]}입니다.
+              해당 계정으로 로그인하면 여기서 승인하거나 반려할 수 있습니다.
+            </Callout>
+          </div>}
+          <div className="mt-[0.875rem] flex flex-wrap gap-2">
+            <button
+              type="button"
+              className={primaryButton}
+              disabled={busy || !permitted}
+              onClick={() => onDecide(pending, 'APPROVED')}
+            >{busy ? '보내는 중입니다…' : copy.approve}</button>
+            <button
+              type="button"
+              className={secondaryButton}
+              disabled={busy || !permitted}
+              onClick={() => setRejecting(true)}
+            >아니요</button>
+          </div>
+        </>}
     </div>
   </section>
 }

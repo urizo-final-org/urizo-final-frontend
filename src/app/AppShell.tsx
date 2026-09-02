@@ -3,7 +3,9 @@ import { BrowserRouter, Navigate, Route, Routes, useLocation, useNavigate } from
 import LoginScreen from '../features/auth/LoginScreen'
 import { clearExplicitSignOut, clearStoredToken, hasExplicitSignOutMarker, markExplicitSignOut, readStoredToken, storeToken } from '../features/auth/session-store'
 import CmsWorkspace from '../features/cms/CmsWorkspace'
+import ApprovalBell from '../features/coding/ApprovalBell'
 import CodingWorkspace from '../features/coding/CodingWorkspace'
+import GuardrailWorkspace from '../features/coding/GuardrailWorkspace'
 import OpsWorkspace from '../features/ops/OpsWorkspace'
 import AgentSettingsWorkspace from '../features/orchestration/AgentSettingsWorkspace'
 import { ProfileVersionApi } from '../features/orchestration/api'
@@ -170,7 +172,7 @@ function AuthenticatedAdmin({ session, onRefresh, onExpired, onSignOut }: {
           <i className="block h-[0.3125rem] w-[0.3125rem] rounded-full bg-run-dot" aria-hidden="true" />임시 목업
         </span>}
         <div className="flex items-center gap-3 text-muted max-[720px]:hidden">
-          <Icon name="bell" size={16} />
+          <ApprovalBell api={codingApi} onOpen={() => go('devops')} />
           <Icon name="circle-help" size={16} />
         </div>
         <div className="grid h-[1.625rem] w-[1.625rem] shrink-0 place-items-center rounded-full bg-teal-bg text-[0.59375rem] font-bold text-teal-ink max-[560px]:hidden" aria-hidden="true">{initials}</div>
@@ -188,7 +190,9 @@ function AuthenticatedAdmin({ session, onRefresh, onExpired, onSignOut }: {
               : route.id === 'models'
                 ? <AgentSettingsWorkspace api={profileApi} />
               : route.id === 'devops'
-                ? <CodingWorkspace api={codingApi} />
+                ? <CodingWorkspace api={codingApi} role={session.actor.role} />
+              : route.id === 'guardrail'
+                ? <GuardrailWorkspace api={codingApi} />
               : <OpsWorkspace route={route.id} actorName={session.actor.name} roleLabel={ROLE_LABELS[session.actor.role]} profileApi={profileApi} siteSettingsApi={siteSettingsApi} />}
           />)}
           <Route path="/admin/*" element={<Navigate to={pathForRoute(fallback)} replace />} />

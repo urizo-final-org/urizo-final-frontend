@@ -4,7 +4,7 @@ import type { IconName } from '../shared/ui/icons'
 /** Screens backed by the CMS API. */
 export type CmsRouteId = 'members' | 'menus' | 'contents' | 'boards' | 'templates'
 /** Operations screens; some remain static while Agent/System settings now include Profile API reads and writes. */
-export type OpsRouteId = 'home' | 'agents' | 'models' | 'rag' | 'devops' | 'approvals' | 'runs' | 'settings' | 'system-settings' | 'sites'
+export type OpsRouteId = 'home' | 'agents' | 'models' | 'rag' | 'devops' | 'guardrail' | 'approvals' | 'runs' | 'settings' | 'system-settings' | 'sites'
 export type RouteId = CmsRouteId | OpsRouteId
 
 export interface RouteDefinition {
@@ -34,6 +34,10 @@ export const routes: RouteDefinition[] = [
   { id: 'models', path: '/admin/models', group: 'AI 운영', label: 'Agent 설정', glyph: '◧', icon: 'boxes', allowedRoles: superAdmins },
   { id: 'rag', path: '/admin/rag', group: 'AI 운영', label: 'RAG 관리', glyph: '▩', icon: 'database', allowedRoles: admins, mock: true },
   { id: 'devops', path: '/admin/llm-devops', group: 'AI 운영', label: 'LLM DevOps', glyph: '◑', icon: 'code-2', allowedRoles: admins },
+  // Super administrators only, because the server refuses the guardrail endpoints to anyone
+  // else. A general administrator asks for a change; deciding where the AI may write is not
+  // the same decision.
+  { id: 'guardrail', path: '/admin/llm-devops/guardrail', group: 'AI 운영', label: '울타리 설정', glyph: '▢', icon: 'shield-check', allowedRoles: superAdmins },
   { id: 'approvals', path: '/admin/approvals', group: '거버넌스', label: '승인 관리', glyph: '◍', icon: 'shield-check', allowedRoles: admins, mock: true },
   { id: 'runs', path: '/admin/runs', group: '거버넌스', label: '실행 이력', glyph: '◌', icon: 'history', allowedRoles: admins, mock: true },
   { id: 'settings', path: '/admin/settings', group: '환경', label: '설정', glyph: '⚙', icon: 'settings', allowedRoles: admins, mock: true },
