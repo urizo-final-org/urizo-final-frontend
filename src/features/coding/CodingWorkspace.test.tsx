@@ -278,3 +278,89 @@ test('a candidate decision carries the sha and validation hash the server minted
     openJob.jobId, pendingCandidate, 'APPROVED', undefined,
   ))
 })
+
+const pendingGithub = {
+  ...pendingCandidate,
+  approvalId: 'cccccccc-3333-4333-8333-cccccccccccc',
+  nodeId: 'github_approval',
+  stage: 'GITHUB' as const,
+  requiredRole: 'SUPER_ADMIN',
+  expectedStateVersion: 14,
+}
+
+const githubDetail: JobDetail = {
+  ...candidateDetail,
+  currentStage: 'github_approval',
+  pendingApproval: pendingGithub,
+  technical: {
+    baseSha: `sha1:${'1'.repeat(40)}`,
+    candidateSha: `sha1:${'2'.repeat(40)}`,
+    diffDigest: `sha256:${'3'.repeat(64)}`,
+    changedPaths: ['src/main/java/.../CmsPostService.java', 'src/main/resources/schema.sql'],
+    checkProfile: 'maven-verify',
+    baseShaFreshness: { stale: false },
+  },
+}
+
+function finalApi(detail: JobDetail): CodingConsoleApiClient {
+  return consoleApi({
+    listJobs: vi.fn().mockResolvedValue({ schemaVersion: '1.0', items: [openJob] }),
+    getJob: vi.fn().mockResolvedValue(detail),
+    decideApproval: vi.fn().mockResolvedValue({}),
+  })
+}
+
+test('the code approval names the gate it is on and shows the changed files', async () => {
+  render(<CodingWorkspace api={finalApi(githubDetail)} />)
+
+  expect(await screen.findByText('코드 승인')).toBeInTheDocument()
+  expect(screen.getByText('최고관리자 전용')).toBeInTheDocument()
+  expect(screen.getByText('바뀐 파일 2개')).toBeInTheDocument()
+  expect(screen.getByText('src/main/resources/schema.sql')).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: '네, 이 코드를 반영합니다' })).toBeInTheDocument()
+})
+
+test('a moved dev branch is warned about before the merge is approved', async () => {
+  render(<CodingWorkspace api={finalApi({
+    ...githubDetail,
+    technical: {
+      ...githubDetail.technical!,
+      baseShaFreshness: { stale: true, currentDevSha: `sha1:${'9'.repeat(40)}` },
+    },
+  })} />)
+
+  expect(await screen.findByText(/dev 가 움직였습니다/)).toBeInTheDocument()
+})
+
+test('an administrator the server sent no evidence to is told so, not shown an empty table', async () => {
+  render(<CodingWorkspace api={finalApi({ ...githubDetail, technical: undefined })} />)
+
+  expect(await screen.findByText(/코드 근거는 최고관리자에게만 전달됩니다/)).toBeInTheDocument()
+  expect(screen.queryByText(/바뀐 파일/)).not.toBeInTheDocument()
+})
+
+test('the deploy gate is its own approval, so merging is not deploying', async () => {
+  render(<CodingWorkspace api={finalApi({
+    ...githubDetail,
+    currentStage: 'deploy_approval',
+    pendingApproval: { ...pendingGithub, stage: 'DEPLOY' as const, nodeId: 'deploy_approval' },
+  })} />)
+
+  expect(await screen.findByText('배포 승인')).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: '네, 배포합니다' })).toBeInTheDocument()
+})
+
+test('rejecting a merge cancels the request and says the PR must be closed by hand', async () => {
+  const api = finalApi(githubDetail)
+  render(<CodingWorkspace api={api} />)
+
+  fireEvent.click(await screen.findByRole('button', { name: '아니요' }))
+  expect(screen.getByText(/이미 올라간 PR 이 있다면 사람이 직접 닫아야 합니다/)).toBeInTheDocument()
+
+  fireEvent.change(screen.getByLabelText('반려 사유'), { target: { value: '스키마 변경은 별도 검토가 필요합니다.' } })
+  fireEvent.click(screen.getByRole('button', { name: '반려하고 요청을 취소합니다' }))
+
+  await waitFor(() => expect(api.decideApproval).toHaveBeenCalledWith(
+    openJob.jobId, pendingGithub, 'REJECTED', '스키마 변경은 별도 검토가 필요합니다.',
+  ))
+})

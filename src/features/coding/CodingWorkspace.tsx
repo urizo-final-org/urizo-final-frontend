@@ -5,7 +5,8 @@ import {
   secondaryButton, smallButton, textarea, type Tone,
 } from '../../shared/ui/primitives'
 import type {
-  ApprovalDecision, CodingConsoleApiClient, CodingJobStatus, JobDetail, JobSummary, PendingApproval,
+  ApprovalDecision, ApprovalStage, CodingConsoleApiClient, CodingJobStatus, JobDetail, JobSummary,
+  PendingApproval,
 } from './api'
 
 /**
@@ -28,6 +29,31 @@ const statusPresentation: Record<CodingJobStatus, { label: string; tone: Tone }>
   FAILED: { label: '실패', tone: 'fail' },
   CANCELLED: { label: '취소됨', tone: 'idle' },
   EXPIRED: { label: '만료됨', tone: 'idle' },
+}
+
+/**
+ * Everything after the preview. They are three separate gates, not one screen with three
+ * buttons: approving the code does not deploy it, because CMS and DEPLOY are their own
+ * approvals further down the graph.
+ */
+const finalStages: ApprovalStage[] = ['GITHUB', 'CMS', 'DEPLOY']
+
+const finalStageCopy: Record<string, { title: string; sub: string; approve: string }> = {
+  GITHUB: {
+    title: '코드 승인',
+    sub: '승인하면 AI 가 쓴 코드가 반영 절차로 넘어갑니다',
+    approve: '네, 이 코드를 반영합니다',
+  },
+  CMS: {
+    title: 'CMS 반영 승인',
+    sub: '승인하면 변경이 CMS 에 반영됩니다',
+    approve: '네, CMS 에 반영합니다',
+  },
+  DEPLOY: {
+    title: '배포 승인',
+    sub: '마지막 관문입니다. 승인하면 배포 요청이 기록됩니다',
+    approve: '네, 배포합니다',
+  },
 }
 
 /** A Job in any other status is finished, and a finished Job does not block a new request. */
@@ -167,6 +193,12 @@ export default function CodingWorkspace({ api }: { api: CodingConsoleApiClient }
             onDecide={decide}
           />}
           {detail?.pendingApproval?.stage === 'CANDIDATE' && <CandidateApproval
+            detail={detail}
+            pending={detail.pendingApproval}
+            busy={deciding}
+            onDecide={decide}
+          />}
+          {detail?.pendingApproval && finalStages.includes(detail.pendingApproval.stage) && <FinalApproval
             detail={detail}
             pending={detail.pendingApproval}
             busy={deciding}
@@ -433,6 +465,132 @@ function CandidateApproval({ detail, pending, busy, onDecide }: {
             disabled={busy}
             onClick={() => onDecide(pending, 'APPROVED')}
           >{busy ? '보내는 중입니다…' : '네, 이대로 좋습니다'}</button>
+          <button
+            type="button"
+            className={secondaryButton}
+            disabled={busy}
+            onClick={() => setRejecting(true)}
+          >아니요</button>
+        </div>}
+    </div>
+  </section>
+}
+
+/**
+ * E4, the approvals that follow the preview: GITHUB, then CMS, then DEPLOY.
+ *
+ * The guide draws these as one screen with [merge & deploy] [merge only] [reject], but the
+ * server takes only approve or reject at each gate, and the graph runs the three gates in
+ * sequence. "Merge only" is therefore what happens when the deploy gate is not approved -
+ * a real outcome, reached by a different click, so the screen says which gate it is on
+ * rather than offering a button the contract cannot honour.
+ *
+ * The technical block is absent for a general administrator because the server omits it, so
+ * this reads the evidence it was given rather than deciding who may see what.
+ */
+function FinalApproval({ detail, pending, busy, onDecide }: {
+  detail: JobDetail
+  pending: PendingApproval
+  busy: boolean
+  onDecide: (pending: PendingApproval, decision: ApprovalDecision, feedback?: string) => void
+}) {
+  const [rejecting, setRejecting] = useState(false)
+  const [feedback, setFeedback] = useState('')
+  const copy = finalStageCopy[pending.stage]
+  const technical = detail.technical
+
+  return <section className={`${panel} mt-[0.875rem]`}>
+    <PanelTitle title={copy.title} sub={copy.sub}>
+      <Badge tone={pending.requiredRole === 'SUPER_ADMIN' ? 'run' : 'wait'} dot={false}>
+        {pending.requiredRole === 'SUPER_ADMIN' ? '최고관리자 전용' : '승인 대기'}
+      </Badge>
+    </PanelTitle>
+
+    <div className="px-4 pb-4 pt-[0.375rem]">
+      {/* The Job started from a commit that may no longer be the head of dev. */}
+      {technical?.baseShaFreshness?.stale && <div className="mb-[0.875rem]">
+        <Callout tone="warn" icon="triangle-alert">
+          이 작업이 시작된 뒤 dev 가 움직였습니다. 지금 dev 는
+          {' '}{technical.baseShaFreshness.currentDevSha?.slice(0, 15) ?? '알 수 없음'} 입니다.
+          충돌이 날 수 있으니 확인 후 승인해 주세요.
+        </Callout>
+      </div>}
+
+      {technical
+        ? <>
+          <b className={`${fieldLabel} block`}>바뀐 파일 {technical.changedPaths.length}개</b>
+          {technical.changedPaths.length === 0
+            ? <p className="mt-[0.375rem] text-[0.71875rem] text-muted-2">바뀐 파일이 보고되지 않았습니다.</p>
+            : <ul className="mt-[0.375rem] max-h-[15rem] overflow-y-auto">
+              {technical.changedPaths.map((path) => <li
+                key={path}
+                className="border-b border-row-line py-[0.4375rem] font-mono text-[0.71875rem] text-body"
+              >{path}</li>)}
+            </ul>}
+
+          <dl className="mt-[0.875rem] grid gap-x-4 gap-y-[0.375rem] text-[0.71875rem] sm:grid-cols-[8rem_1fr]">
+            <dt className="text-muted-2">기준 커밋</dt>
+            <dd className="font-mono text-body">{technical.baseSha ?? '없음'}</dd>
+            <dt className="text-muted-2">결과 커밋</dt>
+            <dd className="font-mono text-body">{technical.candidateSha ?? '없음'}</dd>
+            <dt className="text-muted-2">변경 지문</dt>
+            <dd className="font-mono text-body">{technical.diffDigest ?? '없음'}</dd>
+            <dt className="text-muted-2">검사 프로필</dt>
+            <dd className="text-body">{technical.checkProfile ?? '없음'}</dd>
+          </dl>
+
+          {/* Queuing CREATE_PR is a later slice, so this stays empty rather than pretending. */}
+          <div className="mt-[0.875rem]">
+            {technical.pullRequestUrl
+              ? <a className={secondaryButton} href={technical.pullRequestUrl} target="_blank" rel="noreferrer">PR 열기</a>
+              : <p className="text-[0.6875rem] leading-5 text-muted-2">
+                PR 링크는 아직 기록되지 않았습니다. 변경 내용은 위 목록과 지문으로 확인해 주세요.
+              </p>}
+          </div>
+        </>
+        : <Callout tone="warn" icon="triangle-alert">
+          코드 근거는 최고관리자에게만 전달됩니다. 이 계정에는 서버가 보내지 않았습니다.
+        </Callout>}
+
+      {rejecting
+        ? <div className="mt-[0.875rem]">
+          <Callout tone="warn" icon="triangle-alert">
+            반려하면 이 요청은 취소됩니다. 다시 만들지 않으니, 필요하면 처음부터 새로 요청해 주세요.
+            이미 올라간 PR 이 있다면 사람이 직접 닫아야 합니다.
+          </Callout>
+          <label className="mt-[0.625rem] block">
+            <span className={fieldLabel}>반려 사유</span>
+            <textarea
+              className={textarea}
+              rows={3}
+              value={feedback}
+              onChange={(event) => setFeedback(event.target.value)}
+              placeholder="요청한 사람이 읽습니다. 무엇이 문제인지 적어주세요."
+              disabled={busy}
+            />
+          </label>
+          <div className="mt-[0.625rem] flex flex-wrap gap-2">
+            <button
+              type="button"
+              className={dangerButton}
+              disabled={busy || feedback.trim() === ''}
+              onClick={() => onDecide(pending, 'REJECTED', feedback.trim())}
+            >{busy ? '보내는 중입니다…' : '반려하고 요청을 취소합니다'}</button>
+            <button
+              type="button"
+              className={secondaryButton}
+              disabled={busy}
+              onClick={() => { setRejecting(false); setFeedback('') }}
+            >되돌아가기</button>
+          </div>
+        </div>
+        : <div className="mt-[0.875rem] flex flex-wrap gap-2">
+          <button
+            type="button"
+            className={primaryButton}
+            disabled={busy}
+            onClick={() => onDecide(pending, 'APPROVED')}
+          >{busy ? '보내는 중입니다…' : copy.approve}</button>
           <button
             type="button"
             className={secondaryButton}
