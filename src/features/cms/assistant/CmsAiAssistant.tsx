@@ -1,4 +1,4 @@
-import { type FormEvent, useId, useState } from 'react'
+import { type FormEvent, useEffect, useId, useRef, useState } from 'react'
 import type { CmsRouteId } from '../../../app/routes'
 import { describeFailure } from '../../../shared/api/error'
 import { Icon } from '../../../shared/ui/icons'
@@ -12,6 +12,14 @@ import { menuPreviewTree, menuRemoval, type AssistantMenu, type MenuCommand } fr
 
 /** 되묻기에 한 번에 보여줄 후보 최대 갯수. 더 많으면 목록에서 직접 고르게 한다. */
 const MAX_CANDIDATES = 5
+
+/** 미리보기는 파이프라인이 채운다. 첫 조회는 곧바로 하고 그 뒤에만 기다린다. */
+const POLL_INTERVAL_MS = 1_500
+const POLL_ATTEMPTS = 40
+
+function wait(ms: number) {
+  return new Promise<void>((resolve) => { window.setTimeout(resolve, ms) })
+}
 
 /** 한 필드의 변경 전후를 줄 단위로 보여준다. 바뀐 줄이 없으면 그대로임을 알린다. */
 function FieldDiff({ before, after }: { before: string; after: string }) {
@@ -136,6 +144,9 @@ export default function CmsAiAssistant({ route, target, candidates, menus, onTar
   const [phase, setPhase] = useState<Phase>({ kind: 'input' })
   const [feedback, setFeedback] = useState('')
   const [detail, setDetail] = useState(false)
+  /** 지금 유효한 대기 세대. 새 요청이나 초기화가 이전 대기를 무효로 만든다. */
+  const poll = useRef(0)
+  useEffect(() => () => { poll.current += 1 }, [])
   const routeSupported = SUPPORTED_ROUTES.has(route)
   const supported = target !== null && SUPPORTED.has(target.type)
 
@@ -146,7 +157,41 @@ export default function CmsAiAssistant({ route, target, candidates, menus, onTar
     return (matched.length > 0 ? matched : candidates).slice(0, MAX_CANDIDATES)
   }
 
+  /**
+   * 미리보기가 생길 때까지 Job을 다시 읽는다.
+   *
+   * 생성 응답에는 미리보기가 없다. 파이프라인이 분석과 미리보기를 만든 뒤에야 채워지므로
+   * 화면이 그 시점을 기다려야 한다. 취소·새 요청이 오면 세대 번호로 이전 대기를 버린다.
+   */
+  async function awaitPreview(jobId: string, generation: number) {
+    for (let attempt = 0; attempt < POLL_ATTEMPTS; attempt += 1) {
+      if (attempt > 0) await wait(POLL_INTERVAL_MS)
+      if (poll.current !== generation) return
+      const job = await api.job(jobId)
+      if (poll.current !== generation) return
+      if (job.previewId && job.previewHash) {
+        setPhase({ kind: 'waiting', job })
+        return
+      }
+      if (job.status === 'COMPLETED') {
+        setPhase({ kind: 'done', job })
+        return
+      }
+      if (job.status === 'REJECTED') {
+        setPhase({ kind: 'rejected', job })
+        return
+      }
+    }
+    if (poll.current !== generation) return
+    setPhase({
+      kind: 'failed',
+      message: '미리보기를 받지 못했습니다. 잠시 후 다시 요청해 주세요.',
+    })
+  }
+
   async function start(requestText: string, chosen: CmsAssistantTarget) {
+    const generation = poll.current + 1
+    poll.current = generation
     setPhase({ kind: 'analyzing' })
     try {
       const profileVersionId = await api.activeProfileVersionId()
@@ -156,9 +201,10 @@ export default function CmsAiAssistant({ route, target, candidates, menus, onTar
         resource: { type: chosen.type, id: chosen.id },
       })
       setDraft('')
-      setPhase({ kind: 'waiting', job })
+      await awaitPreview(job.jobId, generation)
     }
     catch (failure) {
+      if (poll.current !== generation) return
       setPhase({ kind: 'failed', message: describeFailure(failure) })
     }
   }
@@ -202,6 +248,7 @@ export default function CmsAiAssistant({ route, target, candidates, menus, onTar
   }
 
   function reset() {
+    poll.current += 1
     setFeedback('')
     setDetail(false)
     setPhase({ kind: 'input' })

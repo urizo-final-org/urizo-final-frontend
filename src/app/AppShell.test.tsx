@@ -358,6 +358,74 @@ test('the menu assistant opens and offers a new menu beside the existing ones', 
   expect(within(panel).getByRole('button', { name: '새 메뉴 만들기' })).toBeInTheDocument()
 })
 
+test('the menu assistant waits for the preview the pipeline fills in later', async () => {
+  window.history.pushState({}, '', '/admin/menus')
+  const profileVersionId = '99999999-9999-4999-8999-999999999999'
+  const jobId = '88888888-8888-4888-8888-888888888888'
+  const menus = [
+    { id: 10, name: '소개', path: '/about', parentId: null, displayOrder: 10, targetType: 'NONE', targetId: null },
+    { id: 40, name: '고객지원', path: '/support', parentId: null, displayOrder: 40, targetType: 'NONE', targetId: null },
+  ]
+  /** 생성 응답에는 미리보기가 없다. 다시 읽었을 때 채워져 있어야 화면이 넘어간다. */
+  const created = {
+    schemaVersion: '1.0',
+    jobId,
+    traceId: '77777777-7777-4777-8777-777777777777',
+    profileVersionId,
+    pipelineAttempt: 1,
+    stateVersion: 1,
+    status: 'ACTIVE',
+    requestText: '상위 메뉴 없이 "자료실" 메뉴를 새로 만들어 줘',
+    resource: { type: 'MENU', id: 'new' },
+    structuredCommand: null,
+    previewId: null,
+    previewHash: null,
+    previewValid: false,
+    approvalDecision: null,
+    approvalFeedback: null,
+    createdAt: '2026-09-02T09:00:00Z',
+    updatedAt: '2026-09-02T09:00:00Z',
+  }
+  const previewed = {
+    ...created,
+    status: 'WAITING_APPROVAL',
+    previewId: '66666666-6666-4666-8666-666666666666',
+    previewHash: `sha256:${'a'.repeat(64)}`,
+    previewValid: true,
+    structuredCommand: {
+      operation: 'CREATE',
+      fields: { name: '자료실', path: '/support/archive', parentId: 40 },
+    },
+  }
+  vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => {
+    const url = String(input)
+    if (url === '/api/auth/refresh') return Promise.resolve(json(session('SUPER_ADMIN', '최고 관리자')))
+    if (url === '/api/cms/menus') return Promise.resolve(json(menus))
+    if (url.startsWith('/api/admin/ai/profile-versions')) {
+      return Promise.resolve(json([{ profileVersionId, profileKey: 'NATURAL_CMS', status: 'ACTIVE' }]))
+    }
+    if (url === '/api/natural-cms/jobs') return Promise.resolve(json(created))
+    if (url === `/api/natural-cms/jobs/${jobId}`) return Promise.resolve(json(previewed))
+    return Promise.resolve(json([]))
+  }))
+
+  render(<AppShell />)
+  expect(await screen.findByRole('heading', { name: '메뉴 관리' })).toBeInTheDocument()
+  const panel = screen.getByRole('complementary', { name: '메뉴 관리 자연어 도우미' })
+
+  fireEvent.change(within(panel).getByPlaceholderText('CMS 변경 요청을 입력하세요'), { target: { value: '자료실 메뉴 만들어 줘' } })
+  fireEvent.click(within(panel).getByRole('button', { name: '요청 분석하기' }))
+  fireEvent.click(await within(panel).findByRole('button', { name: '새 메뉴 만들기' }))
+
+  expect(await within(panel).findByText('승인 대기')).toBeInTheDocument()
+
+  fireEvent.click(within(panel).getByRole('button', { name: '변경 내용 자세히 보기' }))
+  const modal = await screen.findByRole('dialog', { name: '메뉴 관리 변경 미리보기' })
+  expect(within(modal).getByText('자료실')).toBeInTheDocument()
+  expect(within(modal).getByText('추가')).toBeInTheDocument()
+  expect(within(modal).queryByText('아직 변경 내용을 받지 못했습니다.')).not.toBeInTheDocument()
+})
+
 test('the page-scoped AI panel collapses to a rail and expands again', async () => {
   window.history.pushState({}, '', '/admin/menus')
   vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => {
