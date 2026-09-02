@@ -166,6 +166,12 @@ export default function CodingWorkspace({ api }: { api: CodingConsoleApiClient }
             busy={deciding}
             onDecide={decide}
           />}
+          {detail?.pendingApproval?.stage === 'CANDIDATE' && <CandidateApproval
+            detail={detail}
+            pending={detail.pendingApproval}
+            busy={deciding}
+            onDecide={decide}
+          />}
         </>
         : <section className={panel}>
           <PanelTitle title="새 개발 요청" sub="한국어로 적으면 AI 가 계획부터 세웁니다" />
@@ -313,6 +319,120 @@ function PlanApproval({ plan, pending, busy, onDecide }: {
             disabled={busy}
             onClick={() => onDecide(pending, 'APPROVED')}
           >{busy ? '보내는 중입니다…' : '네, 진행하세요'}</button>
+          <button
+            type="button"
+            className={secondaryButton}
+            disabled={busy}
+            onClick={() => setRejecting(true)}
+          >아니요</button>
+        </div>}
+    </div>
+  </section>
+}
+
+/**
+ * E3, the preview approval.
+ *
+ * This is the screen a general administrator actually judges on. They cannot read the diff -
+ * the server does not even send it to them - so the evidence here is the report, the
+ * criteria approval 1 agreed to, and a preview they can click and use.
+ *
+ * Rejecting here does buy another attempt, unlike the plan approval, but only while attempts
+ * remain. The warning changes with the count rather than promising a retry that will not happen.
+ */
+function CandidateApproval({ detail, pending, busy, onDecide }: {
+  detail: JobDetail
+  pending: PendingApproval
+  busy: boolean
+  onDecide: (pending: PendingApproval, decision: ApprovalDecision, feedback?: string) => void
+}) {
+  const [rejecting, setRejecting] = useState(false)
+  const [feedback, setFeedback] = useState('')
+  const results = detail.report?.criteriaResults ?? []
+  const retryLeft = detail.pipelineAttempt < detail.maxPipelineAttempts
+
+  return <section className={`${panel} mt-[0.875rem]`}>
+    <PanelTitle
+      title="결과 확인"
+      sub={`${detail.pipelineAttempt}번째 시도 · 최대 ${detail.maxPipelineAttempts}번`}
+    >
+      <Badge tone="wait">승인 대기</Badge>
+    </PanelTitle>
+
+    <div className="px-4 pb-4 pt-[0.375rem]">
+      <p className="text-[0.8125rem] leading-[1.7] text-body">
+        {detail.report?.summary ?? 'AI 가 결과 요약을 남기지 않았습니다. 아래 판정과 미리보기로 확인해 주세요.'}
+      </p>
+
+      <b className={`${fieldLabel} mt-4 block`}>기준별 판정</b>
+      {results.length === 0
+        ? <p className="mt-[0.375rem] text-[0.71875rem] text-muted-2">AI 가 기준별 판정을 남기지 않았습니다.</p>
+        : <ul className="mt-[0.375rem]">
+          {results.map((result) => <li
+            key={result.criterion}
+            className="flex items-center gap-[0.625rem] border-b border-row-line py-[0.5625rem] text-[0.78125rem] text-body"
+          >
+            <span className="flex-1">{result.criterion}</span>
+            {/* Undecided is its own answer here: a criterion the model skipped is not a pass. */}
+            <Badge tone={result.met === true ? 'ok' : result.met === false ? 'fail' : 'idle'}>
+              {result.met === true ? '충족' : result.met === false ? '미충족' : '판정 없음'}
+            </Badge>
+          </li>)}
+        </ul>}
+
+      <div className="mt-[0.875rem]">
+        {detail.preview?.ready && detail.preview.url
+          ? <a
+            className={secondaryButton}
+            href={detail.preview.url}
+            target="_blank"
+            rel="noreferrer"
+          >미리보기 열기</a>
+          : <Callout tone="warn" icon="triangle-alert">
+            미리보기가 아직 준비되지 않았습니다. 눈으로 확인할 수 없는 상태이니 승인을 미뤄 주세요.
+          </Callout>}
+      </div>
+
+      {rejecting
+        ? <div className="mt-[0.875rem]">
+          <Callout tone="warn" icon="triangle-alert">
+            {retryLeft
+              ? `반려하면 AI 가 처음부터 다시 만듭니다. ${detail.pipelineAttempt + 1}번째 시도가 됩니다.`
+              : '마지막 시도였습니다. 반려하면 다시 만들지 않고 이 요청은 취소됩니다.'}
+          </Callout>
+          <label className="mt-[0.625rem] block">
+            <span className={fieldLabel}>반려 사유</span>
+            <textarea
+              className={textarea}
+              rows={3}
+              value={feedback}
+              onChange={(event) => setFeedback(event.target.value)}
+              placeholder="무엇이 기대와 달랐는지 적어주세요. AI 가 이 글을 읽고 다시 만듭니다."
+              disabled={busy}
+            />
+          </label>
+          <div className="mt-[0.625rem] flex flex-wrap gap-2">
+            <button
+              type="button"
+              className={dangerButton}
+              disabled={busy || feedback.trim() === ''}
+              onClick={() => onDecide(pending, 'REJECTED', feedback.trim())}
+            >{busy ? '보내는 중입니다…' : retryLeft ? '반려하고 다시 만들게 합니다' : '반려하고 요청을 취소합니다'}</button>
+            <button
+              type="button"
+              className={secondaryButton}
+              disabled={busy}
+              onClick={() => { setRejecting(false); setFeedback('') }}
+            >되돌아가기</button>
+          </div>
+        </div>
+        : <div className="mt-[0.875rem] flex flex-wrap gap-2">
+          <button
+            type="button"
+            className={primaryButton}
+            disabled={busy}
+            onClick={() => onDecide(pending, 'APPROVED')}
+          >{busy ? '보내는 중입니다…' : '네, 이대로 좋습니다'}</button>
           <button
             type="button"
             className={secondaryButton}

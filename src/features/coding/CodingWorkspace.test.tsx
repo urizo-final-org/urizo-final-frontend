@@ -193,3 +193,88 @@ test('an approval from a later stage does not borrow the plan screen', async () 
   expect(await screen.findByText(openJob.requestText)).toBeInTheDocument()
   expect(screen.queryByRole('button', { name: '네, 진행하세요' })).not.toBeInTheDocument()
 })
+
+const pendingCandidate = {
+  ...pendingScope,
+  approvalId: 'bbbbbbbb-2222-4222-8222-bbbbbbbbbbbb',
+  nodeId: 'preview_approval',
+  stage: 'CANDIDATE' as const,
+  expectedStateVersion: 9,
+  candidateSha: `sha1:${'a'.repeat(40)}`,
+  validationHash: `sha256:${'b'.repeat(64)}`,
+}
+
+const candidateDetail: JobDetail = {
+  ...scopeDetail,
+  status: 'WAITING_APPROVAL',
+  currentStage: 'preview_approval',
+  report: {
+    summary: '첨부파일 업로드를 붙이고 목록에 표시했습니다.',
+    criteriaResults: [
+      { criterion: '공지 글에 첨부파일을 올릴 수 있다', met: true },
+      { criterion: '기존 글이 깨지지 않는다', met: false },
+      { criterion: '용량 제한을 넘기면 막는다' },
+    ],
+  },
+  preview: { ready: true, url: 'http://127.0.0.1:18081/' },
+  pendingApproval: pendingCandidate,
+}
+
+function candidateApi(detail: JobDetail = candidateDetail): CodingConsoleApiClient {
+  return consoleApi({
+    listJobs: vi.fn().mockResolvedValue({ schemaVersion: '1.0', items: [openJob] }),
+    getJob: vi.fn().mockResolvedValue(detail),
+    decideApproval: vi.fn().mockResolvedValue({}),
+  })
+}
+
+test('the result screen shows every criterion verdict, and an undecided one is not a pass', async () => {
+  render(<CodingWorkspace api={candidateApi()} />)
+
+  expect(await screen.findByText(/첨부파일 업로드를 붙이고/)).toBeInTheDocument()
+  expect(screen.getByText('충족')).toBeInTheDocument()
+  expect(screen.getByText('미충족')).toBeInTheDocument()
+  expect(screen.getByText('판정 없음')).toBeInTheDocument()
+})
+
+test('the preview is offered as a link the administrator can actually open', async () => {
+  render(<CodingWorkspace api={candidateApi()} />)
+
+  const link = await screen.findByRole('link', { name: '미리보기 열기' })
+  expect(link).toHaveAttribute('href', 'http://127.0.0.1:18081/')
+  expect(link).toHaveAttribute('target', '_blank')
+})
+
+test('an unready preview warns instead of offering a dead link', async () => {
+  render(<CodingWorkspace api={candidateApi({ ...candidateDetail, preview: { ready: false } })} />)
+
+  expect(await screen.findByText(/미리보기가 아직 준비되지 않았습니다/)).toBeInTheDocument()
+  expect(screen.queryByRole('link', { name: '미리보기 열기' })).not.toBeInTheDocument()
+})
+
+test('rejecting with attempts left promises another try, and says which one', async () => {
+  render(<CodingWorkspace api={candidateApi()} />)
+
+  fireEvent.click(await screen.findByRole('button', { name: '아니요' }))
+  expect(screen.getByText(/2번째 시도가 됩니다/)).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: '반려하고 다시 만들게 합니다' })).toBeDisabled()
+})
+
+test('rejecting the last attempt says the request is cancelled, not retried', async () => {
+  render(<CodingWorkspace api={candidateApi({ ...candidateDetail, pipelineAttempt: 3 })} />)
+
+  fireEvent.click(await screen.findByRole('button', { name: '아니요' }))
+  expect(screen.getByText(/다시 만들지 않고 이 요청은 취소됩니다/)).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: '반려하고 요청을 취소합니다' })).toBeInTheDocument()
+})
+
+test('a candidate decision carries the sha and validation hash the server minted', async () => {
+  const api = candidateApi()
+  render(<CodingWorkspace api={api} />)
+
+  fireEvent.click(await screen.findByRole('button', { name: '네, 이대로 좋습니다' }))
+
+  await waitFor(() => expect(api.decideApproval).toHaveBeenCalledWith(
+    openJob.jobId, pendingCandidate, 'APPROVED', undefined,
+  ))
+})
