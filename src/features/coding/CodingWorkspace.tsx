@@ -1,10 +1,12 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { describeFailure } from '../../shared/api/error'
 import {
-  Badge, Callout, PageHead, PanelTitle, fieldLabel, panel, primaryButton, smallButton, textarea,
-  type Tone,
+  Badge, Callout, PageHead, PanelTitle, dangerButton, fieldLabel, panel, primaryButton,
+  secondaryButton, smallButton, textarea, type Tone,
 } from '../../shared/ui/primitives'
-import type { CodingConsoleApiClient, CodingJobStatus, JobSummary } from './api'
+import type {
+  ApprovalDecision, CodingConsoleApiClient, CodingJobStatus, JobDetail, JobSummary, PendingApproval,
+} from './api'
 
 /**
  * E1, the request screen.
@@ -53,21 +55,68 @@ export default function CodingWorkspace({ api }: { api: CodingConsoleApiClient }
   const [loading, setLoading] = useState(true)
   const [failure, setFailure] = useState<string | null>(null)
   const [current, setCurrent] = useState<JobSummary | null>(null)
+  const [detail, setDetail] = useState<JobDetail | null>(null)
   const [requestText, setRequestText] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const [deciding, setDeciding] = useState(false)
   const [reloadToken, setReloadToken] = useState(0)
 
+  /**
+   * The list says which request is open; the detail says what it is waiting for. Two calls
+   * rather than one fat list, because only the opened request needs the plan and the
+   * approval evidence.
+   */
   useEffect(() => {
     let active = true
     setLoading(true)
     setFailure(null)
-    void api.listJobs().then((list) => {
-      if (active) setCurrent(openJob(list.items))
-    }).catch((error: unknown) => {
-      if (active) { setCurrent(null); setFailure(describeFailure(error)) }
-    }).finally(() => { if (active) setLoading(false) })
+    void (async () => {
+      let open: JobSummary | null = null
+      try {
+        open = openJob((await api.listJobs()).items)
+      }
+      catch (error: unknown) {
+        if (active) { setCurrent(null); setDetail(null); setFailure(describeFailure(error)) }
+        if (active) setLoading(false)
+        return
+      }
+      if (!active) return
+      setCurrent(open)
+      setDetail(null)
+      if (open) {
+        try {
+          const loaded = await api.getJob(open.jobId)
+          if (active) setDetail(loaded ?? null)
+        }
+        catch (error: unknown) {
+          if (active) setFailure(describeFailure(error))
+        }
+      }
+      if (active) setLoading(false)
+    })()
     return () => { active = false }
   }, [api, reloadToken])
+
+  /**
+   * The screen returns the pendingApproval it was handed. approvalId is a deterministic hash
+   * of the stage and round, so recomputing it here would be guessing at the server's own
+   * bookkeeping.
+   */
+  async function decide(pending: PendingApproval, decision: ApprovalDecision, feedback?: string) {
+    if (!current || deciding) return
+    setDeciding(true)
+    setFailure(null)
+    try {
+      await api.decideApproval(current.jobId, pending, decision, feedback)
+      setReloadToken((token) => token + 1)
+    }
+    catch (error: unknown) {
+      setFailure(describeFailure(error))
+    }
+    finally {
+      setDeciding(false)
+    }
+  }
 
   /**
    * The server asks the runner for a real base commit before it answers, so this takes a
@@ -81,6 +130,7 @@ export default function CodingWorkspace({ api }: { api: CodingConsoleApiClient }
     setFailure(null)
     try {
       const created = await api.createJob('backend', text)
+      setDetail(null)
       setCurrent({
         jobId: created.job.jobId,
         repository: 'backend',
@@ -108,7 +158,15 @@ export default function CodingWorkspace({ api }: { api: CodingConsoleApiClient }
     {loading
       ? <section className={panel}><p className="p-4 text-[0.78125rem] text-muted">불러오는 중입니다…</p></section>
       : current
-        ? <CurrentRequest job={current} />
+        ? <>
+          <CurrentRequest job={current} />
+          {detail?.pendingApproval?.stage === 'SCOPE' && <PlanApproval
+            plan={detail.plan}
+            pending={detail.pendingApproval}
+            busy={deciding}
+            onDecide={decide}
+          />}
+        </>
         : <section className={panel}>
           <PanelTitle title="새 개발 요청" sub="한국어로 적으면 AI 가 계획부터 세웁니다" />
           <form className="px-4 pb-4 pt-[0.375rem]" onSubmit={submit}>
@@ -177,5 +235,91 @@ function CurrentRequest({ job }: { job: JobSummary }) {
     <p className="border-t border-line-soft px-4 py-[0.8125rem] text-[0.6875rem] leading-5 text-muted-2">
       진행 중인 요청이 있습니다. 이 요청이 끝나면 새 요청을 보낼 수 있습니다.
     </p>
+  </section>
+}
+
+/**
+ * E2, the plan approval.
+ *
+ * Rejecting here is not "try again": the server marks the attempt REJECTED and, because SCOPE
+ * is not the CANDIDATE stage, cancels the Job outright. Only a preview rejection buys another
+ * attempt. The screen says so before the click rather than after it.
+ */
+function PlanApproval({ plan, pending, busy, onDecide }: {
+  plan?: JobDetail['plan']
+  pending: PendingApproval
+  busy: boolean
+  onDecide: (pending: PendingApproval, decision: ApprovalDecision, feedback?: string) => void
+}) {
+  const [rejecting, setRejecting] = useState(false)
+  const [feedback, setFeedback] = useState('')
+  const criteria = plan?.acceptanceCriteria ?? []
+
+  return <section className={`${panel} mt-[0.875rem]`}>
+    <PanelTitle title="계획 확인" sub="AI 가 세운 계획입니다. 승인해야 코드를 쓰기 시작합니다">
+      <Badge tone="wait">승인 대기</Badge>
+    </PanelTitle>
+
+    <div className="px-4 pb-4 pt-[0.375rem]">
+      <p className="text-[0.8125rem] leading-[1.7] text-body">
+        {plan?.summary ?? 'AI 가 계획 요약을 남기지 않았습니다. 아래 기준만 보고 판단해 주세요.'}
+      </p>
+
+      <b className={`${fieldLabel} mt-4 block`}>합격 기준</b>
+      {criteria.length === 0
+        ? <p className="mt-[0.375rem] text-[0.71875rem] text-muted-2">AI 가 합격 기준을 남기지 않았습니다.</p>
+        : <ul className="mt-[0.375rem]">
+          {criteria.map((criterion) => <li
+            key={criterion}
+            className="border-b border-row-line py-[0.5625rem] text-[0.78125rem] leading-[1.6] text-body"
+          >{criterion}</li>)}
+        </ul>}
+
+      {rejecting
+        ? <div className="mt-[0.875rem]">
+          <Callout tone="warn" icon="triangle-alert">
+            반려하면 이 요청은 취소됩니다. 같은 요청을 다시 시도하지 않으니, 필요하면 새로 요청해 주세요.
+          </Callout>
+          <label className="mt-[0.625rem] block">
+            <span className={fieldLabel}>반려 사유</span>
+            <textarea
+              className={textarea}
+              rows={3}
+              value={feedback}
+              onChange={(event) => setFeedback(event.target.value)}
+              placeholder="어디가 잘못됐는지 적어주세요. 비워두면 보낼 수 없습니다."
+              disabled={busy}
+            />
+          </label>
+          <div className="mt-[0.625rem] flex flex-wrap gap-2">
+            <button
+              type="button"
+              className={dangerButton}
+              disabled={busy || feedback.trim() === ''}
+              onClick={() => onDecide(pending, 'REJECTED', feedback.trim())}
+            >{busy ? '보내는 중입니다…' : '반려하고 요청을 취소합니다'}</button>
+            <button
+              type="button"
+              className={secondaryButton}
+              disabled={busy}
+              onClick={() => { setRejecting(false); setFeedback('') }}
+            >되돌아가기</button>
+          </div>
+        </div>
+        : <div className="mt-[0.875rem] flex flex-wrap gap-2">
+          <button
+            type="button"
+            className={primaryButton}
+            disabled={busy}
+            onClick={() => onDecide(pending, 'APPROVED')}
+          >{busy ? '보내는 중입니다…' : '네, 진행하세요'}</button>
+          <button
+            type="button"
+            className={secondaryButton}
+            disabled={busy}
+            onClick={() => setRejecting(true)}
+          >아니요</button>
+        </div>}
+    </div>
   </section>
 }
