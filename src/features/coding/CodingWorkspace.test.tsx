@@ -55,10 +55,15 @@ test('sending a Korean sentence creates a backend Job and the same card becomes 
 
   await waitFor(() => expect(api.createJob).toHaveBeenCalledWith('backend', '회원 목록에 가입일도 보이게 해줘'))
   expect(await screen.findByText('회원 목록에 가입일도 보이게 해줘')).toBeInTheDocument()
-  expect(screen.queryByRole('button', { name: '요청 보내기' })).not.toBeInTheDocument()
+  expect(screen.getByLabelText('무엇을 바꿀까요')).toHaveValue('')
 })
 
-test('an unfinished Job takes the card over so a second request cannot be started', async () => {
+/**
+ * An abandoned Job from a previous day sat in WAITING_APPROVAL and, while the form was hidden
+ * behind "nothing is in flight", no new request could be typed at all. The server never refused
+ * a second Job, so this screen must not either.
+ */
+test('an unfinished Job is shown without locking the operator out of a new request', async () => {
   const api = consoleApi({
     listJobs: vi.fn().mockResolvedValue({ schemaVersion: '1.0', items: [openJob] }),
   })
@@ -66,7 +71,7 @@ test('an unfinished Job takes the card over so a second request cannot be starte
 
   expect(await screen.findByText('공지사항에 첨부파일을 붙일 수 있게 해줘')).toBeInTheDocument()
   expect(screen.getByText('승인 대기')).toBeInTheDocument()
-  expect(screen.queryByRole('button', { name: '요청 보내기' })).not.toBeInTheDocument()
+  expect(screen.getByRole('button', { name: '요청 보내기' })).toBeInTheDocument()
 })
 
 test('a finished Job does not block a new request', async () => {

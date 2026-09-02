@@ -183,8 +183,8 @@ export default function CodingWorkspace({ api }: { api: CodingConsoleApiClient }
 
     {loading
       ? <section className={panel}><p className="p-4 text-[0.78125rem] text-muted">불러오는 중입니다…</p></section>
-      : current
-        ? <>
+      : <>
+        {current && <>
           <CurrentRequest job={current} />
           {detail?.pendingApproval?.stage === 'SCOPE' && <PlanApproval
             plan={detail.plan}
@@ -204,8 +204,14 @@ export default function CodingWorkspace({ api }: { api: CodingConsoleApiClient }
             busy={deciding}
             onDecide={decide}
           />}
-        </>
-        : <section className={panel}>
+        </>}
+
+        {/*
+          * The form is always here. Hiding it while a request was open sounded tidy until an
+          * abandoned Job from a previous day sat in WAITING_APPROVAL forever and no new request
+          * could be typed at all. The server never refused a second Job; only this screen did.
+          */}
+        <section className={current ? `${panel} mt-[0.875rem]` : panel}>
           <PanelTitle title="새 개발 요청" sub="한국어로 적으면 AI 가 계획부터 세웁니다" />
           <form className="px-4 pb-4 pt-[0.375rem]" onSubmit={submit}>
             <fieldset className="border-0 p-0">
@@ -253,7 +259,8 @@ export default function CodingWorkspace({ api }: { api: CodingConsoleApiClient }
               {submitting ? '접수하는 중입니다…' : '요청 보내기'}
             </button>
           </form>
-        </section>}
+        </section>
+      </>}
   </>
 }
 
@@ -270,9 +277,6 @@ function CurrentRequest({ job }: { job: JobSummary }) {
       </div>
       <Badge tone={presentation.tone}>{presentation.label}</Badge>
     </div>
-    <p className="border-t border-line-soft px-4 py-[0.8125rem] text-[0.6875rem] leading-5 text-muted-2">
-      진행 중인 요청이 있습니다. 이 요청이 끝나면 새 요청을 보낼 수 있습니다.
-    </p>
   </section>
 }
 
