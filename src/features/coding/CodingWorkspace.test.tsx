@@ -314,8 +314,8 @@ const githubDetail: JobDetail = {
     candidateSha: `sha1:${'2'.repeat(40)}`,
     diffDigest: `sha256:${'3'.repeat(64)}`,
     changedPaths: ['src/main/java/.../CmsPostService.java', 'src/main/resources/schema.sql'],
-    diff: 'diff --git a/README.md b/README.md
-+데모 확인',
+    diff: `diff --git a/README.md b/README.md
++데모 확인`,
     checkProfile: 'maven-verify',
     baseShaFreshness: { stale: false },
   },
