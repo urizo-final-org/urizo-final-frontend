@@ -3,11 +3,13 @@ import { BrowserRouter, Navigate, Route, Routes, useLocation, useNavigate } from
 import LoginScreen from '../features/auth/LoginScreen'
 import { clearExplicitSignOut, clearStoredToken, hasExplicitSignOutMarker, markExplicitSignOut, readStoredToken, storeToken } from '../features/auth/session-store'
 import CmsWorkspace from '../features/cms/CmsWorkspace'
+import CodingWorkspace from '../features/coding/CodingWorkspace'
 import OpsWorkspace from '../features/ops/OpsWorkspace'
 import AgentSettingsWorkspace from '../features/orchestration/AgentSettingsWorkspace'
 import { ProfileVersionApi } from '../features/orchestration/api'
 import PublicSite from '../features/site/PublicSite'
 import { CmsApi } from '../features/cms/api'
+import { CodingConsoleApi } from '../features/coding/api'
 import { NaturalCmsApi } from '../features/cms/assistant/api'
 import { CmsSiteSettingsApi } from '../features/site-settings/api'
 import { fetchCurrentSession, logout, refreshSession, ROLE_LABELS, type AdminSession } from '../shared/api/session'
@@ -104,6 +106,7 @@ function AuthenticatedAdmin({ session, onRefresh, onExpired, onSignOut }: {
   const profileApi = useMemo(() => new ProfileVersionApi(session.sessionToken, lifecycle.refreshed, lifecycle.expired), [session.sessionToken, lifecycle])
   const siteSettingsApi = useMemo(() => new CmsSiteSettingsApi(session.sessionToken, lifecycle.refreshed, lifecycle.expired), [session.sessionToken, lifecycle])
   const naturalCmsApi = useMemo(() => new NaturalCmsApi(session.sessionToken, lifecycle.refreshed, lifecycle.expired), [session.sessionToken, lifecycle])
+  const codingApi = useMemo(() => new CodingConsoleApi(session.sessionToken, lifecycle.refreshed, lifecycle.expired), [session.sessionToken, lifecycle])
 
   function go(route: RouteId) { navigate(pathForRoute(route)); setMenuOpen(false) }
 
@@ -184,6 +187,8 @@ function AuthenticatedAdmin({ session, onRefresh, onExpired, onSignOut }: {
               ? <CmsWorkspace route={route.id} api={cmsApi} assistantApi={naturalCmsApi} />
               : route.id === 'models'
                 ? <AgentSettingsWorkspace api={profileApi} />
+              : route.id === 'devops'
+                ? <CodingWorkspace api={codingApi} />
               : <OpsWorkspace route={route.id} actorName={session.actor.name} roleLabel={ROLE_LABELS[session.actor.role]} profileApi={profileApi} siteSettingsApi={siteSettingsApi} />}
           />)}
           <Route path="/admin/*" element={<Navigate to={pathForRoute(fallback)} replace />} />
