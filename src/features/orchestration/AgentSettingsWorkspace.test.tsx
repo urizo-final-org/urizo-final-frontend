@@ -304,6 +304,51 @@ test('the Workflow Canvas loads the latest stored Snapshot with exact edges, bin
   expect(screen.getByRole('button', { name: 'analyze.feasible에서 scope_approval 연결 해제' })).toBeInTheDocument()
 })
 
+test('the Workflow Canvas uses a left control dock and one scrollable coordinate system for layered Nodes and lower detours', async () => {
+  render(<AgentSettingsWorkspace api={profileApi()} />)
+
+  await screen.findByLabelText('analyze Node')
+  const canvas = screen.getByLabelText('Node 편집 Canvas')
+  const dock = screen.getByLabelText('Workflow control dock')
+  const paletteToggle = screen.getByRole('button', { name: /등록 Handler Palette/ })
+
+  expect(canvas.className).toContain('bg-[#20262e]')
+  expect(dock).toHaveTextContent('Node 설정')
+  expect(paletteToggle).toHaveAttribute('aria-expanded', 'true')
+  expect(paletteToggle).toHaveAttribute('aria-controls', 'handler-palette-panel')
+  fireEvent.click(paletteToggle)
+  expect(paletteToggle).toHaveAttribute('aria-expanded', 'false')
+  fireEvent.click(paletteToggle)
+  expect(canvas.querySelectorAll('[data-node-port="input"]')).toHaveLength(starterSnapshots.LLM_OPS.nodes.length)
+  expect(canvas.querySelectorAll('[data-node-port="output"]')).toHaveLength(starterSnapshots.LLM_OPS.nodes.length)
+  expect(canvas.querySelector('[data-edge-route="direct"]')).not.toBeNull()
+  expect(canvas.querySelector('[data-edge-route="detour"]')).not.toBeNull()
+  expect(canvas.querySelector('[data-edge-route="detour"][data-edge-lane="0"]')).not.toBeNull()
+  expect(canvas.querySelector('[data-edge-active="true"]')).not.toBeNull()
+  expect(Number(canvas.dataset.canvasWidth)).toBeGreaterThan(1180)
+  expect(Number(canvas.dataset.canvasHeight)).toBeGreaterThan(680)
+  expect(canvas.querySelector('svg')).toHaveAttribute('viewBox', `0 0 ${canvas.dataset.canvasWidth} ${canvas.dataset.canvasHeight}`)
+  expect(Number(screen.getByLabelText('start Node').dataset.nodeX)).toBeLessThan(Number(screen.getByLabelText('guardrail Node').dataset.nodeX))
+  expect(Number(screen.getByLabelText('guardrail Node').dataset.nodeX)).toBeLessThan(Number(screen.getByLabelText('analyze Node').dataset.nodeX))
+
+  const viewport = canvas.closest('[data-canvas-viewport]') as HTMLDivElement
+  viewport.scrollLeft = 120
+  viewport.scrollTop = 90
+  fireEvent.pointerDown(canvas, { pointerId: 7, clientX: 400, clientY: 320 })
+  expect(canvas.className).toContain('cursor-grabbing')
+  fireEvent.pointerMove(canvas, { pointerId: 7, clientX: 350, clientY: 260 })
+  expect(viewport.scrollLeft).toBe(170)
+  expect(viewport.scrollTop).toBe(150)
+  fireEvent.pointerUp(canvas, { pointerId: 7 })
+  expect(canvas.className).toContain('cursor-grab')
+
+  fireEvent.pointerDown(screen.getByLabelText('analyze Node'), { pointerId: 8, clientX: 350, clientY: 260 })
+  fireEvent.pointerMove(canvas, { pointerId: 8, clientX: 250, clientY: 160 })
+  expect(viewport.scrollLeft).toBe(170)
+  expect(viewport.scrollTop).toBe(150)
+  expect(screen.getByText('Retry·Reject 하단 Routing')).toBeInTheDocument()
+})
+
 test('the Workflow Profile selector loads the saved NATURAL_CMS production contract', async () => {
   const naturalVersion: ProfileVersion = {
     profileVersionId: 'natural-version-4', profileKey: 'NATURAL_CMS', profileVersion: 4,
