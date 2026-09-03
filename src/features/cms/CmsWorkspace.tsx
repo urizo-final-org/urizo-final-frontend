@@ -1,4 +1,4 @@
-import { type CSSProperties, type FormEvent, type ReactNode, useEffect, useState } from 'react'
+import { type CSSProperties, type FormEvent, type ReactNode, useEffect, useRef, useState } from 'react'
 import type { CmsRouteId } from '../../app/routes'
 import { describeFailure } from '../../shared/api/error'
 import { Icon } from '../../shared/ui/icons'
@@ -6,7 +6,7 @@ import {
   Badge, EmptyState, PageHead, PanelTitle,
   control, fieldLabel, panel, primaryButton, secondaryButton, smallButton, textarea, type Tone,
 } from '../../shared/ui/primitives'
-import { CmsApi, notifySiteUpdated, type Article, type Board, type Member, type Menu, type MenuTargetType, type Post, type SiteTemplate } from './api'
+import { CmsApi, CMS_CHANGED_EVENT, notifySiteUpdated, type Article, type Board, type Member, type Menu, type MenuTargetType, type Post, type SiteTemplate } from './api'
 import CmsAiAssistant, { NEW_MENU_TARGET, type CmsAssistantTarget } from './assistant/CmsAiAssistant'
 import type { NaturalCmsApi } from './assistant/api'
 import type { AssistantMenu } from './assistant/menuTree'
@@ -65,6 +65,23 @@ function Feedback({ failure }: { failure: string | null }) {
 function Failure({ value }: { value: string | null }) { return <Feedback failure={value} /> }
 
 function notifyCmsSuccess(message: string) { window.dispatchEvent(new CustomEvent(CMS_SUCCESS_EVENT, { detail: message })) }
+
+/**
+ * 목록을 처음 읽고, 폼 밖에서 CMS가 바뀌면 다시 읽는다.
+ *
+ * <p>자연어 패널의 승인은 서버가 반영하므로 화면이 알 방법이 없었다. 새로고침해야 보였다.
+ * 최신 load를 ref로 들고 있어 의존성 때문에 구독을 다시 걸지 않는다.
+ */
+function useCmsList(api: CmsApi, load: () => unknown) {
+  const latest = useRef(load)
+  latest.current = load
+  useEffect(() => {
+    void latest.current()
+    const reload = () => { void latest.current() }
+    window.addEventListener(CMS_CHANGED_EVENT, reload)
+    return () => window.removeEventListener(CMS_CHANGED_EVENT, reload)
+  }, [api])
+}
 
 function Members({ api }: { api: CmsApi }) {
   const [items, setItems] = useState<Member[]>([])
@@ -128,7 +145,7 @@ function Menus({ api, onSelect, onCandidates, onMenus }: {
   const [targetId, setTargetId] = useState('')
   const [failure, setFailure] = useState<string | null>(null)
   const load = () => Promise.all([api.menus(), api.contents(), api.boards()]).then(([m, c, b]) => { setItems(m); setContents(c); setBoards(b) }).catch((e) => setFailure(`불러오지 못했습니다. ${describeFailure(e)}`))
-  useEffect(() => { void load() }, [api])
+  useCmsList(api, load)
   /** 되묻기 후보와 미리보기 트리는 화면이 이미 가진 목록에서 나온다. 등록은 고정 표식으로 고른다. */
   useEffect(() => {
     onCandidates([NEW_MENU_TARGET, ...items.map(menuTarget)])
@@ -216,7 +233,7 @@ function Contents({ api, onSelect, onCandidates }: {
   const [body, setBody] = useState('')
   const [failure, setFailure] = useState<string | null>(null)
   const load = () => api.contents().then(setItems).catch((e) => setFailure(`불러오지 못했습니다. ${describeFailure(e)}`))
-  useEffect(() => { void load() }, [api])
+  useCmsList(api, load)
   useEffect(() => {
     onCandidates(items.map(contentTarget))
   }, [items, onCandidates])
@@ -283,7 +300,7 @@ function Boards({ api }: { api: CmsApi }) {
   const [body, setBody] = useState('')
   const [failure, setFailure] = useState<string | null>(null)
   const loadBoards = () => api.boards().then(setBoards).catch((e) => setFailure(`불러오지 못했습니다. ${describeFailure(e)}`))
-  useEffect(() => { void loadBoards() }, [api])
+  useCmsList(api, loadBoards)
   async function chooseBoard(board: Board) { setSelectedBoard(board); setBoardName(board.name); setDescription(board.description); setSelectedPost(null); setTitle(''); setBody(''); try { setPosts(await api.posts(board.id)) } catch (e) { setFailure(describeFailure(e)) } }
   function newBoard() { setSelectedBoard(null); setBoardName(''); setDescription(''); setPosts([]); setSelectedPost(null); setTitle(''); setBody('') }
   async function saveBoard(event: FormEvent) { event.preventDefault(); setFailure(null); const action = selectedBoard ? '수정' : '등록'; try { const saved = selectedBoard ? await api.updateBoard(selectedBoard.id, { name: boardName, description }) : await api.createBoard({ name: boardName, description }); await loadBoards(); await chooseBoard(saved); notifySiteUpdated(); notifyCmsSuccess(`게시판을 ${action}했습니다.`) } catch (e) { setFailure(`게시판을 저장하지 못했습니다. ${describeFailure(e)}`) } }
@@ -360,7 +377,7 @@ function Templates({ api }: { api: CmsApi }) {
   const [preview, setPreview] = useState<SiteTemplate | null>(null)
   const [failure, setFailure] = useState<string | null>(null)
   const load = () => api.templates().then((next) => { setItems(next); setValue((current) => current ? next.find((item) => item.key === current.key) ?? current : next[0]) }).catch((e) => setFailure(`불러오지 못했습니다. ${describeFailure(e)}`))
-  useEffect(() => { void load() }, [api])
+  useCmsList(api, load)
   async function submit(event: FormEvent) {
     event.preventDefault()
     if (!value) return

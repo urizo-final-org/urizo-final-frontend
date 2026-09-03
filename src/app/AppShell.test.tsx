@@ -409,14 +409,21 @@ test('the menu assistant waits for the preview the pipeline fills in later', asy
       fields: { name: '자료실', path: '/support/archive', parentId: 40 },
     },
   }
+  // 승인 뒤 서버는 새 메뉴를 포함해 돌려준다. 화면이 다시 읽는지 보려는 것이다.
+  let applied = false
+  const addedMenu = { id: 41, name: '자료실', path: '/support/archive', parentId: 40, displayOrder: 30, targetType: 'NONE', targetId: null }
   vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => {
     const url = String(input)
     if (url === '/api/auth/refresh') return Promise.resolve(json(session('SUPER_ADMIN', '최고 관리자')))
-    if (url === '/api/cms/menus') return Promise.resolve(json(menus))
+    if (url === '/api/cms/menus') return Promise.resolve(json(applied ? [...menus, addedMenu] : menus))
     if (url.startsWith('/api/admin/ai/profile-versions')) {
       return Promise.resolve(json([{ profileVersionId, profileKey: 'NATURAL_CMS', status: 'ACTIVE' }]))
     }
     if (url === '/api/natural-cms/jobs') return Promise.resolve(json(created))
+    if (url === `/api/natural-cms/jobs/${jobId}/decisions`) {
+      applied = true
+      return Promise.resolve(json({ ...previewed, status: 'COMPLETED' }))
+    }
     if (url === `/api/natural-cms/jobs/${jobId}`) return Promise.resolve(json(previewed))
     return Promise.resolve(json([]))
   }))
@@ -436,6 +443,10 @@ test('the menu assistant waits for the preview the pipeline fills in later', asy
   expect(within(modal).getByText('자료실')).toBeInTheDocument()
   expect(within(modal).getByText('추가')).toBeInTheDocument()
   expect(within(modal).queryByText('아직 변경 내용을 받지 못했습니다.')).not.toBeInTheDocument()
+
+  // 승인은 서버가 반영한다. 새로고침 없이 목록이 따라와야 한다.
+  fireEvent.click(within(modal).getByRole('button', { name: '승인하고 반영' }))
+  expect(await screen.findByRole('button', { name: /\/support\/archive/ })).toBeInTheDocument()
 })
 
 test('the page-scoped AI panel collapses to a rail and expands again', async () => {

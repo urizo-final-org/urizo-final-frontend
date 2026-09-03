@@ -1,6 +1,7 @@
 import { type FormEvent, useEffect, useId, useRef, useState } from 'react'
 import type { CmsRouteId } from '../../../app/routes'
 import { describeFailure } from '../../../shared/api/error'
+import { notifyCmsChanged, notifySiteUpdated } from '../api'
 import { Icon } from '../../../shared/ui/icons'
 import { Badge, control, panel, primaryButton, secondaryButton, textarea } from '../../../shared/ui/primitives'
 import AssistantPreviewModal from './AssistantPreviewModal'
@@ -246,6 +247,11 @@ export default function CmsAiAssistant({ route, target, candidates, menus, onTar
         ...(decision === 'REJECTED' ? { feedback: feedback.trim() } : {}),
       })
       setFeedback('')
+      if (decision === 'APPROVED') {
+        // 반영은 서버가 했다. 화면은 자기 폼으로 저장할 때만 다시 읽으므로 여기서 알려준다.
+        notifyCmsChanged()
+        notifySiteUpdated()
+      }
       setPhase(decision === 'APPROVED' ? { kind: 'done', job: decided } : { kind: 'rejected', job: decided })
     }
     catch (failure) {
