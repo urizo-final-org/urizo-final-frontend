@@ -24,13 +24,15 @@ test('the public URL renders the tour portal home without login', async () => {
   expect(tabs.map((tab) => tab.textContent)).toEqual(['전체', '관광지', '숙박', '음식', '체험·레저', '추천코스', '쇼핑', '축제·행사'])
 })
 
-test('a home search moves to the results screen with ten cards and a side filter', async () => {
+test('a home search moves to the results screen with a side filter', async () => {
   vi.stubGlobal('fetch', publicFetch())
   render(<AppShell />)
   fireEvent.change(await screen.findByPlaceholderText('어디로 떠나볼까요?'), { target: { value: '전주 한옥스테이' } })
   fireEvent.click(screen.getByRole('button', { name: '검색' }))
-  expect(await screen.findByRole('heading', { name: '“전주 한옥스테이”과(와) 일치하는 검색 결과' })).toBeInTheDocument()
-  expect(screen.getAllByRole('article')).toHaveLength(10)
+  // 조사는 받침으로 고른다 — '한옥스테이'는 받침이 없으므로 '와'.
+  expect(await screen.findByRole('heading', { name: '“전주 한옥스테이”와 일치하는 검색 결과' })).toBeInTheDocument()
+  // 건수는 단언하지 않는다. 지금 목록 길이는 고정 배열의 결과일 뿐 노출 건수 결정이 아니다.
+  expect(screen.getAllByRole('article').length).toBeGreaterThan(0)
   const filter = () => screen.getByRole('complementary', { name: '검색 필터' })
   expect(within(filter()).getAllByRole('button')).toHaveLength(8)
   fireEvent.click(within(filter()).getByRole('button', { name: '숙박' }))
@@ -38,6 +40,18 @@ test('a home search moves to the results screen with ten cards and a side filter
   // 탭 전환은 프론트 필터링이 아니라 category 파라미터가 붙은 재검색 URL이다(I7 연동 지점).
   expect(window.location.search).toContain('category=stay')
   expect(window.location.search).toContain('q=')
+})
+
+test('the results screen says the list is a fixed sample that ignores query and tab', async () => {
+  window.history.pushState({}, '', '/search?q=%EC%9E%90%EC%97%B0&category=attraction')
+  vi.stubGlobal('fetch', publicFetch())
+  render(<AppShell />)
+  // 실재하는 이름을 쓰므로 표본임을 밝히는 단서가 화면에 있어야 한다.
+  const note = within(await screen.findByRole('note'))
+  expect(note.getByText('샘플 데이터 · 검색 API 미배선')).toBeInTheDocument()
+  // 필터가 '관광지'인데 목록은 숙박·음식이 섞여 있다. 표기가 그 어긋남까지 덮어야 한다.
+  expect(note.getByText(/검색어와 카테고리 탭은 아직 결과에 반영되지 않습니다/)).toBeInTheDocument()
+  expect(screen.getByRole('heading', { name: '“자연”과 일치하는 검색 결과' })).toBeInTheDocument()
 })
 
 test('the results screen never shows a score, rating or review count', async () => {

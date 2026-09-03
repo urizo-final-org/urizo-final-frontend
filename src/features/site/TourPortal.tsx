@@ -1,5 +1,6 @@
 import { useState, type FormEvent, type ReactNode } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
+import { withParticle } from './particle'
 import { PORTAL_TABS } from './portal-meta'
 
 /**
@@ -16,6 +17,17 @@ function Placeholder({ label, className = '', children }: { label: string; class
     <span className="max-w-full overflow-hidden text-ellipsis whitespace-nowrap px-2 text-center font-mono text-[0.625rem] text-site-ph-ink">{label}</span>
     {children}
   </div>
+}
+
+/**
+ * 정적 표본임을 밝히는 안내. 실재하는 이름을 쓰기 시작하면 오히려 실데이터로 보이므로 화면에
+ * 구별 단서를 남긴다.
+ */
+function SampleNotice({ children, className = '' }: { children: ReactNode; className?: string }) {
+  return <p className={`m-0 flex flex-wrap items-baseline gap-x-2 gap-y-1 rounded-lg border border-[#efd8aa] bg-wait-bg px-3 py-2 text-[0.78125rem] leading-[1.6] text-wait-fg ${className}`} role="note">
+    <b className="font-bold">샘플 데이터 · 검색 API 미배선</b>
+    <span className="min-w-0 flex-1">{children}</span>
+  </p>
 }
 
 function SearchGlyph({ size = '1.25rem' }: { size?: string }) {
@@ -166,26 +178,27 @@ export function PortalHome() {
   </main>
 }
 
-type MockResult = { name: string; cat: string; addr: string; desc: string }
+type MockResult = { name: string; categoryId: string; cat: string; addr: string; desc: string }
 
 /**
- * I7이 공개 검색 API 응답으로 교체할 정적 결과. 표시 규칙을 반영했다 — F1: 10건, F2: score 미표시,
- * F4: category_label 뱃지, 주소는 본문 `[주소]` 줄(portal-meta.addressLine)에서 온다.
+ * 코퍼스(`tourism-sample-documents-500.json`)에 실재하는 문서만 담는다. 이름·분류·주소·개요는
+ * 원문에서 가져왔고, 없는 값은 비운다(대동고택은 `[개요]` 줄이 없어 desc가 빈 문자열).
  *
- * <p>시안 카드의 별점·평점·리뷰 수·리뷰 인용문은 옮기지 않았다. 코퍼스에 없는 데이터인 데다
- * 별점은 F2가 금지한 점수 표현이다.
+ * <p>여기 담긴 8건은 "주소에 전주가 들어가는 문서 전부"라는 사실의 결과일 뿐 노출 건수 결정이 아니다.
+ * 배선 뒤에는 `CITATION_LIMIT = 3`처럼 더 적을 수 있으므로 카드 수에 기대는 레이아웃을 두지 않는다.
+ *
+ * <p>`categoryId`는 탭 접두 매핑(portal-meta)과 맞춰 뒀다. I7이 이 배열을 공개 검색 API 응답으로
+ * 바꿀 때 필터 축이 이미 붙어 있게 하려는 것이고, 지금 화면 표시에는 쓰지 않는다.
  */
 const MOCK_RESULTS: MockResult[] = [
-  { name: '도원', cat: '숙박 · 펜션/민박', addr: '전북특별자치도 전주시 완산구 팔달로 58-3 (서서학동)', desc: '객리단길에 위치한 한옥 독채 스테이. 마당에서 실외 욕조를 사용할 수 있으며, 오직 한 팀만을 위한 프라이빗 숙소로 운영한다.' },
-  { name: '더 한옥', cat: '숙박 · 펜션/민박', addr: '전북특별자치도 전주시 완산구 은행로 68-15', desc: '한옥마을 최중심지에 위치해 전동성당·풍남문·오목대·향교까지 모두 걸어서 5분 거리에 닿을 수 있는 최적의 자리에 있다.' },
-  { name: '대동고택', cat: '숙박 · 펜션/민박', addr: '전북특별자치도 전주시 완산구 대동로 7-13 (태평동)', desc: '전주 한옥마을 인근의 고택 숙소. 객실 1실 독채로 운영하며, 고즈넉한 마당과 툇마루에서 조용한 시간을 보낼 수 있다.' },
-  { name: '학인당', cat: '체험 · 전통문화', addr: '전북특별자치도 전주시 완산구 향교길 45', desc: '백범 김구 선생이 머물렀던 근대 한옥. 고택 숙박과 함께 다례·국악 등 전통문화 체험 프로그램을 운영한다.' },
-  { name: '오목헌', cat: '숙박 · 한옥스테이', addr: '전북특별자치도 전주시 완산구 오목대길 16', desc: '오목대 언덕 아래 자리한 한옥 스테이. 툇마루에 앉으면 한옥마을의 기와지붕 풍경이 한눈에 내려다보인다.' },
-  { name: '청연재', cat: '숙박 · 한옥스테이', addr: '전북특별자치도 전주시 완산구 한지길 33', desc: '전통 한지 공방 골목에 자리한 소규모 한옥 숙소. 온돌방과 다도 공간을 갖추고 있어 느린 여행에 어울린다.' },
-  { name: '전주한옥마을', cat: '관광지 · 문화관광', addr: '전북특별자치도 전주시 완산구 기린대로 99', desc: '700여 채의 전통 한옥이 모여 있는 국내 최대 규모의 한옥 밀집 지역. 경기전, 전동성당 등 주요 명소가 도보권에 있다.' },
-  { name: '교동다원', cat: '음식 · 카페/찻집', addr: '전북특별자치도 전주시 완산구 은행로 65-5', desc: '한옥마을 안 전통 찻집. 오래된 한옥 마루에서 수제 쌍화차와 대추차를 맛볼 수 있어 산책 중 쉬어가기 좋다.' },
-  { name: '달빛한옥', cat: '숙박 · 펜션/민박', addr: '전북특별자치도 전주시 완산구 최명희길 12-4', desc: '한옥마을 골목 안쪽의 조용한 한옥 숙소. 밤이면 마당에서 달빛 아래 차 한 잔을 즐길 수 있는 야외 좌석을 운영한다.' },
-  { name: '전주향교', cat: '관광지 · 역사유적', addr: '전북특별자치도 전주시 완산구 향교길 139', desc: '고려시대에 창건된 향교로 가을이면 400년 된 은행나무가 노랗게 물든다. 한옥마을 동쪽 끝에서 도보로 닿는다.' },
+  { name: '도원', categoryId: 'AC03', cat: '숙박 > 펜션/민박', addr: '전북특별자치도 전주시 완산구 팔달로 58-3 (서서학동)', desc: '다가도원은 객리단길에 위치한 한옥독채스테이다. 마당에서 실외 욕조를 사용 할 수 있다. 오직 한 팀만을 위한 독채 숙소로 운영 중이다.' },
+  { name: '대동고택', categoryId: 'AC03', cat: '숙박 > 펜션/민박', addr: '전북특별자치도 전주시 완산구 대동로 7-13 (태평동)', desc: '' },
+  { name: '더 한옥', categoryId: 'AC03', cat: '숙박 > 펜션/민박', addr: '전북특별자치도 전주시 완산구 은행로 68-15 (교동)', desc: '더한옥은 한옥마을 최중심지에 위치하여, 40년 동안 3명의 박사를 배출한 정남향의 명당터로서 현재 3대째 살고 있으며, 한옥마을 볼거리인 전동성당, 풍남문, 오목대, 향교, 전주천 및 공용주차장을 걸어서 5분 거리에 갈수 있는 최적의 위치에 자리 잡고 있다.' },
+  { name: '베니키아 전주한성 호텔', categoryId: 'AC_ETC', cat: '숙박 > 호텔·콘도·모텔·호스텔', addr: '전북특별자치도 전주시 완산구 전주객사5길 43-3 (고사동)', desc: '전주 한성 관광호텔은 1949년 전라북도 최초로 창립된 전통 여관에서 시작된 호텔이다. 현재는 3대째 가업을 이어오며 관광호텔로 발전하였고, 세계에서 하나뿐인 스테인리스 전통욕조를 체험할 수 있다.' },
+  { name: '블루원호텔', categoryId: 'AC_ETC', cat: '숙박 > 호텔·콘도·모텔·호스텔', addr: '전북특별자치도 전주시 덕진구 용산2길 18', desc: '전주시에 위치한 블루원호텔은 모던한 인테리어 꾸며진 객실에는 인터넷이 설치되어 있고, 에어컨, 냉장고 등이 구비되어 있는 숙소이다.' },
+  { name: '밥상위의한우', categoryId: 'FD01', cat: '음식 > 한식', addr: '전북특별자치도 전주시 완산구 천잠로 341', desc: "전주대학교 입구에 있는 '밥상위의한우'는 드라이에이징 기법으로 한우를 숙성시켜서 판매하고 있는 전문점이다. 넓은 좌석을 보유하고 있어 각종 모임에 적합하다." },
+  { name: '삼천빌리지 카페', categoryId: 'FD05', cat: '음식 > 카페/찻집', addr: '전북특별자치도 전주시 완산구 용와길 4-27 (평화동3가)', desc: '삼천빌리지카페는 바쁜 일상 속에서 잠시 쉬어갈 수 있는 여유로운 공간이다. 자연스러운 감성과 세련된 인테리어가 조화를 이루어 편안하면서도 감각적인 분위기를 자아낸다.' },
+  { name: '호남제일문', categoryId: 'HS01', cat: '역사관광 > 역사유적지', addr: '전북특별자치도 전주시 덕진구 여의동 1217-9', desc: '전주 IC 인근에 있는 호남제일문은 길이 43m, 폭 3.5m, 높이 12.4m의 규모를 자랑하는 국내에서 가장 큰 일주문이다. 전주의 지역 특색과도 잘 어울리는 한옥으로 지어졌다.' },
 ]
 
 export function PortalSearch() {
@@ -243,11 +256,14 @@ export function PortalSearch() {
         </aside>
 
         <div>
-          {/* 시안의 "OO 근처의 검색결과 표시"는 위치 기능이 없어 검색어 기준 문구로 바꿨다. */}
-          <p className="m-0 mb-1.5 text-[0.8125rem] text-muted">{MOCK_RESULTS.length}건의 검색 결과</p>
-          <h1 className="m-0 mb-7 text-[clamp(1.5rem,2.6vw,2rem)] font-extrabold tracking-[-.04em] text-ink">
-            {query ? `“${query}”과(와) 일치하는 검색 결과` : '전체 검색 결과'}
+          {/* 시안의 "OO 근처의 검색결과 표시"는 위치 기능이 없어 옮기지 않았다. 건수도 적지 않는다 —
+              지금 값은 고정 배열 길이일 뿐이고 배선 뒤 건수를 여기서 약속할 근거가 없다. */}
+          <h1 className="m-0 mb-3 text-[clamp(1.5rem,2.6vw,2rem)] font-extrabold tracking-[-.04em] text-ink">
+            {query ? `“${query}”${withParticle(query, '과', '와')} 일치하는 검색 결과` : '검색 결과'}
           </h1>
+          <SampleNotice className="mb-7">
+            아래 목록은 코퍼스에 실재하는 문서를 고정해 둔 것입니다. <b className="font-semibold">검색어와 카테고리 탭은 아직 결과에 반영되지 않습니다</b> — 검색 API 배선(I7) 전이라 무엇을 입력하거나 선택해도 같은 목록이 나옵니다.
+          </SampleNotice>
 
           <div className="flex flex-col gap-[0.875rem]">
             {MOCK_RESULTS.map((result) => <article key={result.name} className="grid grid-cols-[15rem_minmax(0,1fr)] overflow-hidden rounded-2xl border border-line-soft bg-panel max-[680px]:grid-cols-1">
