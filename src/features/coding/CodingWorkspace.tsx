@@ -9,7 +9,7 @@ import type {
   ApprovalDecision, ApprovalStage, CodingConsoleApiClient, CodingJobStatus, CodingNotification,
   CodingRepository, JobDetail, JobSummary, PendingApproval, RunnerStatus,
 } from './api'
-import { markSeen, notificationSentence, sinceLabel } from './notifications'
+import { lastSeenAt, markSeen, notificationSentence, sinceLabel, unseen } from './notifications'
 
 /**
  * E1, the request screen.
@@ -167,6 +167,11 @@ export default function CodingWorkspace({ api, role }: { api: CodingConsoleApiCl
   const [runner, setRunner] = useState<RunnerStatus | null>(null)
   const [notifications, setNotifications] = useState<CodingNotification[]>([])
   const [refusedReason, setRefusedReason] = useState<string | null>(null)
+  /* Captured once, at mount. The screen marks the news read on every tick so the bell clears,
+   * so measuring against the live mark would empty this panel fifteen seconds after it filled.
+   * Held still, it shows what was new when the reader arrived, plus whatever arrives while
+   * they watch - and starts empty next time they come back. */
+  const [seenBeforeOpening] = useState(() => lastSeenAt())
   const [nowMs, setNowMs] = useState(() => Date.now())
 
   /**
@@ -415,7 +420,10 @@ export default function CodingWorkspace({ api, role }: { api: CodingConsoleApiCl
           </form>
         </section>
 
-        <RecentNotifications items={notifications} nowMs={nowMs} />
+        <RecentNotifications
+          items={unseen(notifications, seenBeforeOpening)}
+          nowMs={nowMs}
+        />
 
         <ExecutionHistory items={history} nowMs={nowMs} />
       </>}
@@ -432,7 +440,7 @@ export default function CodingWorkspace({ api, role }: { api: CodingConsoleApiCl
 function RecentNotifications({ items, nowMs }: { items: CodingNotification[]; nowMs: number }) {
   if (items.length === 0) return <></>
   return <section className={`${panel} mt-[0.875rem]`}>
-    <PanelTitle title="최근 알림" sub="다른 관리자의 결정과 내 승인 차례" />
+    <PanelTitle title="새 소식" sub="아직 확인하지 않은 결정과 내 승인 차례" />
     <ul className="px-4 pb-4 pt-[0.375rem]">
       {items.slice(0, 8).map((item) => <li
         key={`${item.kind}-${item.jobId}-${item.occurredAt ?? ''}`}

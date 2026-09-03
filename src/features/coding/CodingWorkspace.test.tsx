@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { expect, test, vi } from 'vitest'
+import { beforeEach, expect, test, vi } from 'vitest'
 import CodingWorkspace from './CodingWorkspace'
 import { ProductApiError } from '../../shared/api/error'
 import type { CodingConsoleApiClient, JobDetail, JobSummary } from './api'
@@ -41,6 +41,11 @@ function consoleApi(overrides: Partial<CodingConsoleApiClient> = {}): CodingCons
     ...overrides,
   }
 }
+
+/* The screen marks the news read as it loads, and that mark outlives one test. */
+beforeEach(() => {
+  window.localStorage.clear()
+})
 
 /**
  * The screen asks for a sentence in Korean. It used to ask the writer to first classify that
@@ -600,7 +605,7 @@ test('the screen lists what another administrator decided, naming them', async (
     }),
   })} />)
 
-  expect(await screen.findByText('최근 알림')).toBeInTheDocument()
+  expect(await screen.findByText('새 소식')).toBeInTheDocument()
   expect(screen.getByText('최고 관리자님이 코드 단계를 승인했습니다')).toBeInTheDocument()
   expect(screen.getByText('3분 전')).toBeInTheDocument()
   expect(screen.getByText('계획 단계에서 승인을 기다리고 있습니다')).toBeInTheDocument()
@@ -610,7 +615,7 @@ test('no news means no panel rather than an empty one', async () => {
   render(<CodingWorkspace role="GENERAL_ADMIN" api={consoleApi()} />)
 
   await screen.findByRole('button', { name: '요청 보내기' })
-  expect(screen.queryByText('최근 알림')).not.toBeInTheDocument()
+  expect(screen.queryByText('새 소식')).not.toBeInTheDocument()
 })
 
 /*
@@ -699,4 +704,29 @@ test('a refusal is shown even while an older request still waits for approval', 
   // And the older approval is still reachable, labelled as the older one.
   expect(screen.getByText(/아래는 이전에 보낸 요청이며/)).toBeInTheDocument()
   expect(screen.getAllByText(stillWaiting.requestText).length).toBeGreaterThan(0)
+})
+
+/* B: the panel is news, not history. What the reader already acknowledged is gone next time. */
+test('news already read does not come back on the next visit', async () => {
+  window.localStorage.setItem(
+    'axms.coding.notifications.seenAt', new Date(Date.now() + 60_000).toISOString())
+
+  render(<CodingWorkspace role="GENERAL_ADMIN" api={consoleApi({
+    notifications: vi.fn().mockResolvedValue({
+      schemaVersion: '1.0',
+      items: [{
+        kind: 'APPROVAL_DECIDED',
+        jobId: 'ffffffff-6666-4666-8666-666666666666',
+        requestText: '어제 승인한 요청',
+        stage: '배포',
+        decision: 'APPROVED',
+        actorName: '최고 관리자',
+        actorRole: 'SUPER_ADMIN',
+        occurredAt: new Date(Date.now() - 3 * 3_600_000).toISOString(),
+      }],
+    }),
+  })} />)
+
+  await screen.findByRole('button', { name: '요청 보내기' })
+  expect(screen.queryByText('새 소식')).not.toBeInTheDocument()
 })
