@@ -93,14 +93,12 @@ export default function PublicSite() {
   if (site.publicPath === '/') {
     return <div className="flex min-h-screen flex-col overflow-x-hidden bg-panel text-ink" style={style}>
       {siteFailure && <div className="flex items-center justify-center gap-3 border-b border-[#f2d5d3] bg-[#fdebea] px-5 py-3 text-xs text-[#b4615d]" role="alert"><span>{siteFailure}</span><button type="button" className="rounded border border-current px-3 py-1 font-bold" onClick={loadSite}>다시 시도</button></div>}
+      <PortalHeader />
       {routePath === '/search'
         ? <PortalSearch />
-        : <>
-            <PortalHeader />
-            {routePath === '/'
-              ? <PortalHome />
-              : <SubPage menu={currentMenu} menus={menus} board={currentBoard} content={content} posts={posts} post={post} failure={failure} publicPath={site.publicPath} />}
-          </>}
+        : routePath === '/'
+          ? <PortalHome />
+          : <SubPage menu={currentMenu} menus={menus} board={currentBoard} content={content} posts={posts} post={post} failure={failure} publicPath={site.publicPath} />}
       <ChatWidget />
     </div>
   }

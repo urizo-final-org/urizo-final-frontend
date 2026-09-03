@@ -15,33 +15,51 @@ beforeEach(() => {
 test('the public URL renders the tour portal home without login', async () => {
   vi.stubGlobal('fetch', publicFetch())
   render(<AppShell />)
-  expect(await screen.findByRole('heading', { name: '이번 여행, 어디로 갈까요?' })).toBeInTheDocument()
+  expect(await screen.findByRole('heading', { name: '어디로 떠나볼까요?' })).toBeInTheDocument()
   expect(screen.getByRole('link', { name: 'CMS 관리자' })).toHaveAttribute('href', '/admin')
-  expect(screen.getByRole('navigation', { name: '카테고리' })).toBeInTheDocument()
   expect(screen.getByRole('heading', { name: '이번 주 인기 여행지' })).toBeInTheDocument()
   expect(screen.getByRole('button', { name: '관광 도우미 열기' })).toBeInTheDocument()
+  // 탭은 확정 8종이다. 시안이 6종이어도 이 개수를 따라가지 않는다.
+  const tabs = within(screen.getByRole('tablist', { name: '여행 검색 카테고리' })).getAllByRole('tab')
+  expect(tabs.map((tab) => tab.textContent)).toEqual(['전체', '관광지', '숙박', '음식', '체험·레저', '추천코스', '쇼핑', '축제·행사'])
 })
 
-test('a home search moves to the results screen with ten cards and category tabs', async () => {
+test('a home search moves to the results screen with ten cards and a side filter', async () => {
   vi.stubGlobal('fetch', publicFetch())
   render(<AppShell />)
   fireEvent.change(await screen.findByPlaceholderText('어디로 떠나볼까요?'), { target: { value: '전주 한옥스테이' } })
   fireEvent.click(screen.getByRole('button', { name: '검색' }))
-  expect(await screen.findByText(/검색 결과/)).toBeInTheDocument()
+  expect(await screen.findByRole('heading', { name: '“전주 한옥스테이”과(와) 일치하는 검색 결과' })).toBeInTheDocument()
   expect(screen.getAllByRole('article')).toHaveLength(10)
-  const tabs = () => screen.getByRole('navigation', { name: '카테고리 탭' })
-  fireEvent.click(within(tabs()).getByRole('button', { name: '숙박' }))
-  await waitFor(() => expect(within(tabs()).getByRole('button', { name: '숙박' })).toHaveAttribute('aria-current', 'true'))
+  const filter = () => screen.getByRole('complementary', { name: '검색 필터' })
+  expect(within(filter()).getAllByRole('button')).toHaveLength(8)
+  fireEvent.click(within(filter()).getByRole('button', { name: '숙박' }))
+  await waitFor(() => expect(within(filter()).getByRole('button', { name: '숙박' })).toHaveAttribute('aria-current', 'true'))
   // 탭 전환은 프론트 필터링이 아니라 category 파라미터가 붙은 재검색 URL이다(I7 연동 지점).
   expect(window.location.search).toContain('category=stay')
   expect(window.location.search).toContain('q=')
 })
 
-test('a home category shortcut opens the results screen with that tab active', async () => {
+test('the results screen never shows a score, rating or review count', async () => {
+  window.history.pushState({}, '', '/search?q=%EC%A0%84%EC%A3%BC')
   vi.stubGlobal('fetch', publicFetch())
   render(<AppShell />)
-  fireEvent.click(await screen.findByRole('button', { name: '숙박' }))
-  await waitFor(() => expect(within(screen.getByRole('navigation', { name: '카테고리 탭' })).getByRole('button', { name: '숙박' })).toHaveAttribute('aria-current', 'true'))
+  await screen.findByRole('complementary', { name: '검색 필터' })
+  // F2: 원점수·정규화·별점 환산 어느 형태로도 노출하지 않는다.
+  expect(document.body.textContent).not.toMatch(/[★☆]|\d건의 리뷰|\d\.\d\s*점/)
+})
+
+test('a home tab selection carries its category into the search', async () => {
+  vi.stubGlobal('fetch', publicFetch())
+  render(<AppShell />)
+  const tablist = within(await screen.findByRole('tablist', { name: '여행 검색 카테고리' }))
+  // 시안대로 탭 클릭은 선택 상태만 바꾸고, 이동은 검색 제출에서 일어난다.
+  fireEvent.click(tablist.getByRole('tab', { name: '숙박' }))
+  expect(tablist.getByRole('tab', { name: '숙박' })).toHaveAttribute('aria-selected', 'true')
+  expect(window.location.pathname).toBe('/')
+
+  fireEvent.click(screen.getByRole('button', { name: '검색' }))
+  await waitFor(() => expect(window.location.pathname).toBe('/search'))
   expect(window.location.search).toBe('?category=stay')
 })
 
@@ -100,7 +118,7 @@ test('an initial public Site failure is visible and retry recovers the page', as
 
   expect(await screen.findByRole('alert')).toHaveTextContent('일시적인 Site 장애입니다.')
   fireEvent.click(screen.getByRole('button', { name: '다시 시도' }))
-  expect(await screen.findByRole('heading', { name: '이번 여행, 어디로 갈까요?' })).toBeInTheDocument()
+  expect(await screen.findByRole('heading', { name: '어디로 떠나볼까요?' })).toBeInTheDocument()
   expect(contextCalls).toBe(2)
 })
 
