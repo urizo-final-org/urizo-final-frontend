@@ -1,7 +1,8 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, expect, test, vi } from 'vitest'
+import { ProductApiError } from '../../shared/api/error'
 import AgentSettingsWorkspace from './AgentSettingsWorkspace'
-import { starterSnapshots } from './WorkflowPanel'
+import { resolveEdgePorts, starterSnapshots } from './WorkflowPanel'
 import type { AgentSettingsApiClient, ProfileVersion, ProviderConnectionTestResult } from './api'
 
 afterEach(() => vi.unstubAllGlobals())
@@ -19,6 +20,13 @@ function profileApi(overrides: Partial<AgentSettingsApiClient> = {}): AgentSetti
     list: vi.fn().mockResolvedValue([activeVersion]),
     create: vi.fn().mockResolvedValue({ ...activeVersion, profileVersionId: 'version-3', profileVersion: 3, status: 'DRAFT' }),
     activate: vi.fn().mockResolvedValue({ ...activeVersion, profileVersionId: 'version-3', profileVersion: 3 }),
+    getEditorLayout: vi.fn().mockResolvedValue({
+      profileVersionId: 'version-2', createdAt: '2026-09-03T00:00:00Z',
+      nodes: starterSnapshots.LLM_OPS.nodes.map((node, index) => ({ id: node.id, x: 48 + index * 244, y: 48 })),
+    }),
+    saveEditorLayout: vi.fn().mockResolvedValue({
+      profileVersionId: 'version-3', createdAt: '2026-09-03T00:00:00Z', nodes: [],
+    }),
     listProviderCredentials: vi.fn().mockResolvedValue({
       csrfToken: 'csrf-fixture',
       providers: [
@@ -304,23 +312,55 @@ test('the Workflow Canvas loads the latest stored Snapshot with exact edges, bin
   expect(screen.getByRole('button', { name: 'analyze.feasible에서 scope_approval 연결 해제' })).toBeInTheDocument()
 })
 
+test('the Workflow Canvas restores saved coordinates, while auto layout remains local and deterministic', async () => {
+  const storedNodes = starterSnapshots.LLM_OPS.nodes.map((node, index) => ({ id: node.id, x: 700 - index * 9, y: 120 + index * 17 }))
+  const api = profileApi({
+    getEditorLayout: vi.fn().mockResolvedValue({ profileVersionId: 'version-2', createdAt: '2026-09-03T00:00:00Z', nodes: storedNodes }),
+  })
+  render(<AgentSettingsWorkspace api={api} />)
+
+  const start = await screen.findByLabelText('start Node')
+  expect(start).toHaveAttribute('data-node-x', '700')
+  expect(start).toHaveAttribute('data-node-y', '120')
+  fireEvent.click(screen.getByRole('button', { name: '자동 배치' }))
+  expect(start).toHaveAttribute('data-node-x', '48')
+  expect(start).toHaveAttribute('data-node-y', '48')
+  expect(api.saveEditorLayout).not.toHaveBeenCalled()
+})
+
+test('the Workflow Canvas falls back to deterministic auto layout when an older Version has no Editor Layout', async () => {
+  const api = profileApi({
+    getEditorLayout: vi.fn().mockRejectedValue(new ProductApiError({
+      status: 404, code: 'PROFILE_EDITOR_LAYOUT_NOT_FOUND', message: 'Layout missing', traceId: 'layout-missing', retryable: false,
+    })),
+  })
+  render(<AgentSettingsWorkspace api={api} />)
+
+  const start = await screen.findByLabelText('start Node')
+  expect(start).toHaveAttribute('data-node-x', '48')
+  expect(start).toHaveAttribute('data-node-y', '48')
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+})
+
 test('the Workflow Canvas uses a left control dock and one scrollable coordinate system for layered Nodes and lower detours', async () => {
+  vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => { callback(0); return 0 })
   render(<AgentSettingsWorkspace api={profileApi()} />)
 
   await screen.findByLabelText('analyze Node')
   const canvas = screen.getByLabelText('Node 편집 Canvas')
   const dock = screen.getByLabelText('Workflow control dock')
   const paletteToggle = screen.getByRole('button', { name: /등록 Handler Palette/ })
+  const toolPolicyToggle = screen.getByRole('button', { name: /Profile 허용 Tool/ })
 
   expect(canvas.className).toContain('bg-[#20262e]')
   expect(dock).toHaveTextContent('Node 설정')
-  expect(paletteToggle).toHaveAttribute('aria-expanded', 'true')
+  expect(paletteToggle).toHaveAttribute('aria-expanded', 'false')
+  expect(toolPolicyToggle).toHaveAttribute('aria-expanded', 'false')
   expect(paletteToggle).toHaveAttribute('aria-controls', 'handler-palette-panel')
   fireEvent.click(paletteToggle)
-  expect(paletteToggle).toHaveAttribute('aria-expanded', 'false')
-  fireEvent.click(paletteToggle)
-  expect(canvas.querySelectorAll('[data-node-port="input"]')).toHaveLength(starterSnapshots.LLM_OPS.nodes.length)
-  expect(canvas.querySelectorAll('[data-node-port="output"]')).toHaveLength(starterSnapshots.LLM_OPS.nodes.length)
+  expect(paletteToggle).toHaveAttribute('aria-expanded', 'true')
+  expect(canvas.querySelectorAll('[data-node-port="left"]')).toHaveLength(starterSnapshots.LLM_OPS.nodes.length)
+  expect(canvas.querySelectorAll('[data-node-port="right"]')).toHaveLength(starterSnapshots.LLM_OPS.nodes.length)
   expect(canvas.querySelector('[data-edge-route="direct"]')).not.toBeNull()
   expect(canvas.querySelector('[data-edge-route="detour"]')).not.toBeNull()
   expect(canvas.querySelector('[data-edge-route="detour"][data-edge-lane="0"]')).not.toBeNull()
@@ -334,12 +374,13 @@ test('the Workflow Canvas uses a left control dock and one scrollable coordinate
   const viewport = canvas.closest('[data-canvas-viewport]') as HTMLDivElement
   viewport.scrollLeft = 120
   viewport.scrollTop = 90
-  fireEvent.pointerDown(canvas, { pointerId: 7, clientX: 400, clientY: 320 })
+  const canvasContent = canvas.querySelector('[data-canvas-content]') as HTMLDivElement
+  fireEvent.pointerDown(canvasContent, { pointerId: 7, clientX: 400, clientY: 320 })
   expect(canvas.className).toContain('cursor-grabbing')
-  fireEvent.pointerMove(canvas, { pointerId: 7, clientX: 350, clientY: 260 })
+  fireEvent.pointerMove(canvasContent, { pointerId: 7, clientX: 350, clientY: 260 })
   expect(viewport.scrollLeft).toBe(170)
   expect(viewport.scrollTop).toBe(150)
-  fireEvent.pointerUp(canvas, { pointerId: 7 })
+  fireEvent.pointerUp(canvasContent, { pointerId: 7 })
   expect(canvas.className).toContain('cursor-grab')
 
   fireEvent.pointerDown(screen.getByLabelText('analyze Node'), { pointerId: 8, clientX: 350, clientY: 260 })
@@ -347,6 +388,23 @@ test('the Workflow Canvas uses a left control dock and one scrollable coordinate
   expect(viewport.scrollLeft).toBe(170)
   expect(viewport.scrollTop).toBe(150)
   expect(screen.getByText('Retry·Reject 하단 Routing')).toBeInTheDocument()
+
+  fireEvent.wheel(canvas, { deltaY: -100, clientX: 400, clientY: 320 })
+  expect(canvas).toHaveAttribute('data-canvas-zoom', '1.1')
+  expect(canvasContent).toHaveStyle({ transform: 'scale(1.1)' })
+  expect(screen.getByLabelText('Canvas 확대 비율')).toHaveTextContent('110%')
+})
+
+test('feedback Edges choose the open side of their source Node after Nodes move', () => {
+  const node = (id: string, x: number, y: number) => ({ ...starterSnapshots.LLM_OPS.nodes.find((item) => item.id === id)!, x, y })
+  const nodes = [node('review', 300, 100), node('preview', 500, 500), node('preview_approval', 200, 100), node('rework_gate', 200, 350), node('code', 80, 100), node('end', 800, 350)]
+  const edges = [
+    { from: 'review', resultPort: 'passed', to: 'preview' }, { from: 'preview', resultPort: 'ready', to: 'preview_approval' },
+    { from: 'review', resultPort: 'changes_requested', to: 'rework_gate' }, { from: 'rework_gate', resultPort: 'retry', to: 'code' }, { from: 'rework_gate', resultPort: 'handover', to: 'end' },
+  ]
+  expect(resolveEdgePorts(edges[1], nodes, edges)).toEqual({ reverse: true, sourcePort: 'right', targetPort: 'right' })
+  expect(resolveEdgePorts(edges[3], nodes, edges)).toEqual({ reverse: true, sourcePort: 'left', targetPort: 'left' })
+  expect(resolveEdgePorts(edges[4], nodes, edges)).toEqual({ reverse: false, sourcePort: 'right', targetPort: 'left' })
 })
 
 test('the Workflow Profile selector loads the saved NATURAL_CMS production contract', async () => {
@@ -408,6 +466,10 @@ test('Workflow edits save a new immutable DRAFT, activate it explicitly, and res
     modelBindings: expect.objectContaining({ analyze: { primary: 'llm-ops-claude', fallback: ['llm-ops-review'] } }),
     toolPolicy: expect.objectContaining({ allowedTools: expect.not.arrayContaining(['apply_patch']) }),
   }))
+  expect(api.saveEditorLayout).toHaveBeenCalledWith('version-3', expect.any(Array))
+  const savedNodes = (api.saveEditorLayout as ReturnType<typeof vi.fn>).mock.calls[0][1] as Array<Record<string, unknown>>
+  expect(savedNodes).toHaveLength(starterSnapshots.LLM_OPS.nodes.length)
+  expect(savedNodes.every((node) => Object.keys(node).sort().join(',') === 'id,x,y')).toBe(true)
   fireEvent.click(screen.getByLabelText('analyze Node'))
   expect(screen.getByLabelText('선택 Agent Model Binding')).toHaveValue('llm-ops-claude')
   expect(screen.getByLabelText('허용 Tool apply_patch')).not.toBeChecked()
@@ -424,6 +486,22 @@ test('Workflow edits save a new immutable DRAFT, activate it explicitly, and res
   expect(screen.getByLabelText('선택 Agent Model Binding')).toHaveValue('llm-ops-claude')
   expect(screen.getByLabelText('Fallback llm-ops-review')).toBeChecked()
   expect(screen.getByLabelText('허용 Tool apply_patch')).not.toBeChecked()
+})
+
+test('a DRAFT remains visible when its separate Editor Layout save fails', async () => {
+  const draft = { ...activeVersion, profileVersionId: 'version-3', profileVersion: 3, status: 'DRAFT' as const }
+  const api = profileApi({
+    create: vi.fn().mockResolvedValue(draft),
+    saveEditorLayout: vi.fn().mockRejectedValue(new Error('Layout 저장 실패 [INTERNAL_TRANSIENT_ERROR]')),
+    list: vi.fn().mockResolvedValue([draft, activeVersion]),
+  })
+  render(<AgentSettingsWorkspace api={api} />)
+  await screen.findByLabelText('guardrail Node')
+
+  fireEvent.click(screen.getByRole('button', { name: '새 DRAFT 저장' }))
+
+  expect(await screen.findByRole('alert')).toHaveTextContent('v3 DRAFT는 저장됐지만 Editor Layout 저장에 실패했습니다.')
+  expect(screen.getByLabelText('저장된 Workflow Version')).toHaveValue('version-3')
 })
 
 test('the Canvas exposes only registered handlers and result-port edges while locking required nodes', async () => {
