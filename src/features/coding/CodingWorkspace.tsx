@@ -7,7 +7,7 @@ import {
 } from '../../shared/ui/primitives'
 import type {
   ApprovalDecision, ApprovalStage, CodingConsoleApiClient, CodingJobStatus, CodingNotification,
-  CodingRepository, JobDetail, JobSummary, PendingApproval, RunnerStatus,
+  CodingRepository, Handover, JobDetail, JobSummary, PendingApproval, RunnerStatus,
 } from './api'
 import { lastSeenAt, markSeen, notificationSentence, sinceLabel, unseen } from './notifications'
 
@@ -111,6 +111,50 @@ function repositoryLabel(id: string): string {
   return id === 'backend' || id === 'frontend' ? repositoryLabels[id] : id
 }
 
+/**
+ * E7, the handover record (guide 7-8).
+ *
+ * <p>The model was given a fixed number of tries and used them all. What it left behind is a
+ * round-by-round account of what it built and what the review said was still wrong, which is
+ * the whole reason the last refusal ends the Job normally instead of as an error.
+ *
+ * <p>No code here on purpose. The reviewer's words are already written for someone who cannot
+ * read a diff, and the person deciding what to do with an abandoned request is often not the
+ * person who will write the fix. The patch itself stays on the super administrator's screen.
+ */
+function HandoverRecord({ handover }: { handover: Handover }) {
+  return <div className="mt-[0.875rem]">
+    <b className={`${fieldLabel} block`}>AI 가 시도한 기록 {handover.rounds}회</b>
+    <ol className="mt-[0.375rem] space-y-2">
+      {handover.attempts.map((attempt) => <li
+        key={attempt.round}
+        className="rounded-md border border-line p-[0.625rem]"
+      >
+        <div className="flex items-center justify-between gap-2">
+          <b className="text-[0.8125rem] text-body">{attempt.round}번째 시도</b>
+          <Badge tone={attempt.accepted ? 'ok' : 'fail'}>
+            {attempt.accepted ? '검토 통과' : '검토가 보완을 요구함'}
+          </Badge>
+        </div>
+        {attempt.summary && <p className="mt-[0.375rem] text-[0.8125rem] leading-[1.6] text-body">
+          {attempt.summary}
+        </p>}
+        {attempt.criteriaResults.length > 0 && <ul className="mt-[0.375rem] space-y-1">
+          {attempt.criteriaResults.map((result) => <li
+            key={result.criterion}
+            className="flex items-start gap-2 text-[0.75rem] leading-5 text-muted"
+          >
+            <span className="flex-1">{result.criterion}</span>
+            <Badge tone={result.met === true ? 'ok' : result.met === false ? 'fail' : 'idle'}>
+              {result.met === true ? '충족' : result.met === false ? '미충족' : '판정 없음'}
+            </Badge>
+          </li>)}
+        </ul>}
+      </li>)}
+    </ol>
+  </div>
+}
+
 function openJob(items: JobSummary[]): JobSummary | null {
   return items.find((item) => openStatuses.includes(item.status)) ?? null
 }
@@ -179,6 +223,7 @@ export default function CodingWorkspace({ api, role }: { api: CodingConsoleApiCl
   const [runner, setRunner] = useState<RunnerStatus | null>(null)
   const [notifications, setNotifications] = useState<CodingNotification[]>([])
   const [refusedReason, setRefusedReason] = useState<string | null>(null)
+  const [handover, setHandover] = useState<Handover | null>(null)
   /* Captured once, at mount. The screen marks the news read on every tick so the bell clears,
    * so measuring against the live mark would empty this panel fifteen seconds after it filled.
    * Held still, it shows what was new when the reader arrived, plus whatever arrives while
@@ -224,7 +269,10 @@ export default function CodingWorkspace({ api, role }: { api: CodingConsoleApiCl
       // waiting from an hour before - which reads as "the guardrail did not refuse it".
       // A refusal also ends the pipeline as an ordinary success, so status alone would file
       // it under "완료" and say nothing at all.
-      setLastFailed(newest && (newest.status === 'FAILED' || newest.refused === true)
+      // A handover ends the pipeline the same way a refusal does, and would otherwise be
+      // filed under "완료" - the one ending where somebody actually has to pick the work up.
+      setLastFailed(newest && (newest.status === 'FAILED' || newest.refused === true
+        || newest.handedOver === true)
         ? newest : null)
       if (!open) setDetail(null)
       if (open) {
@@ -247,6 +295,18 @@ export default function CodingWorkspace({ api, role }: { api: CodingConsoleApiCl
       }
       else if (active) {
         setRefusedReason(null)
+      }
+      // Same reasoning as the refusal above: the record belongs to the abandoned request, not
+      // to whatever else happens to be open.
+      if (newest?.handedOver) {
+        try {
+          const handedOverDetail = await api.getJob(newest.jobId)
+          if (active) setHandover(handedOverDetail?.handover ?? null)
+        }
+        catch { /* the card still says the request was handed over */ }
+      }
+      else if (active) {
+        setHandover(null)
       }
       if (active && !reload.silent) setLoading(false)
       // The runner warning rides the same tick. A failed read keeps the last known verdict
@@ -357,16 +417,21 @@ export default function CodingWorkspace({ api, role }: { api: CodingConsoleApiCl
           * next step, because "실패" alone leaves the writer with nothing to do about it. */}
         {lastFailed && <section className={`${panel}${current ? ' mb-[0.875rem]' : ''}`}>
           <PanelTitle
-            title={lastFailed.refused ? '이 요청은 진행할 수 없습니다' : '직전 요청이 중단됐습니다'}
+            title={lastFailed.handedOver
+              ? '이 요청은 사람이 이어받아야 합니다'
+              : lastFailed.refused ? '이 요청은 진행할 수 없습니다' : '직전 요청이 중단됐습니다'}
             sub={lastFailed.requestText}
           />
           <div className="px-4 pb-4 pt-[0.375rem]">
             <Callout tone="warn" icon="triangle-alert">
-              {lastFailed.refused
-                ? (refusedReason
-                  ?? '요청한 내용이 지금 허용된 작업 범위 밖이라 진행하지 않았습니다. 최고관리자에게 울타리 설정을 요청해 주세요.')
-                : failureReason(lastFailed.failureCode)}
+              {lastFailed.handedOver
+                ? `AI 가 ${handover?.rounds ?? 3}번 다시 만들었지만 검토를 통과하지 못했습니다. 아래 기록을 개발 담당자에게 전달해 주세요.`
+                : lastFailed.refused
+                  ? (refusedReason
+                    ?? '요청한 내용이 지금 허용된 작업 범위 밖이라 진행하지 않았습니다. 최고관리자에게 울타리 설정을 요청해 주세요.')
+                  : failureReason(lastFailed.failureCode)}
             </Callout>
+            {lastFailed.handedOver && handover && <HandoverRecord handover={handover} />}
           </div>
         </section>}
 

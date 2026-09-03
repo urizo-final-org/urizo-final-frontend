@@ -74,6 +74,12 @@ export interface JobSummary {
    * success - so the screen leans on this instead of on the status.
    */
   refused?: boolean
+  /**
+   * The model used up its rework rounds and the request was handed to a person. It ends the
+   * pipeline the same way and reads as "완료" for the same reason, with a worse consequence:
+   * nobody picks up work they were told had finished.
+   */
+  handedOver?: boolean
 }
 
 export interface JobList {
@@ -104,6 +110,21 @@ export interface DecisionRecord {
   actorRole: string
   feedback?: string
   decidedAt: string
+}
+
+/** One pass the model made at the request, and what the review made of it. */
+export interface CodingAttempt {
+  round: number
+  accepted: boolean
+  summary?: string
+  criteriaResults: CriterionResult[]
+  recordedAt: string
+}
+
+/** What a person inherits when the model gave up. Absent on every other ending. */
+export interface Handover {
+  rounds: number
+  attempts: CodingAttempt[]
 }
 
 export interface PreviewLink {
@@ -154,6 +175,7 @@ export interface JobDetail {
   report?: Report
   pendingApproval?: PendingApproval
   decisions: DecisionRecord[]
+  handover?: Handover
   preview?: PreviewLink
   technical?: Technical
   createdAt: string

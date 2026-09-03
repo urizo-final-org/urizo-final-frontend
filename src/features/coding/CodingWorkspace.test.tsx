@@ -42,6 +42,86 @@ function consoleApi(overrides: Partial<CodingConsoleApiClient> = {}): CodingCons
   }
 }
 
+/*
+ * E7, the handover record (guide 7-8). The model used up its rework rounds, so the request
+ * ends as an ordinary success and would otherwise be filed under "완료" - the one ending where
+ * somebody actually has to pick the work up.
+ */
+const handedOverJob = {
+  jobId: 'c0ffee00-0000-4000-8000-000000000001',
+  repository: 'backend',
+  requestText: '게시판에 첨부파일을 붙일 수 있게 해줘',
+  status: 'COMPLETED' as const,
+  createdAt: '2026-09-03T01:00:00Z',
+  finishedAt: '2026-09-03T01:40:00Z',
+  refused: false,
+  handedOver: true,
+}
+
+function handedOverApi(): CodingConsoleApiClient {
+  return consoleApi({
+    listJobs: vi.fn().mockResolvedValue({ schemaVersion: '1.0', items: [handedOverJob] }),
+    getJob: vi.fn().mockResolvedValue({
+      schemaVersion: '1.0',
+      jobId: handedOverJob.jobId,
+      repository: 'backend',
+      requestText: handedOverJob.requestText,
+      status: 'COMPLETED',
+      pipelineAttempt: 1,
+      maxPipelineAttempts: 3,
+      decisions: [],
+      refused: false,
+      createdAt: handedOverJob.createdAt,
+      finishedAt: handedOverJob.finishedAt,
+      handover: {
+        rounds: 3,
+        attempts: [
+          {
+            round: 1, accepted: false, recordedAt: '2026-09-03T01:10:00Z',
+            summary: '첨부는 저장되지만 목록에서 다시 열리지 않습니다.',
+            criteriaResults: [{ criterion: '첨부한 파일을 다시 열 수 있다', met: false }],
+          },
+          {
+            round: 2, accepted: false, recordedAt: '2026-09-03T01:25:00Z',
+            summary: '목록에서는 열리지만 삭제하면 파일이 남습니다.',
+            criteriaResults: [{ criterion: '첨부한 파일을 다시 열 수 있다', met: true }],
+          },
+          {
+            round: 3, accepted: false, recordedAt: '2026-09-03T01:40:00Z',
+            summary: '삭제는 되지만 기존 글의 첨부가 사라집니다.',
+            criteriaResults: [],
+          },
+        ],
+      },
+    }),
+  })
+}
+
+test('a request the AI gave up on is not filed away as finished', async () => {
+  render(<CodingWorkspace role="GENERAL_ADMIN" api={handedOverApi()} />)
+
+  expect(await screen.findByText('이 요청은 사람이 이어받아야 합니다')).toBeInTheDocument()
+  expect(await screen.findByText(/개발 담당자에게 전달해 주세요/)).toBeInTheDocument()
+})
+
+test('the handover carries every round and what the review said was still wrong', async () => {
+  render(<CodingWorkspace role="GENERAL_ADMIN" api={handedOverApi()} />)
+
+  expect(await screen.findByText('AI 가 시도한 기록 3회')).toBeInTheDocument()
+  expect(screen.getByText('1번째 시도')).toBeInTheDocument()
+  expect(screen.getByText('3번째 시도')).toBeInTheDocument()
+  expect(screen.getByText(/목록에서 다시 열리지 않습니다/)).toBeInTheDocument()
+  expect(screen.getByText(/기존 글의 첨부가 사라집니다/)).toBeInTheDocument()
+})
+
+/* Read by whoever has to decide what happens next, who may not be able to read a diff. */
+test('the handover names no file and shows no code', async () => {
+  const { container } = render(<CodingWorkspace role="GENERAL_ADMIN" api={handedOverApi()} />)
+
+  await screen.findByText('AI 가 시도한 기록 3회')
+  expect(container.textContent).not.toMatch(/\.java|\.tsx|src\//)
+})
+
 /* The screen marks the news read as it loads, and that mark outlives one test. */
 beforeEach(() => {
   window.localStorage.clear()
