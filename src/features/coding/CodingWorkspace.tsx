@@ -85,23 +85,45 @@ const nextStep: Partial<Record<CodingJobStatus, string>> = {
 }
 
 /**
- * A Job works in one repository, because its work folder is one checkout. That cannot be
- * inferred from the sentence reliably enough to act on: guessing wrong sends the model to a
- * checkout where the files it needs do not exist, and it burns the whole run finding that out.
- * So the writer says which, in the words this screen already uses for it.
- *
- * <p>Asking is also what the design says to do - the guide draws this choice on the request
- * screen. It stays out of developer vocabulary: nobody is asked to pick a repository.
+ * The screen no longer asks which side a sentence is about. That question has no answer the
+ * writer can know - "가입일도 보이게 해줘" needs both sides - so the server's classifier reads
+ * the sentence instead. These labels remain for display only, on rows that already know.
  */
 const repositoryLabels: Record<CodingRepository, string> = {
   backend: '기능과 데이터',
   frontend: '화면 모양',
 }
 
-/** What each choice actually changes, in the terms the person typing already thinks in. */
-const repositoryHints: Record<CodingRepository, string> = {
-  backend: '목록에 담기는 내용, 저장되는 값, 계산과 규칙',
-  frontend: '화면에 보이는 칸, 순서, 문구와 배치',
+/**
+ * The second part of a both-sides request, waiting for the first to finish.
+ *
+ * <p>Kept in localStorage so a closed tab does not silently orphan the second half - the
+ * person was told it would follow, and a promise that survives only in memory is not one.
+ */
+const SPLIT_PENDING_KEY = 'axms-coding-split-second'
+
+interface PendingSecond {
+  firstJobId: string
+  firstText: string
+  secondText: string
+}
+
+function readPendingSecond(): PendingSecond | null {
+  try {
+    const raw = window.localStorage.getItem(SPLIT_PENDING_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as PendingSecond
+    return parsed.firstJobId && parsed.secondText ? parsed : null
+  }
+  catch { return null }
+}
+
+function writePendingSecond(value: PendingSecond | null) {
+  try {
+    if (value) window.localStorage.setItem(SPLIT_PENDING_KEY, JSON.stringify(value))
+    else window.localStorage.removeItem(SPLIT_PENDING_KEY)
+  }
+  catch { /* a browser that refuses storage still gets the current session's chain */ }
 }
 
 function repositoryLabel(id: string): string {
@@ -211,9 +233,8 @@ export default function CodingWorkspace({ api, role }: { api: CodingConsoleApiCl
   const [lastFailed, setLastFailed] = useState<JobSummary | null>(null)
   const [detail, setDetail] = useState<JobDetail | null>(null)
   const [requestText, setRequestText] = useState('')
-  // Kept after a send rather than reset: the guide's order is data first and screen second, so
-  // the next request is often the other half of the same intention.
-  const [repository, setRepository] = useState<CodingRepository>('backend')
+  const [pendingSecond, setPendingSecond] = useState<PendingSecond | null>(
+    () => readPendingSecond())
   const [submitting, setSubmitting] = useState(false)
   const [deciding, setDeciding] = useState(false)
   /* silent marks the automatic ticks: they update the data but never blank the screen with
@@ -245,8 +266,10 @@ export default function CodingWorkspace({ api, role }: { api: CodingConsoleApiCl
     void (async () => {
       let open: JobSummary | null = null
       let newest: JobSummary | null = null
+      let listed: JobSummary[] = []
       try {
         const items = (await api.listJobs()).items
+        listed = items
         open = openJob(items)
         newest = items[0] ?? null
         if (active) setHistory(items)
@@ -307,6 +330,40 @@ export default function CodingWorkspace({ api, role }: { api: CodingConsoleApiCl
       }
       else if (active) {
         setHandover(null)
+      }
+      // The second half of a split waits for the first Job to end well. Read from storage
+      // rather than state: the tick closure can hold a stale copy, and a double-send is the
+      // failure this record exists to prevent - it is cleared before the call, not after.
+      const pending = readPendingSecond()
+      if (pending) {
+        const first = listed.find((item) => item.jobId === pending.firstJobId)
+        if (first && !openStatuses.includes(first.status)) {
+          writePendingSecond(null)
+          if (active) setPendingSecond(null)
+          if (first.status === 'COMPLETED' && !first.refused && !first.handedOver) {
+            try {
+              // The classifier decided the order: data first, screen second. This leg's side
+              // is therefore already known, and the server is told rather than asked again.
+              const second = await api.createJob('frontend', pending.secondText)
+              if (active) {
+                setCurrent({
+                  jobId: second.created.job.jobId,
+                  repository: 'frontend',
+                  requestText: second.created.request.requestText,
+                  status: second.created.job.status,
+                  createdAt: second.created.request.createdAt,
+                })
+                setDetail(null)
+              }
+            }
+            catch (error: unknown) {
+              // The person was promised a second part; a silent drop breaks that promise.
+              if (active) setFailure(describeFailure(error))
+            }
+          }
+          // Any other ending: the person is already looking at why the first half stopped.
+          // Quietly building the screen half on top of a failed data half helps nobody.
+        }
       }
       if (active && !reload.silent) setLoading(false)
       // The runner warning rides the same tick. A failed read keeps the last known verdict
@@ -371,16 +428,29 @@ export default function CodingWorkspace({ api, role }: { api: CodingConsoleApiCl
     setSubmitting(true)
     setFailure(null)
     try {
-      const created = await api.createJob(repository, text)
+      // repository null: the server reads the sentence. Which side it is about is not a
+      // question the writer can answer, so this screen stopped asking it.
+      const outcome = await api.createJob(null, text)
       setDetail(null)
       setLastFailed(null)
       setCurrent({
-        jobId: created.job.jobId,
-        repository,
-        requestText: text,
-        status: created.job.status,
-        createdAt: created.request.createdAt,
+        jobId: outcome.created.job.jobId,
+        repository: '',
+        requestText: outcome.created.request.requestText,
+        status: outcome.created.job.status,
+        createdAt: outcome.created.request.createdAt,
       })
+      if (outcome.split) {
+        // A both-sides sentence: the data part is already running. Remember the screen part
+        // and send it when the first finishes - the person was told it would follow.
+        const pending = {
+          firstJobId: outcome.created.job.jobId,
+          firstText: outcome.split.firstText,
+          secondText: outcome.split.secondText,
+        }
+        setPendingSecond(pending)
+        writePendingSecond(pending)
+      }
       setRequestText('')
     }
     catch (error: unknown) {
@@ -440,6 +510,23 @@ export default function CodingWorkspace({ api, role }: { api: CodingConsoleApiCl
             아래는 이전에 보낸 요청이며, 아직 승인을 기다리고 있습니다.
           </p>}
           <CurrentRequest job={current} />
+          {pendingSecond && current?.jobId === pendingSecond.firstJobId
+            && <section className={`${panel} mt-[0.875rem]`}>
+              <PanelTitle
+                title="이 요청은 두 가지 일이 필요합니다"
+                sub="차례로 진행합니다. 확인해 달라는 요청이 두 번 올 수 있습니다"
+              />
+              <ol className="px-4 pb-4 pt-[0.375rem] space-y-2">
+                <li className="flex items-start gap-2 text-[0.8125rem] leading-[1.6] text-body">
+                  <Badge tone="run" dot={false}>지금 진행 중</Badge>
+                  <span className="flex-1">{pendingSecond.firstText}</span>
+                </li>
+                <li className="flex items-start gap-2 text-[0.8125rem] leading-[1.6] text-body">
+                  <Badge tone="wait" dot={false}>끝나면 자동으로</Badge>
+                  <span className="flex-1">{pendingSecond.secondText}</span>
+                </li>
+              </ol>
+            </section>}
           {detail?.pendingApproval?.stage === 'SCOPE' && <PlanApproval
             plan={detail.plan}
             pending={detail.pendingApproval}
@@ -469,35 +556,6 @@ export default function CodingWorkspace({ api, role }: { api: CodingConsoleApiCl
         <section className={current || lastFailed ? `${panel} mt-[0.875rem]` : panel}>
           <PanelTitle title="새 개발 요청" sub="한국어로 적으면 AI 가 계획부터 세웁니다" />
           <form className="px-4 pb-4 pt-[0.375rem]" onSubmit={submit}>
-            <fieldset className="mb-[0.875rem] border-0 p-0">
-              <legend className={fieldLabel}>어느 쪽을 바꿀까요</legend>
-              <div className="mt-[0.375rem] grid gap-2 sm:grid-cols-2">
-                {(['backend', 'frontend'] as CodingRepository[]).map((option) => <label
-                  key={option}
-                  className={`flex cursor-pointer gap-2 rounded-md border p-[0.625rem] ${
-                    repository === option
-                      ? 'border-accent bg-accent/5'
-                      : 'border-line hover:border-muted-2'}`}
-                >
-                  <input
-                    type="radio"
-                    name="coding-repository"
-                    className="mt-[0.1875rem]"
-                    value={option}
-                    checked={repository === option}
-                    onChange={() => setRepository(option)}
-                    disabled={submitting}
-                  />
-                  <span>
-                    <b className="block text-[0.8125rem] text-body">{repositoryLabels[option]}</b>
-                    <small className="block text-[0.6875rem] leading-4 text-muted-2">
-                      {repositoryHints[option]}
-                    </small>
-                  </span>
-                </label>)}
-              </div>
-            </fieldset>
-
             <label className="block">
               <span className={fieldLabel}>무엇을 바꿀까요</span>
               <textarea
@@ -512,8 +570,8 @@ export default function CodingWorkspace({ api, role }: { api: CodingConsoleApiCl
 
             <p className="mt-2 text-[0.6875rem] leading-5 text-muted-2">
               보내면 AI 가 계획을 세우고, 사람이 승인해야 다음 단계로 갑니다.
-              한 번에 <b>한 쪽만</b> 바뀝니다. 두 쪽이 다 필요하면
-              <b> 기능과 데이터를 먼저</b> 보내고, 그 다음에 화면 모양을 보내 주세요.
+              요청에 여러 가지 일이 필요하면 알아서 나눠 차례로 진행하고, 그럴 때는
+              확인해 달라는 요청이 여러 번 올 수 있습니다.
             </p>
 
             <button

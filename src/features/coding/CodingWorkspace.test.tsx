@@ -6,11 +6,14 @@ import type { CodingConsoleApiClient, JobDetail, JobSummary } from './api'
 
 const created = {
   schemaVersion: '1.0',
-  job: { jobId: '11111111-2222-3333-4444-555555555555', status: 'PENDING' as const, stateVersion: 1 },
-  request: {
-    jobId: '11111111-2222-3333-4444-555555555555',
-    requestText: '회원 목록에 가입일도 보이게 해줘',
-    createdAt: '2026-09-02T02:00:00Z',
+  created: {
+    schemaVersion: '1.0',
+    job: { jobId: '11111111-2222-3333-4444-555555555555', status: 'PENDING' as const, stateVersion: 1 },
+    request: {
+      jobId: '11111111-2222-3333-4444-555555555555',
+      requestText: '회원 목록에 가입일도 보이게 해줘',
+      createdAt: '2026-09-02T02:00:00Z',
+    },
   },
 }
 
@@ -128,48 +131,28 @@ beforeEach(() => {
 })
 
 /**
- * The screen asks for a sentence in Korean. It used to ask the writer to first classify that
- * sentence as "backend" or "frontend" - developer words, in a choice that had exactly one
- * selectable answer. The server is told the only supported value without asking.
+ * The screen asks for a sentence in Korean and nothing else. It used to ask which side the
+ * sentence was about - a question whose answer the writer often cannot know, because
+ * "가입일도 보이게 해줘" needs both sides at once. The server's classifier reads the sentence
+ * instead, so the form sends no repository at all.
  */
-/*
- * A Job works in one repository because its work folder is one checkout, and the sentence
- * cannot be trusted to say which: a wrong guess sends the model to a checkout without the
- * files, and it spends the whole run discovering that. So the choice is asked for - but in
- * what the change does, never in the name of a repository.
- */
-test('the form asks which side to change, without naming a repository', async () => {
+test('the form asks only for the sentence, never which side it is about', async () => {
   render(<CodingWorkspace role="SUPER_ADMIN" api={consoleApi()} />)
 
   const send = await screen.findByRole('button', { name: '요청 보내기' })
   expect(send).toBeDisabled()
 
-  expect(screen.getByLabelText(/기능과 데이터/)).toBeChecked()
-  expect(screen.getByLabelText(/화면 모양/)).not.toBeChecked()
+  expect(screen.queryByLabelText(/기능과 데이터/)).not.toBeInTheDocument()
+  expect(screen.queryByLabelText(/화면 모양/)).not.toBeInTheDocument()
   expect(screen.queryByText('백엔드')).not.toBeInTheDocument()
   expect(screen.queryByText('프론트엔드')).not.toBeInTheDocument()
 })
 
-/* Two sides means two requests, and the guide puts the data one first. */
-test('the form says a request changes one side and which one comes first', async () => {
+/* The person is warned, in their own terms, that one sentence may come back as two check-ins. */
+test('the form says a many-sided request is split and checked more than once', async () => {
   render(<CodingWorkspace role="SUPER_ADMIN" api={consoleApi()} />)
 
-  expect(await screen.findByText(/기능과 데이터를 먼저/)).toBeInTheDocument()
-})
-
-test('choosing the screen side sends that repository, not the default', async () => {
-  const api = consoleApi()
-  render(<CodingWorkspace role="SUPER_ADMIN" api={api} />)
-
-  await screen.findByRole('button', { name: '요청 보내기' })
-  fireEvent.click(screen.getByLabelText(/화면 모양/))
-  fireEvent.change(screen.getByLabelText('무엇을 바꿀까요'), {
-    target: { value: '회원 목록에서 역할 칸을 없애줘' },
-  })
-  fireEvent.click(screen.getByRole('button', { name: '요청 보내기' }))
-
-  await waitFor(() => expect(api.createJob)
-    .toHaveBeenCalledWith('frontend', '회원 목록에서 역할 칸을 없애줘'))
+  expect(await screen.findByText(/알아서 나눠 차례로 진행/)).toBeInTheDocument()
 })
 
 /*
@@ -227,7 +210,7 @@ test('an old failure stays quiet once a newer request has moved on', async () =>
   expect(screen.queryByText('직전 요청이 중단됐습니다')).not.toBeInTheDocument()
 })
 
-test('sending a Korean sentence creates a backend Job and the same card becomes that request', async () => {
+test('sending a Korean sentence hands it to the server whole and the same card becomes that request', async () => {
   const api = consoleApi()
   render(<CodingWorkspace role="SUPER_ADMIN" api={api} />)
 
@@ -237,9 +220,108 @@ test('sending a Korean sentence creates a backend Job and the same card becomes 
   })
   fireEvent.click(screen.getByRole('button', { name: '요청 보내기' }))
 
-  await waitFor(() => expect(api.createJob).toHaveBeenCalledWith('backend', '회원 목록에 가입일도 보이게 해줘'))
+  // repository null on purpose: which side the sentence is about is the server's question now.
+  await waitFor(() => expect(api.createJob).toHaveBeenCalledWith(null, '회원 목록에 가입일도 보이게 해줘'))
   expect(await screen.findByText('회원 목록에 가입일도 보이게 해줘')).toBeInTheDocument()
   expect(screen.getByLabelText('무엇을 바꿀까요')).toHaveValue('')
+})
+
+/*
+ * C: one sentence that needs both sides. The server answers with the split and the data half
+ * is already running when the answer arrives. The card says what will happen in the
+ * requester's own words - no stage names, no repositories - and the promised second half is
+ * remembered outside memory, so a closed tab does not orphan it.
+ */
+const splitOutcome = {
+  schemaVersion: '1.0',
+  created: {
+    schemaVersion: '1.0',
+    job: { jobId: 'a1a1a1a1-1111-4111-8111-111111111111', status: 'PENDING' as const, stateVersion: 1 },
+    request: {
+      jobId: 'a1a1a1a1-1111-4111-8111-111111111111',
+      requestText: '회원 가입일을 저장하고 목록에서 보여줘',
+      createdAt: '2026-09-03T02:00:00Z',
+    },
+  },
+  split: {
+    firstText: '회원 가입일을 저장하고 조회할 수 있게 해줘',
+    secondText: '회원 목록 화면에 가입일이 보이게 해줘',
+  },
+}
+
+const splitPending = {
+  firstJobId: 'a1a1a1a1-1111-4111-8111-111111111111',
+  firstText: '회원 가입일을 저장하고 조회할 수 있게 해줘',
+  secondText: '회원 목록 화면에 가입일이 보이게 해줘',
+}
+
+test('a both-sides sentence shows its two halves in the requester\'s words', async () => {
+  const api = consoleApi({ createJob: vi.fn().mockResolvedValue(splitOutcome) })
+  render(<CodingWorkspace role="GENERAL_ADMIN" api={api} />)
+
+  await screen.findByRole('button', { name: '요청 보내기' })
+  fireEvent.change(screen.getByLabelText('무엇을 바꿀까요'), {
+    target: { value: '회원 가입일을 저장하고 목록에서 보여줘' },
+  })
+  fireEvent.click(screen.getByRole('button', { name: '요청 보내기' }))
+
+  expect(await screen.findByText('이 요청은 두 가지 일이 필요합니다')).toBeInTheDocument()
+  expect(screen.getByText('지금 진행 중')).toBeInTheDocument()
+  expect(screen.getByText('회원 가입일을 저장하고 조회할 수 있게 해줘')).toBeInTheDocument()
+  expect(screen.getByText('끝나면 자동으로')).toBeInTheDocument()
+  expect(screen.getByText('회원 목록 화면에 가입일이 보이게 해줘')).toBeInTheDocument()
+  expect(window.localStorage.getItem('axms-coding-split-second')).toContain('회원 목록 화면에')
+})
+
+test('the second half is sent by itself when the first ends well', async () => {
+  window.localStorage.setItem('axms-coding-split-second', JSON.stringify(splitPending))
+  const api = consoleApi({
+    listJobs: vi.fn().mockResolvedValue({
+      schemaVersion: '1.0',
+      items: [{
+        jobId: splitPending.firstJobId,
+        repository: 'backend',
+        requestText: splitPending.firstText,
+        status: 'COMPLETED' as const,
+        createdAt: '2026-09-03T02:00:00Z',
+        finishedAt: '2026-09-03T02:30:00Z',
+      }],
+    }),
+  })
+  render(<CodingWorkspace role="GENERAL_ADMIN" api={api} />)
+
+  // The classifier already decided this half's side, so the server is told, not asked again.
+  await waitFor(() => expect(api.createJob)
+    .toHaveBeenCalledWith('frontend', splitPending.secondText))
+  // Cleared before the call, not after: a double-send is the failure this record prevents.
+  expect(window.localStorage.getItem('axms-coding-split-second')).toBeNull()
+})
+
+/*
+ * The first half stopped - refused, failed, or handed over. The person is already looking at
+ * why; quietly building the screen half on top of a stopped data half helps nobody.
+ */
+test('a first half that stopped drops the second half instead of building on it', async () => {
+  window.localStorage.setItem('axms-coding-split-second', JSON.stringify(splitPending))
+  const api = consoleApi({
+    listJobs: vi.fn().mockResolvedValue({
+      schemaVersion: '1.0',
+      items: [{
+        jobId: splitPending.firstJobId,
+        repository: 'backend',
+        requestText: splitPending.firstText,
+        status: 'FAILED' as const,
+        createdAt: '2026-09-03T02:00:00Z',
+        finishedAt: '2026-09-03T02:05:00Z',
+        failureCode: 'CODING_GUARDRAIL_PATH_NOT_SELECTED',
+      }],
+    }),
+  })
+  render(<CodingWorkspace role="GENERAL_ADMIN" api={api} />)
+
+  expect(await screen.findByText('직전 요청이 중단됐습니다')).toBeInTheDocument()
+  expect(api.createJob).not.toHaveBeenCalled()
+  expect(window.localStorage.getItem('axms-coding-split-second')).toBeNull()
 })
 
 /**

@@ -198,6 +198,23 @@ export interface CreateJobResponse {
   }
 }
 
+/**
+ * The two parts of a both-sides request, phrased by the server's classifier from the
+ * requester's own sentence. The data part is already running when this arrives; the screen's
+ * job is to say so, and to send the second part when the first finishes.
+ */
+export interface SplitPlan {
+  firstText: string
+  secondText: string
+}
+
+/** The submit answer: the Job that started, and the split when the sentence needed both sides. */
+export interface CreateJobOutcome {
+  schemaVersion: string
+  created: CreateJobResponse
+  split?: SplitPlan
+}
+
 /** As above: the decision response carries more, and the console reads only these. */
 export interface ApprovalDecisionResult {
   schemaVersion: string
@@ -287,7 +304,12 @@ export interface NotificationList {
 }
 
 export interface CodingConsoleApiClient {
-  createJob(repository: CodingRepository, requestText: string): Promise<CreateJobResponse>
+  /**
+   * repository stays null for what a person types - the server reads the sentence, because
+   * "which side is this" is not a question the writer can answer. The screen itself fills it
+   * in on the second leg of a split, where the classifier already decided.
+   */
+  createJob(repository: CodingRepository | null, requestText: string): Promise<CreateJobOutcome>
   listJobs(limit?: number): Promise<JobList>
   getJob(jobId: string): Promise<JobDetail>
   runnerStatus(): Promise<RunnerStatus>
@@ -346,7 +368,7 @@ export class CodingConsoleApi implements CodingConsoleApiClient {
     return responseBody<T>(response)
   }
 
-  createJob = (repository: CodingRepository, requestText: string) => this.request<CreateJobResponse>(
+  createJob = (repository: CodingRepository | null, requestText: string) => this.request<CreateJobOutcome>(
     '/api/admin/coding/jobs',
     { method: 'POST', body: JSON.stringify({ repository, requestText }) },
   )
