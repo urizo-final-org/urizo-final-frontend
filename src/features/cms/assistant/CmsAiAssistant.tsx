@@ -196,6 +196,33 @@ export default function CmsAiAssistant({ route, target, candidates, menus, onTar
     })
   }
 
+  /**
+   * 승인한 변경이 실제로 반영될 때까지 Job을 다시 읽는다.
+   *
+   * 승인 응답은 결정을 기록하고 Queue에 넣은 것까지다. 반영은 파이프라인이 잠시 뒤에 한다.
+   * 응답 직후 목록을 다시 읽으면 아직 바뀌기 전 값을 받는다.
+   */
+  async function awaitApplied(jobId: string, generation: number) {
+    for (let attempt = 0; attempt < POLL_ATTEMPTS; attempt += 1) {
+      if (attempt > 0) await wait(POLL_INTERVAL_MS)
+      if (poll.current !== generation) return
+      const job = await api.job(jobId)
+      if (poll.current !== generation) return
+      if (job.status === 'COMPLETED') {
+        notifyCmsChanged()
+        notifySiteUpdated()
+        setPhase({ kind: 'done', job })
+        return
+      }
+      if (job.status === 'REJECTED') {
+        setPhase({ kind: 'rejected', job })
+        return
+      }
+    }
+    if (poll.current !== generation) return
+    setPhase({ kind: 'failed', message: '반영 결과를 받지 못했습니다. 목록을 새로고침해 확인해 주세요.' })
+  }
+
   async function start(requestText: string, chosen: CmsAssistantTarget) {
     const generation = poll.current + 1
     poll.current = generation
@@ -247,12 +274,14 @@ export default function CmsAiAssistant({ route, target, candidates, menus, onTar
         ...(decision === 'REJECTED' ? { feedback: feedback.trim() } : {}),
       })
       setFeedback('')
-      if (decision === 'APPROVED') {
-        // 반영은 서버가 했다. 화면은 자기 폼으로 저장할 때만 다시 읽으므로 여기서 알려준다.
-        notifyCmsChanged()
-        notifySiteUpdated()
+      if (decision === 'REJECTED') {
+        setPhase({ kind: 'rejected', job: decided })
+        return
       }
-      setPhase(decision === 'APPROVED' ? { kind: 'done', job: decided } : { kind: 'rejected', job: decided })
+      // 승인은 Queue에 넣은 것까지다. 반영이 끝난 뒤에 목록을 다시 읽어야 바뀐 값이 온다.
+      setPhase({ kind: 'deciding', job: decided })
+      poll.current += 1
+      await awaitApplied(decided.jobId, poll.current)
     }
     catch (failure) {
       setPhase({ kind: 'failed', message: describeFailure(failure) })

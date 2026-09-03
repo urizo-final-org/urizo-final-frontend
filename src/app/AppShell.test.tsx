@@ -420,11 +420,14 @@ test('the menu assistant waits for the preview the pipeline fills in later', asy
       return Promise.resolve(json([{ profileVersionId, profileKey: 'NATURAL_CMS', status: 'ACTIVE' }]))
     }
     if (url === '/api/natural-cms/jobs') return Promise.resolve(json(created))
+    // 승인 응답은 Queue에 넣은 것까지다. 반영은 그 다음 조회에서 COMPLETED로 나타난다.
     if (url === `/api/natural-cms/jobs/${jobId}/decisions`) {
       applied = true
-      return Promise.resolve(json({ ...previewed, status: 'COMPLETED' }))
+      return Promise.resolve(json({ ...previewed, approvalDecision: 'APPROVED' }))
     }
-    if (url === `/api/natural-cms/jobs/${jobId}`) return Promise.resolve(json(previewed))
+    if (url === `/api/natural-cms/jobs/${jobId}`) {
+      return Promise.resolve(json(applied ? { ...previewed, status: 'COMPLETED' } : previewed))
+    }
     return Promise.resolve(json([]))
   }))
 
