@@ -6,7 +6,7 @@ afterEach(() => vi.unstubAllGlobals())
 
 const snapshot: ProfileAuthoringSnapshot = {
   nodes: [], edges: [], config: { maxNodes: 1, maxAttempts: 3, loopLimits: [] },
-  modelBindings: {}, toolPolicy: { allowedTools: [] }, guardrailProfileKey: 'central.default',
+  modelBindings: {}, toolBindings: {}, toolPolicy: { allowedTools: [] }, guardrailProfileKey: 'central.default',
 }
 
 test('lists, creates, activates, and reads Editor Layout through the admin contract', async () => {
