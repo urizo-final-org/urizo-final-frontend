@@ -78,9 +78,35 @@ const modelBindingCatalog: Record<ProfileKey, string[]> = {
   NATURAL_CMS: ['natural-cms-analyze', 'natural-cms-command', 'natural-cms-claude'],
 }
 
+const modelBindingDetails: Record<string, { provider: string; model: string }> = {
+  'llm-ops-analyze': { provider: 'OpenAI', model: 'gpt-5.4-nano' },
+  'llm-ops-code': { provider: 'OpenAI', model: 'gpt-5.4-nano' },
+  'llm-ops-review': { provider: 'Google', model: 'gemini-3.5-flash-lite' },
+  'llm-ops-claude': { provider: 'Anthropic', model: 'claude-haiku-4-5-20251001' },
+  'natural-cms-analyze': { provider: 'OpenAI', model: 'gpt-5.4-nano' },
+  'natural-cms-command': { provider: 'Google', model: 'gemini-3.5-flash-lite' },
+  'natural-cms-claude': { provider: 'Anthropic', model: 'claude-haiku-4-5-20251001' },
+}
+
 const toolCatalog: Record<ProfileKey, string[]> = {
   LLM_OPS: ['read_file', 'search_code', 'read_diff', 'apply_patch', 'run_check', 'check_package_allowlist', 'scan_changed_files'],
   NATURAL_CMS: ['resolve_cms_target', 'validate_cms_command', 'create_cms_preview', 'discard_cms_preview', 'revalidate_cms_preview', 'apply_cms_preview'],
+}
+
+const toolDetails: Record<string, { label: string; description: string }> = {
+  read_file: { label: '파일 읽기', description: '승인된 Coding 작업공간의 UTF-8 텍스트 파일 하나를 읽습니다.' },
+  search_code: { label: '코드 검색', description: '승인된 소스 파일 범위에서 지정한 문자열을 검색합니다.' },
+  read_diff: { label: '변경사항 읽기', description: '보호 경로와 비밀정보 검사를 거친 Git 변경사항 전체를 읽습니다.' },
+  apply_patch: { label: '코드 변경 적용', description: '제한된 텍스트 패치를 Git 작업공간에 적용합니다.' },
+  run_check: { label: '검사 실행', description: '등록된 정적·결정적 검사 Profile을 실행합니다.' },
+  check_package_allowlist: { label: '패키지 변경 검사', description: '의존성 Manifest와 Lockfile 변경이 허용되는지 검사합니다.' },
+  scan_changed_files: { label: '변경 파일 보안 검사', description: '새로 추가된 코드에서 비밀정보로 의심되는 패턴을 검사합니다.' },
+  resolve_cms_target: { label: 'CMS 대상 확인', description: 'Spring이 제공한 CMS Resource Snapshot에서 변경 대상을 확인합니다.' },
+  validate_cms_command: { label: 'CMS 명령 검증', description: '구조화된 CMS 명령이 현재 Resource Snapshot에 유효한지 검사합니다.' },
+  create_cms_preview: { label: 'CMS 미리보기 생성', description: 'DB를 변경하지 않고 결정적인 CMS 변경 미리보기를 생성합니다.' },
+  discard_cms_preview: { label: 'CMS 미리보기 폐기', description: '생성된 CMS 변경 미리보기를 폐기 처리합니다.' },
+  revalidate_cms_preview: { label: 'CMS 미리보기 재검증', description: '승인된 미리보기를 Spring의 최신 Resource Snapshot과 다시 비교합니다.' },
+  apply_cms_preview: { label: 'CMS 반영 준비', description: 'Spring CmsService가 DB에 반영할 수 있는 검증된 명령을 반환합니다.' },
 }
 
 const NODE_WIDTH = 176
@@ -328,6 +354,7 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient & 
   const [notice, setNotice] = useState<string | null>(null)
   const [handlerPaletteOpen, setHandlerPaletteOpen] = useState(false)
   const [toolPolicyOpen, setToolPolicyOpen] = useState(false)
+  const [edgeListOpen, setEdgeListOpen] = useState(true)
   const [canvasZoom, setCanvasZoom] = useState(1)
   const versionRequest = useRef(0)
   const canvasViewport = useRef<HTMLDivElement>(null)
@@ -361,6 +388,18 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient & 
     viewport.addEventListener('wheel', handleWheel, { passive: false })
     return () => viewport.removeEventListener('wheel', handleWheel)
   }, [canvasZoom])
+
+  useEffect(() => {
+    if (!status) return
+    const timer = window.setTimeout(() => setStatus(''), 2600)
+    return () => window.clearTimeout(timer)
+  }, [status])
+
+  useEffect(() => {
+    if (!notice) return
+    const timer = window.setTimeout(() => setNotice(null), 2600)
+    return () => window.clearTimeout(timer)
+  }, [notice])
 
   async function loadVersions(key: ProfileKey, preferredId?: string) {
     const request = ++versionRequest.current
@@ -471,6 +510,7 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient & 
   async function saveDraft() {
     if (!supported || nodes.length === 0) return
     setSaving(true)
+    setStatus('')
     setFailure(null)
     setNotice(null)
     try {
@@ -496,6 +536,7 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient & 
   async function activateSelected() {
     if (!selectedVersion || selectedVersion.status !== 'DRAFT') return
     setSaving(true)
+    setStatus('')
     setFailure(null)
     setNotice(null)
     try {
@@ -737,7 +778,9 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient & 
   const relatedEdges = selected ? edges.filter((edge) => edge.from === selected.id || edge.to === selected.id) : []
   const selectedBinding = selected?.type === 'agent' ? modelBindings[selected.id] : null
 
-  return <section id="agent-settings-panel-workflow" role="tabpanel" aria-labelledby="agent-settings-tab-workflow">
+  return <>
+    <WorkflowStatusToast message={notice ?? status} />
+    <section id="agent-settings-panel-workflow" role="tabpanel" aria-labelledby="agent-settings-tab-workflow">
     <Callout tone="ok" icon="shield-check">
       저장된 LLM_OPS·NATURAL_CMS Snapshot을 편집해 새 불변 DRAFT로 저장합니다. 활성화 검증은 Backend Validator가 최종 강제합니다.
     </Callout>
@@ -767,13 +810,12 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient & 
         </Badge>
       </div>
       {failure && <div role="alert" className="mt-3 rounded border border-[#ead2d2] bg-fail-bg px-3 py-2 text-[0.71875rem] text-fail-fg">{failure}</div>}
-      {notice && <div role="status" className="mt-3 rounded border border-[#cfe8db] bg-ok-bg px-3 py-2 text-[0.71875rem] text-ok-fg">{notice}</div>}
       {!supported && nodes.length > 0 && <div role="alert" className="mt-3 rounded border border-[#ead2d2] bg-fail-bg px-3 py-2 text-[0.71875rem] text-fail-fg">현재 UI 허용 목록에 없는 Handler·Model Binding·Tool이 포함되어 편집과 저장을 중단했습니다.</div>}
       <div className="mt-3 flex flex-wrap gap-2">
-        <button type="button" className={secondaryButton} disabled={loading || saving || nodes.length === 0} onClick={autoArrange}>자동 배치</button>
-        <button type="button" className={primaryButton} disabled={loading || saving || !supported || nodes.length === 0} onClick={() => void saveDraft()}>새 DRAFT 저장</button>
-        <button type="button" className={secondaryButton} disabled={saving || selectedVersion?.status !== 'DRAFT'} onClick={() => void activateSelected()}>선택 DRAFT 활성화</button>
-        <button type="button" className={secondaryButton} disabled={loading || saving} onClick={() => void loadVersions(profileKey, selectedVersionId ?? undefined)}>다시 조회</button>
+        <button type="button" className={secondaryButton} style={{ backgroundColor: '#e8f4fa', color: '#245b78', borderColor: '#9fc7dc' }} disabled={loading || saving || nodes.length === 0} onClick={autoArrange}>자동 배치</button>
+        <button type="button" className={primaryButton} style={{ color: '#fff' }} disabled={loading || saving || !supported || nodes.length === 0} onClick={() => void saveDraft()}>새 DRAFT 저장</button>
+        <button type="button" className={secondaryButton} style={{ backgroundColor: '#e9f6ee', color: '#246b45', borderColor: '#a7d5b9' }} disabled={saving || selectedVersion?.status !== 'DRAFT'} onClick={() => void activateSelected()}>선택 DRAFT 활성화</button>
+        <button type="button" className={secondaryButton} style={{ backgroundColor: '#f0f2f5', color: '#435264', borderColor: '#c6cdd6' }} disabled={loading || saving} onClick={() => void loadVersions(profileKey, selectedVersionId ?? undefined)}>다시 조회</button>
       </div>
     </section>
 
@@ -855,12 +897,26 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient & 
               return <article
                 key={node.id}
                 aria-label={`${node.id} Node`}
+                aria-current={active ? 'true' : undefined}
+                data-node-selected={active ? 'true' : 'false'}
                 data-node-x={node.x}
                 data-node-y={node.y}
-                className={`absolute z-10 rounded-md border bg-white p-[0.625rem] shadow-[0_8px_22px_#070a0e59] ${active ? 'border-[#60a5fa] ring-2 ring-[#60a5fa]/45' : source ? 'border-wait-dot ring-2 ring-wait-bg' : 'border-[#cbd3dc]'}`}
-                style={{ left: node.x, top: node.y, width: NODE_WIDTH, minHeight: NODE_HEIGHT }}
+                className={`absolute z-10 rounded-md border bg-white p-[0.625rem] shadow-[0_8px_22px_#070a0e59] transition-[border-color,box-shadow,transform] duration-150 ${active ? 'z-20 scale-[1.035] border-2 border-[#2f8de4] shadow-[0_0_0_4px_rgba(96,165,250,.28),0_16px_34px_rgba(7,10,14,.52)]' : source ? 'border-wait-dot ring-2 ring-wait-bg' : 'border-[#cbd3dc]'}`}
+                style={{
+                  left: node.x,
+                  top: node.y,
+                  width: NODE_WIDTH,
+                  minHeight: NODE_HEIGHT,
+                  ...(active ? {
+                    transform: 'scale(1.035)',
+                    borderColor: '#2f8de4',
+                    borderWidth: 2,
+                    boxShadow: '0 0 0 4px rgba(96, 165, 250, .28), 0 16px 34px rgba(7, 10, 14, .52)',
+                  } : {}),
+                }}
                 onClick={() => selectNode(node.id)}
               >
+                {active && <span className="absolute -top-3 right-2 rounded-full border border-[#8bc5f5] bg-[#eaf5ff] px-2 py-0.5 text-[0.5625rem] font-bold text-[#1f6fab] shadow-sm" aria-hidden="true">선택됨</span>}
                 <span data-node-port="left" className={`absolute -left-[0.3125rem] top-1/2 h-2.5 w-2.5 -translate-y-1/2 rounded-full border-2 bg-white shadow-[0_0_0_2px_#20262e] ${source ? 'border-[#f0a34a]' : active ? 'border-[#60a5fa]' : 'border-[#778392]'}`} aria-hidden="true" />
                 <span data-node-port="right" className={`absolute -right-[0.3125rem] top-1/2 h-2.5 w-2.5 -translate-y-1/2 rounded-full border-2 bg-white shadow-[0_0_0_2px_#20262e] ${source ? 'border-[#f0a34a]' : active ? 'border-[#60a5fa]' : 'border-[#778392]'}`} aria-hidden="true" />
                 <button
@@ -881,32 +937,55 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient & 
             </div>
           </div>
         </div>
-        <div className="border-t border-line-soft bg-white px-4 py-2 text-[0.6875rem] text-muted" aria-live="polite">{status}</div>
       </div>
 
       <aside className="order-1 min-h-0 overflow-y-auto border-t border-line-soft bg-white p-4 xl:order-1 xl:border-r xl:border-t-0" aria-label="Workflow control dock">
-        <b className="text-[0.84375rem] font-semibold">Node 설정</b>
+        <section aria-label="Snapshot 설정">
+          <b className="text-[0.84375rem] font-semibold">Snapshot 설정</b>
+          <label className="mt-3 block text-[0.71875rem] font-semibold text-body">최대 Node 수 (maxNodes)
+            <input
+              type="number"
+              min={Math.max(1, nodes.length)}
+              step={1}
+              aria-label="최대 Node 수 (maxNodes)"
+              className={control}
+              value={config.maxNodes}
+              disabled={loading || saving || !supported}
+              onChange={(event) => {
+                const value = Number.parseInt(event.target.value, 10)
+                if (Number.isInteger(value)) {
+                  setConfig((current) => ({ ...current, maxNodes: Math.max(nodes.length, value) }))
+                }
+              }}
+            />
+          </label>
+          <p className="mt-2 text-[0.6875rem] leading-5 text-muted-2">현재 Node {nodes.length}개 · 새 DRAFT 저장 시 적용됩니다.</p>
+        </section>
+
+        <b className="mt-4 block border-t border-row-line pt-4 text-[0.84375rem] font-semibold">Node 설정</b>
         {!selected && <p className="mt-3 text-xs text-muted-2">Node를 선택하세요.</p>}
         {selected && <div className="mt-3">
           <label className="block text-[0.71875rem] font-semibold text-body">Node ID
-            <input aria-label="선택 Node ID" className={control} value={selected.id} readOnly />
+            <input aria-label="선택 Node ID" className={`${control} cursor-not-allowed`} style={{ backgroundColor: '#f1f3f5', color: '#3f4a56', borderColor: '#d5dbe2' }} value={selected.id} readOnly />
           </label>
           <label className="mt-3 block text-[0.71875rem] font-semibold text-body">등록 Handler
-            <input aria-label="선택 Handler" className={control} value={selected.handlerKey} readOnly />
+            <input aria-label="선택 Handler" className={`${control} cursor-not-allowed`} style={{ backgroundColor: '#f1f3f5', color: '#3f4a56', borderColor: '#d5dbe2' }} value={selected.handlerKey} readOnly />
           </label>
 
           {selected.type === 'agent' && selectedBinding && <div className="mt-3 border-t border-row-line pt-3">
-            <label className="block text-[0.71875rem] font-semibold text-body">Primary Model Binding
-              <select aria-label="선택 Agent Model Binding" className={control} value={selectedBinding.primary} onChange={(event) => updatePrimaryBinding(event.target.value)}>
-                {modelBindingCatalog[profileKey].map((binding) => <option key={binding}>{binding}</option>)}
+            <label className="block text-[0.71875rem] font-semibold text-body">주 모델 (Primary Model)
+              <select aria-label="선택 주 모델" className={control} value={selectedBinding.primary} onChange={(event) => updatePrimaryBinding(event.target.value)}>
+                {modelBindingCatalog[profileKey].map((binding) => <option key={binding} value={binding}>{modelBindingLabel(binding)}</option>)}
               </select>
+              <small className="mt-1 block text-[0.625rem] font-normal leading-4 text-muted-2">괄호 안 Binding Key를 Snapshot에 저장하고 Backend가 실제 Provider·Model로 해석합니다.</small>
             </label>
             <fieldset className="mt-3">
-              <legend className="text-[0.71875rem] font-semibold text-body">Fallback Binding</legend>
+              <legend className="text-[0.71875rem] font-semibold text-body">대체 모델 (Fallback Model)</legend>
+              <p className="mt-1 text-[0.625rem] leading-4 text-muted-2">주 모델의 미설정·사용량 제한·시간 초과·Provider 장애 등 일시적 오류에 사용할 후보입니다.</p>
               <div className="mt-2 space-y-2">
                 {modelBindingCatalog[profileKey].filter((binding) => binding !== selectedBinding.primary).map((binding) => <label key={binding} className="flex items-start gap-2 text-[0.65625rem] text-body">
                   <input type="checkbox" aria-label={`Fallback ${binding}`} checked={selectedBinding.fallback.includes(binding)} onChange={() => toggleFallback(binding)} />
-                  <code className="break-all">{binding}</code>
+                  <span className="break-all">{modelBindingLabel(binding)}</span>
                 </label>)}
               </div>
             </fieldset>
@@ -946,7 +1025,7 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient & 
                 {selected.resultPorts.map((port) => <option key={port}>{port}</option>)}
               </select>
             </label>
-            <button type="button" className={`${connectFrom?.nodeId === selected.id ? secondaryButton : primaryButton} mt-2 w-full justify-center`} onClick={() => {
+            <button type="button" className={`${connectFrom?.nodeId === selected.id ? secondaryButton : primaryButton} mt-2 w-full justify-center`} style={connectFrom?.nodeId === selected.id ? undefined : { color: '#fff' }} onClick={() => {
               if (connectFrom?.nodeId === selected.id) {
                 setConnectFrom(null)
                 setStatus('Node 연결 선택을 취소했습니다.')
@@ -962,19 +1041,29 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient & 
             onClick={deleteSelected}
           >Node 삭제</button>
 
-          <div className="mt-4 border-t border-row-line pt-3">
-            <b className="text-[0.71875rem] font-semibold">Edge</b>
-            {relatedEdges.length === 0 && <p className="mt-2 text-[0.6875rem] text-muted-2">연결 없음</p>}
-            <div className="mt-2 space-y-2">
+          <section className="mt-4 border-t border-row-line pt-3" aria-label="선택 Node Edge">
+            <button
+              type="button"
+              className="flex w-full items-center justify-between gap-3 rounded text-left"
+              aria-expanded={edgeListOpen}
+              aria-controls="selected-node-edge-panel"
+              onClick={() => setEdgeListOpen((current) => !current)}
+            >
+              <span className="text-[0.71875rem] font-semibold text-body">Edge <span className="font-normal text-muted-2">({relatedEdges.length})</span></span>
+              <span className="text-[0.6875rem] font-semibold text-muted">{edgeListOpen ? '접기' : '펼치기'}</span>
+            </button>
+            <div id="selected-node-edge-panel" className={edgeListOpen ? 'mt-2' : 'hidden'}>
+              {relatedEdges.length === 0 && <p className="text-[0.6875rem] text-muted-2">연결 없음</p>}
+              <div className="space-y-2">
               {relatedEdges.map((edge) => {
-                const outgoing = edge.from === selected.id
                 return <div key={`${edge.from}-${edge.resultPort}-${edge.to}`} className="flex items-center gap-2 rounded border border-line-soft bg-sub px-2 py-[0.4375rem] text-[0.6875rem]">
-                  <span className="min-w-0 flex-1 truncate">{outgoing ? `${edge.resultPort} → ${edge.to}` : `${edge.from}.${edge.resultPort} →`}</span>
+                  <span className="min-w-0 flex-1 truncate">{`${edge.from}.${edge.resultPort} → ${edge.to}`}</span>
                   <button type="button" className="font-semibold text-fail-fg" aria-label={`${edge.from}.${edge.resultPort}에서 ${edge.to} 연결 해제`} onClick={() => disconnect(edge)}>해제</button>
                 </div>
               })}
+              </div>
             </div>
-          </div>
+          </section>
         </div>}
 
         <section className="mt-5 border-t border-row-line pt-4" aria-label="Node Palette">
@@ -1014,21 +1103,37 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient & 
             aria-controls="profile-tool-policy-panel"
             onClick={() => setToolPolicyOpen((current) => !current)}
           >
-            <span className="text-[0.71875rem] font-semibold text-body">Profile 허용 Tool</span>
+            <span className="text-[0.71875rem] font-semibold text-body">Profile 허용 도구 (Tool)</span>
             <span className="text-[0.6875rem] font-semibold text-muted">{toolPolicyOpen ? '접기' : '펼치기'}</span>
           </button>
           <fieldset id="profile-tool-policy-panel" className={toolPolicyOpen ? 'mt-2 space-y-2' : 'hidden'} disabled={loading || saving || !supported}>
-            <legend className="sr-only">Profile 허용 Tool</legend>
-            <p className="text-[0.625rem] leading-4 text-muted-2">Snapshot toolPolicy에 저장됩니다.</p>
-            {toolCatalog[profileKey].map((tool) => <label key={tool} className="flex items-start gap-2 text-[0.65625rem] text-body">
-              <input type="checkbox" aria-label={`허용 Tool ${tool}`} checked={allowedTools.includes(tool)} onChange={() => toggleTool(tool)} />
-              <code className="break-all">{tool}</code>
-            </label>)}
+            <legend className="sr-only">Profile 허용 도구 (Tool)</legend>
+            <p className="text-[0.625rem] leading-4 text-muted-2">선택한 도구만 이 Profile에서 사용할 수 있으며 Snapshot의 toolPolicy에 저장됩니다.</p>
+            {toolCatalog[profileKey].map((tool) => {
+              const detail = toolDetails[tool]
+              return <label key={tool} className="flex items-start gap-2 text-[0.65625rem] text-body">
+                <input className="mt-0.5" type="checkbox" aria-label={`허용 Tool ${tool}`} checked={allowedTools.includes(tool)} onChange={() => toggleTool(tool)} />
+                <span className="min-w-0">
+                  <span className="block font-semibold">{detail?.label ?? tool} <code className="font-normal">({tool})</code></span>
+                  <small className="mt-0.5 block text-[0.625rem] leading-4 text-muted-2">{detail?.description ?? '이 Profile에서 사용할 수 있는 등록 Tool입니다.'}</small>
+                </span>
+              </label>
+            })}
           </fieldset>
         </section>
       </aside>
     </div>
-  </section>
+    </section>
+  </>
+}
+
+function WorkflowStatusToast({ message }: { message: string }) {
+  return message ? <div className="pointer-events-none fixed inset-0 z-[100] grid place-items-center p-5" aria-live="polite" aria-atomic="true">
+    <div key={message} className="cms-success-toast flex max-w-[32.5rem] items-center gap-3 rounded-lg bg-[#16293c] px-6 py-5 text-sm font-semibold text-white shadow-[0_24px_70px_rgba(22,41,60,.35)]" role="status">
+      <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-accent text-base text-[#16293c]" aria-hidden="true">✓</span>
+      <span>{message}</span>
+    </div>
+  </div> : null
 }
 
 function ApprovalRole({ value, onChange }: { value: string; onChange: (value: string) => void }) {
@@ -1038,6 +1143,11 @@ function ApprovalRole({ value, onChange }: { value: string; onChange: (value: st
       <option>SUPER_ADMIN</option>
     </select>
   </label>
+}
+
+function modelBindingLabel(bindingKey: string) {
+  const detail = modelBindingDetails[bindingKey]
+  return detail ? `${detail.provider} · ${detail.model} (${bindingKey})` : bindingKey
 }
 
 function definitionFor(profileKey: ProfileKey, handlerKey: string) {
