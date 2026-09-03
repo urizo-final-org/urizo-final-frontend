@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
-import { describeFailure } from '../../shared/api/error'
+import { describeFailure, ProductApiError } from '../../shared/api/error'
 import { Icon } from '../../shared/ui/icons'
 import {
   Badge, Callout, Tag, control, dangerButton, panel, primaryButton, secondaryButton,
 } from '../../shared/ui/primitives'
 import type {
-  ProfileAuthoringSnapshot, ProfileKey, ProfileModelBinding, ProfileNodeType, ProfileSnapshotConfig,
+  ProfileAuthoringSnapshot, ProfileEditorLayoutApiClient, ProfileKey, ProfileModelBinding, ProfileNodeType, ProfileSnapshotConfig,
   ProfileSnapshotEdge, ProfileSnapshotNode, ProfileVersion, ProfileVersionApiClient,
 } from './api'
 
@@ -19,6 +19,8 @@ interface CanvasDimensions {
   height: number
   nodeAreaHeight: number
 }
+
+type EdgePortSide = 'left' | 'right'
 
 interface HandlerDefinition {
   key: string
@@ -87,6 +89,9 @@ const LANE_GAP_Y = 124
 const DETOUR_LANE_GAP = 32
 const MIN_CANVAS_WIDTH = 1180
 const MIN_NODE_AREA_HEIGHT = 680
+const MIN_CANVAS_ZOOM = 0.5
+const MAX_CANVAS_ZOOM = 1.5
+const CANVAS_ZOOM_STEP = 0.1
 
 function isDetourEdge(edge: ProfileSnapshotEdge, nodes: WorkflowNode[]) {
   const from = nodes.find((node) => node.id === edge.from)
@@ -95,34 +100,95 @@ function isDetourEdge(edge: ProfileSnapshotEdge, nodes: WorkflowNode[]) {
 }
 
 function layoutSnapshotNodes(snapshotNodes: ProfileSnapshotNode[], edges: ProfileSnapshotEdge[]): WorkflowNode[] {
-  const levels = new Map(snapshotNodes.map((node) => [node.id, 0]))
-  const forwardEdges = edges.filter((edge) => !/retry|reject|changes_requested/i.test(edge.resultPort))
-
-  for (let pass = 0; pass < snapshotNodes.length; pass += 1) {
-    let changed = false
-    for (const edge of forwardEdges) {
-      const fromLevel = levels.get(edge.from)
-      const toLevel = levels.get(edge.to)
-      if (fromLevel === undefined || toLevel === undefined || toLevel >= fromLevel + 1) continue
-      levels.set(edge.to, fromLevel + 1)
-      changed = true
+  const ids = snapshotNodes.map((node) => node.id).sort()
+  const next = new Map(ids.map((id) => [id, [] as string[]]))
+  for (const edge of edges) {
+    if (!next.has(edge.from) || !next.has(edge.to)) continue
+    next.get(edge.from)?.push(edge.to)
+  }
+  const index = new Map<string, number>()
+  const lowlink = new Map<string, number>()
+  const component = new Map<string, number>()
+  const stack: string[] = []
+  const onStack = new Set<string>()
+  let cursor = 0
+  let componentCount = 0
+  const visit = (id: string) => {
+    index.set(id, cursor); lowlink.set(id, cursor); cursor += 1
+    stack.push(id); onStack.add(id)
+    for (const target of next.get(id)?.sort() ?? []) {
+      if (!index.has(target)) { visit(target); lowlink.set(id, Math.min(lowlink.get(id)!, lowlink.get(target)!)) }
+      else if (onStack.has(target)) lowlink.set(id, Math.min(lowlink.get(id)!, index.get(target)!))
     }
-    if (!changed) break
+    if (lowlink.get(id) !== index.get(id)) return
+    for (;;) {
+      const member = stack.pop()!
+      onStack.delete(member); component.set(member, componentCount)
+      if (member === id) break
+    }
+    componentCount += 1
+  }
+  for (const id of ids) if (!index.has(id)) visit(id)
+
+  const componentNext = new Map(Array.from({ length: componentCount }, (_, id) => [id, new Set<number>()]))
+  const incoming = new Map(Array.from({ length: componentCount }, (_, id) => [id, 0]))
+  for (const [from, targets] of next) for (const to of targets) {
+    const fromComponent = component.get(from)!
+    const toComponent = component.get(to)!
+    if (fromComponent === toComponent || componentNext.get(fromComponent)!.has(toComponent)) continue
+    componentNext.get(fromComponent)!.add(toComponent)
+    incoming.set(toComponent, (incoming.get(toComponent) ?? 0) + 1)
+  }
+  const levels = new Map(Array.from({ length: componentCount }, (_, id) => [id, 0]))
+  const ready = Array.from({ length: componentCount }, (_, id) => id).filter((id) => incoming.get(id) === 0)
+  while (ready.length > 0) {
+    ready.sort((left, right) => left - right)
+    const current = ready.shift()!
+    for (const target of componentNext.get(current) ?? []) {
+      levels.set(target, Math.max(levels.get(target) ?? 0, (levels.get(current) ?? 0) + 1))
+      const remaining = (incoming.get(target) ?? 1) - 1
+      incoming.set(target, remaining)
+      if (remaining === 0) ready.push(target)
+    }
   }
 
   const lanes = new Map<number, number>()
-  return snapshotNodes.map((node) => {
-    const level = levels.get(node.id) ?? 0
+  const positions = new Map<string, { x: number; y: number }>()
+  for (const id of [...ids].sort((left, right) => (levels.get(component.get(left)!) ?? 0) - (levels.get(component.get(right)!) ?? 0) || left.localeCompare(right))) {
+    const level = levels.get(component.get(id)!) ?? 0
     const lane = lanes.get(level) ?? 0
     lanes.set(level, lane + 1)
+    positions.set(id, {
+      x: CANVAS_PADDING + level * LAYER_GAP_X,
+      y: CANVAS_PADDING + lane * LANE_GAP_Y,
+    })
+  }
+  return snapshotNodes.map((node) => {
+    const position = positions.get(node.id)!
     return {
       ...node,
       resultPorts: [...node.resultPorts],
       config: { ...node.config },
-      x: CANVAS_PADDING + level * LAYER_GAP_X,
-      y: CANVAS_PADDING + lane * LANE_GAP_Y,
+      ...position,
     }
   })
+}
+
+export function resolveEdgePorts(edge: ProfileSnapshotEdge, nodes: WorkflowNode[], edges: ProfileSnapshotEdge[]) {
+  const from = nodes.find((node) => node.id === edge.from)
+  const to = nodes.find((node) => node.id === edge.to)
+  if (!from || !to) return { reverse: false, sourcePort: 'right' as EdgePortSide, targetPort: 'left' as EdgePortSide }
+  const reverse = to.x <= from.x
+  const sourceHasLeftInput = edges.some((incoming) => incoming.to === from.id && (nodes.find((node) => node.id === incoming.from)?.x ?? from.x) < from.x)
+  const sourcePort: EdgePortSide = reverse && !sourceHasLeftInput ? 'left' : 'right'
+  return { reverse, sourcePort, targetPort: reverse ? sourcePort : 'left' as EdgePortSide }
+}
+
+function restoreLayout(snapshot: ProfileAuthoringSnapshot, nodes: { id: string; x: number; y: number }[]) {
+  const generated = layoutSnapshotNodes(snapshot.nodes, snapshot.edges)
+  const coordinates = new Map(nodes.map((node) => [node.id, node]))
+  if (coordinates.size !== generated.length || generated.some((node) => !coordinates.has(node.id))) return generated
+  return generated.map((node) => ({ ...node, ...coordinates.get(node.id)! }))
 }
 
 function canvasDimensions(nodes: WorkflowNode[], edges: ProfileSnapshotEdge[]): CanvasDimensions {
@@ -231,7 +297,7 @@ export const starterSnapshots: Record<ProfileKey, ProfileAuthoringSnapshot> = {
   },
 }
 
-export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient }) {
+export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient & ProfileEditorLayoutApiClient }) {
   const [profileKey, setProfileKey] = useState<ProfileKey>('LLM_OPS')
   const [versions, setVersions] = useState<ProfileVersion[]>([])
   const [selectedVersionId, setSelectedVersionId] = useState<string | null>(null)
@@ -249,8 +315,9 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient })
   const [saving, setSaving] = useState(false)
   const [failure, setFailure] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
-  const [handlerPaletteOpen, setHandlerPaletteOpen] = useState(true)
-  const [toolPolicyOpen, setToolPolicyOpen] = useState(true)
+  const [handlerPaletteOpen, setHandlerPaletteOpen] = useState(false)
+  const [toolPolicyOpen, setToolPolicyOpen] = useState(false)
+  const [canvasZoom, setCanvasZoom] = useState(1)
   const versionRequest = useRef(0)
   const canvasViewport = useRef<HTMLDivElement>(null)
   const drag = useRef<{ id: string; pointerX: number; pointerY: number; x: number; y: number; moved: boolean } | null>(null)
@@ -276,6 +343,14 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient })
     return () => { versionRequest.current += 1 }
   }, [api, profileKey])
 
+  useEffect(() => {
+    const viewport = canvasViewport.current
+    if (!viewport) return
+    const handleWheel = (event: WheelEvent) => zoomCanvas(event)
+    viewport.addEventListener('wheel', handleWheel, { passive: false })
+    return () => viewport.removeEventListener('wheel', handleWheel)
+  }, [canvasZoom])
+
   async function loadVersions(key: ProfileKey, preferredId?: string) {
     const request = ++versionRequest.current
     setLoading(true)
@@ -290,6 +365,7 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient })
       setVersions(items)
       if (preferred) applySnapshot(preferred.snapshot, preferred.profileVersionId)
       else applySnapshot(starterSnapshots[key], null)
+      if (preferred) await loadEditorLayout(preferred.snapshot, preferred.profileVersionId, request)
       setStatus(preferred
         ? `${key} v${preferred.profileVersion} ${preferred.status} Snapshot을 불러왔습니다.`
         : `${key} 저장 Version이 없어 production 기본 Snapshot을 불러왔습니다.`)
@@ -333,7 +409,9 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient })
   function chooseVersion(versionId: string) {
     const version = versions.find((item) => item.profileVersionId === versionId)
     if (!version) return
+    const request = ++versionRequest.current
     applySnapshot(version.snapshot, version.profileVersionId)
+    void loadEditorLayout(version.snapshot, version.profileVersionId, request)
     setFailure(null)
     setNotice(null)
     setStatus(`${version.profileKey} v${version.profileVersion} ${version.status} Snapshot을 불러왔습니다.`)
@@ -364,6 +442,21 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient })
     }
   }
 
+  function editorLayout() {
+    return nodes.map(({ id, x, y }) => ({ id, x, y }))
+  }
+
+  async function loadEditorLayout(snapshot: ProfileAuthoringSnapshot, versionId: string, request: number) {
+    try {
+      const layout = await api.getEditorLayout(versionId)
+      if (request !== versionRequest.current) return
+      setNodes(restoreLayout(snapshot, layout.nodes))
+    } catch (error) {
+      if (request !== versionRequest.current || (error instanceof ProductApiError && error.status === 404)) return
+      setFailure(`Editor Layout을 불러오지 못했습니다. ${describeFailure(error)}`)
+    }
+  }
+
   async function saveDraft() {
     if (!supported || nodes.length === 0) return
     setSaving(true)
@@ -371,6 +464,14 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient })
     setNotice(null)
     try {
       const created = await api.create(profileKey, authoringSnapshot())
+      try {
+        await api.saveEditorLayout(created.profileVersionId, editorLayout())
+      } catch (error) {
+        await loadVersions(profileKey, created.profileVersionId)
+        setFailure(`v${created.profileVersion} DRAFT는 저장됐지만 Editor Layout 저장에 실패했습니다. ${describeFailure(error)}`)
+        setStatus(`v${created.profileVersion} DRAFT Snapshot을 저장했고 자동 배치로 표시합니다.`)
+        return
+      }
       if (await loadVersions(profileKey, created.profileVersionId)) {
         setNotice(`v${created.profileVersion} DRAFT를 저장하고 다시 조회했습니다.`)
       }
@@ -545,8 +646,8 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient })
   function moveDrag(event: ReactPointerEvent<HTMLButtonElement>) {
     const active = drag.current
     if (!active) return
-    const deltaX = event.clientX - active.pointerX
-    const deltaY = event.clientY - active.pointerY
+    const deltaX = (event.clientX - active.pointerX) / canvasZoom
+    const deltaY = (event.clientY - active.pointerY) / canvasZoom
     if (Math.abs(deltaX) + Math.abs(deltaY) > 3) active.moved = true
     const maxX = Math.max(CANVAS_PADDING, canvas.width - NODE_WIDTH - CANVAS_PADDING + LAYER_GAP_X)
     const maxY = Math.max(CANVAS_PADDING, canvas.nodeAreaHeight - NODE_HEIGHT - CANVAS_PADDING + LANE_GAP_Y)
@@ -565,6 +666,11 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient })
       setNodes((current) => [...current].sort((left, right) => left.y - right.y || left.x - right.x))
       setStatus(`${node.id} Node 위치와 Snapshot 순서를 변경했습니다.`)
     }
+  }
+
+  function autoArrange() {
+    setNodes(layoutSnapshotNodes(nodes, edges))
+    setStatus('Node·Edge 구조를 기준으로 자동 배치했습니다. 위치는 새 DRAFT 저장 전까지 로컬에만 유지됩니다.')
   }
 
   function startCanvasPan(event: ReactPointerEvent<HTMLDivElement>) {
@@ -596,6 +702,25 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient })
     if (event.currentTarget.hasPointerCapture?.(event.pointerId)) event.currentTarget.releasePointerCapture?.(event.pointerId)
     pan.current = null
     setPanning(false)
+  }
+
+  function zoomCanvas(event: WheelEvent) {
+    if (event.deltaY === 0) return
+    event.preventDefault()
+    const viewport = canvasViewport.current
+    if (!viewport) return
+    const nextZoom = Math.min(MAX_CANVAS_ZOOM, Math.max(MIN_CANVAS_ZOOM, Number((canvasZoom + (event.deltaY < 0 ? CANVAS_ZOOM_STEP : -CANVAS_ZOOM_STEP)).toFixed(1))))
+    if (nextZoom === canvasZoom) return
+    const viewportRect = viewport.getBoundingClientRect()
+    const pointerX = event.clientX - viewportRect.left
+    const pointerY = event.clientY - viewportRect.top
+    const canvasX = (viewport.scrollLeft + pointerX) / canvasZoom
+    const canvasY = (viewport.scrollTop + pointerY) / canvasZoom
+    setCanvasZoom(nextZoom)
+    requestAnimationFrame(() => {
+      viewport.scrollLeft = Math.max(0, canvasX * nextZoom - pointerX)
+      viewport.scrollTop = Math.max(0, canvasY * nextZoom - pointerY)
+    })
   }
 
   const relatedEdges = selected ? edges.filter((edge) => edge.from === selected.id || edge.to === selected.id) : []
@@ -634,42 +759,36 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient })
       {notice && <div role="status" className="mt-3 rounded border border-[#cfe8db] bg-ok-bg px-3 py-2 text-[0.71875rem] text-ok-fg">{notice}</div>}
       {!supported && nodes.length > 0 && <div role="alert" className="mt-3 rounded border border-[#ead2d2] bg-fail-bg px-3 py-2 text-[0.71875rem] text-fail-fg">현재 UI 허용 목록에 없는 Handler·Model Binding·Tool이 포함되어 편집과 저장을 중단했습니다.</div>}
       <div className="mt-3 flex flex-wrap gap-2">
+        <button type="button" className={secondaryButton} disabled={loading || saving || nodes.length === 0} onClick={autoArrange}>자동 배치</button>
         <button type="button" className={primaryButton} disabled={loading || saving || !supported || nodes.length === 0} onClick={() => void saveDraft()}>새 DRAFT 저장</button>
         <button type="button" className={secondaryButton} disabled={saving || selectedVersion?.status !== 'DRAFT'} onClick={() => void activateSelected()}>선택 DRAFT 활성화</button>
         <button type="button" className={secondaryButton} disabled={loading || saving} onClick={() => void loadVersions(profileKey, selectedVersionId ?? undefined)}>다시 조회</button>
       </div>
     </section>
 
-    <div className={`${panel} mt-3 grid min-h-[48rem] overflow-hidden xl:grid-cols-[20rem_minmax(0,1fr)]`}>
+    <div className={`${panel} mt-3 grid h-[48rem] overflow-hidden xl:grid-cols-[20rem_minmax(0,1fr)]`}>
       <div className="order-2 flex min-h-0 min-w-0 flex-col bg-[#f8fafc] xl:order-2">
         <div className="flex flex-wrap items-center gap-2 border-b border-line-soft bg-white px-4 py-3">
           <b className="text-[0.8125rem] font-semibold">{profileKey} Snapshot</b>
           <Tag>등록 Handler</Tag><Tag>Version API</Tag>
           <span className="ml-auto text-[0.6875rem] text-muted-2">Node {nodes.length} · Edge {edges.length}</span>
         </div>
-        <div ref={canvasViewport} className="min-h-0 flex-1 overflow-auto p-4" data-canvas-viewport>
-          <div
-            className={`relative overflow-hidden rounded-md border border-[#343c46] bg-[#20262e] bg-[radial-gradient(circle,#596472_1px,transparent_1px)] [background-size:20px_20px] ${panning ? 'cursor-grabbing' : 'cursor-grab'}`}
-            aria-label="Node 편집 Canvas"
-            data-canvas-width={canvas.width}
-            data-canvas-height={canvas.height}
-            style={{ width: canvas.width, height: canvas.height }}
-            onPointerDown={startCanvasPan}
-            onPointerMove={moveCanvasPan}
-            onPointerUp={endCanvasPan}
-            onPointerCancel={endCanvasPan}
-          >
+        <div ref={canvasViewport} className={`relative m-4 min-h-0 flex-1 overflow-auto rounded-md border border-[#343c46] bg-[#20262e] ${panning ? 'cursor-grabbing' : 'cursor-grab'}`} aria-label="Node 편집 Canvas" data-canvas-viewport data-canvas-width={canvas.width} data-canvas-height={canvas.height} data-canvas-zoom={canvasZoom}>
+          <div style={{ width: canvas.width * canvasZoom, height: canvas.height * canvasZoom }}>
+            <div className="relative bg-[#20262e] bg-[radial-gradient(circle,#596472_1px,transparent_1px)] [background-size:20px_20px]" data-canvas-content style={{ width: canvas.width, height: canvas.height, transform: `scale(${canvasZoom})`, transformOrigin: 'top left' }} onPointerDown={startCanvasPan} onPointerMove={moveCanvasPan} onPointerUp={endCanvasPan} onPointerCancel={endCanvasPan}>
             <div className="pointer-events-none absolute right-3 top-3 z-20 flex items-center gap-3 rounded-md border border-white/10 bg-[#151a20]/90 px-3 py-2 text-[0.625rem] text-[#cbd5df] shadow-lg">
-              <span>입력 Port</span><span aria-hidden="true">←</span><b className="font-semibold text-white">Node</b><span aria-hidden="true">→</span><span>출력 Port</span>
+              <span>Edge별 좌·우 Port 자동 배치</span>
               <span className="h-3 border-l border-white/15" aria-hidden="true" />
               <span>Retry·Reject 하단 Routing</span>
+              <span className="h-3 border-l border-white/15" aria-hidden="true" />
+              <span aria-label="Canvas 확대 비율">{Math.round(canvasZoom * 100)}%</span>
             </div>
             <svg className="pointer-events-none absolute inset-0 h-full w-full" viewBox={`0 0 ${canvas.width} ${canvas.height}`} preserveAspectRatio="none" aria-hidden="true">
               <defs>
-                <marker id="workflow-edge-arrow" viewBox="0 0 7 7" refX="6" refY="3.5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <marker id="workflow-edge-arrow" viewBox="0 0 7 7" refX="6" refY="3.5" markerWidth="7" markerHeight="7" orient="auto">
                   <path d="M 0 0 L 7 3.5 L 0 7 z" fill="#8f9aa8" />
                 </marker>
-                <marker id="workflow-edge-arrow-active" viewBox="0 0 7 7" refX="6" refY="3.5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <marker id="workflow-edge-arrow-active" viewBox="0 0 7 7" refX="6" refY="3.5" markerWidth="7" markerHeight="7" orient="auto">
                   <path d="M 0 0 L 7 3.5 L 0 7 z" fill="#60a5fa" />
                 </marker>
               </defs>
@@ -677,17 +796,22 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient })
                 const from = nodes.find((node) => node.id === edge.from)
                 const to = nodes.find((node) => node.id === edge.to)
                 if (!from || !to) return null
-                const x1 = from.x + NODE_WIDTH
+                const { reverse, sourcePort, targetPort } = resolveEdgePorts(edge, nodes, edges)
+                const direction = sourcePort === 'right' ? 1 : -1
+                const x1 = sourcePort === 'right' ? from.x + NODE_WIDTH : from.x
                 const y1 = from.y + NODE_PORT_Y
-                const x2 = to.x
+                const x2 = targetPort === 'right' ? to.x + NODE_WIDTH : to.x
                 const y2 = to.y + NODE_PORT_Y
                 const bend = Math.max(42, Math.abs(x2 - x1) * 0.45)
+                const arrivalTilt = Math.max(-96, Math.min(96, (y1 - y2) * 0.24))
                 const detour = isDetourEdge(edge, nodes)
                 const detourIndex = edges.slice(0, edgeIndex).filter((item) => isDetourEdge(item, nodes)).length
-                const detourY = canvas.height - CANVAS_PADDING - detourIndex * DETOUR_LANE_GAP
+                const detourY = Math.min(canvas.height - CANVAS_PADDING / 2, Math.max(from.y + NODE_HEIGHT, to.y + NODE_HEIGHT) + CANVAS_PADDING + detourIndex * DETOUR_LANE_GAP)
                 const detourRight = Math.min(canvas.width - CANVAS_PADDING / 2, x1 + 68)
                 const detourLeft = Math.max(CANVAS_PADDING / 2, x2 - 68)
-                const path = detour
+                const path = reverse
+                  ? `M ${x1} ${y1} C ${x1 + direction * bend} ${y1}, ${x2 + direction * bend} ${y2 + arrivalTilt}, ${x2} ${y2}`
+                  : detour
                   ? `M ${x1} ${y1} C ${x1 + 34} ${y1}, ${x1 + 34} ${detourY}, ${detourRight} ${detourY} L ${detourLeft} ${detourY} C ${x2 - 34} ${detourY}, ${x2 - 34} ${y2}, ${x2} ${y2}`
                   : `M ${x1} ${y1} C ${x1 + bend} ${y1}, ${x2 - bend} ${y2}, ${x2} ${y2}`
                 const active = selectedId === edge.from || selectedId === edge.to
@@ -696,10 +820,16 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient })
                   d={path}
                   data-edge-route={detour ? 'detour' : 'direct'}
                   data-edge-lane={detour ? detourIndex : undefined}
+                  data-edge-from={edge.from}
+                  data-edge-to={edge.to}
+                  data-edge-source-port={sourcePort}
+                  data-edge-target-port={targetPort}
                   data-edge-active={active ? 'true' : 'false'}
                   fill="none"
                   stroke={active ? '#60a5fa' : '#8f9aa8'}
                   strokeWidth={active ? 2.5 : 1.75}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
                   opacity={active ? 1 : 0.82}
                   markerEnd={active ? 'url(#workflow-edge-arrow-active)' : 'url(#workflow-edge-arrow)'}
                 />
@@ -720,8 +850,8 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient })
                 style={{ left: node.x, top: node.y, width: NODE_WIDTH, minHeight: NODE_HEIGHT }}
                 onClick={() => selectNode(node.id)}
               >
-                <span data-node-port="input" className="absolute -left-[0.3125rem] top-1/2 h-2.5 w-2.5 -translate-y-1/2 rounded-full border-2 border-[#778392] bg-white shadow-[0_0_0_2px_#20262e]" aria-hidden="true" />
-                <span data-node-port="output" className={`absolute -right-[0.3125rem] top-1/2 h-2.5 w-2.5 -translate-y-1/2 rounded-full border-2 bg-white shadow-[0_0_0_2px_#20262e] ${source ? 'border-[#f0a34a]' : active ? 'border-[#60a5fa]' : 'border-[#778392]'}`} aria-hidden="true" />
+                <span data-node-port="left" className={`absolute -left-[0.3125rem] top-1/2 h-2.5 w-2.5 -translate-y-1/2 rounded-full border-2 bg-white shadow-[0_0_0_2px_#20262e] ${source ? 'border-[#f0a34a]' : active ? 'border-[#60a5fa]' : 'border-[#778392]'}`} aria-hidden="true" />
+                <span data-node-port="right" className={`absolute -right-[0.3125rem] top-1/2 h-2.5 w-2.5 -translate-y-1/2 rounded-full border-2 bg-white shadow-[0_0_0_2px_#20262e] ${source ? 'border-[#f0a34a]' : active ? 'border-[#60a5fa]' : 'border-[#778392]'}`} aria-hidden="true" />
                 <button
                   type="button"
                   aria-label={`${node.id} Node 이동`}
@@ -737,6 +867,7 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient })
                 <div className="mt-2 text-[0.625rem] text-muted-2"><code className="block truncate">{node.id}</code><span>{info.meta} · 순서 {index + 1}</span></div>
               </article>
             })}
+            </div>
           </div>
         </div>
         <div className="border-t border-line-soft bg-white px-4 py-2 text-[0.6875rem] text-muted" aria-live="polite">{status}</div>

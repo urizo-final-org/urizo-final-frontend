@@ -9,11 +9,13 @@ const snapshot: ProfileAuthoringSnapshot = {
   modelBindings: {}, toolPolicy: { allowedTools: [] }, guardrailProfileKey: 'central.default',
 }
 
-test('lists, creates, and activates Profile Versions through the admin contract', async () => {
+test('lists, creates, activates, and reads Editor Layout through the admin contract', async () => {
   const fetcher = vi.fn()
     .mockResolvedValueOnce(new Response('[]'))
     .mockResolvedValueOnce(new Response(JSON.stringify({ profileVersionId: 'version-2' }), { status: 201 }))
     .mockResolvedValueOnce(new Response(JSON.stringify({ profileVersionId: 'version-2', status: 'ACTIVE' })))
+    .mockResolvedValueOnce(new Response(JSON.stringify({ profileVersionId: 'version-2', createdAt: '2026-09-03T00:00:00Z', nodes: [{ id: 'start', x: 48, y: 48 }] })))
+    .mockResolvedValueOnce(new Response(JSON.stringify({ profileVersionId: 'version-2', createdAt: '2026-09-03T00:00:00Z', nodes: [{ id: 'start', x: 48, y: 48 }] }), { status: 201 }))
   vi.stubGlobal('fetch', fetcher)
   vi.stubGlobal('crypto', { randomUUID: () => 'trace-id' })
   const api = new ProfileVersionApi('token', vi.fn(), vi.fn())
@@ -21,11 +23,16 @@ test('lists, creates, and activates Profile Versions through the admin contract'
   await expect(api.list('LLM_OPS')).resolves.toEqual([])
   await expect(api.create('LLM_OPS', snapshot)).resolves.toMatchObject({ profileVersionId: 'version-2' })
   await expect(api.activate('version-2')).resolves.toMatchObject({ status: 'ACTIVE' })
+  await expect(api.getEditorLayout('version-2')).resolves.toMatchObject({ nodes: [{ id: 'start', x: 48, y: 48 }] })
+  await expect(api.saveEditorLayout('version-2', [{ id: 'start', x: 48, y: 48 }])).resolves.toMatchObject({ profileVersionId: 'version-2' })
 
   expect(fetcher.mock.calls[0][0]).toBe('/api/admin/ai/profile-versions?profileKey=LLM_OPS')
   expect(fetcher.mock.calls[1][1]).toMatchObject({ method: 'POST' })
   expect(JSON.parse(fetcher.mock.calls[1][1].body)).toEqual({ profileKey: 'LLM_OPS', snapshot })
   expect(fetcher.mock.calls[2][0]).toBe('/api/admin/ai/profile-versions/version-2/activate')
+  expect(fetcher.mock.calls[3][0]).toBe('/api/admin/ai/profile-versions/version-2/editor-layout')
+  expect(fetcher.mock.calls[4][1]).toMatchObject({ method: 'PUT' })
+  expect(JSON.parse(fetcher.mock.calls[4][1].body)).toEqual({ nodes: [{ id: 'start', x: 48, y: 48 }] })
 })
 
 test('preserves the public error envelope for forbidden and validation failures', async () => {
