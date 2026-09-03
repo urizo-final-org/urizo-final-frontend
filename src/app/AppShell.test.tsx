@@ -49,6 +49,21 @@ test('the results screen never shows a score, rating or review count', async () 
   expect(document.body.textContent).not.toMatch(/[★☆]|\d건의 리뷰|\d\.\d\s*점/)
 })
 
+test('the home search placeholder follows the selected tab', async () => {
+  vi.stubGlobal('fetch', publicFetch())
+  render(<AppShell />)
+  const tablist = within(await screen.findByRole('tablist', { name: '여행 검색 카테고리' }))
+  const field = () => screen.getByLabelText('여행지 검색')
+  expect(field()).toHaveAttribute('placeholder', '어디로 떠나볼까요?')
+  // 시안 원문 6종 + 시안에 없어 팀이 정한 2종(전체·축제·행사).
+  fireEvent.click(tablist.getByRole('tab', { name: '숙박' }))
+  expect(field()).toHaveAttribute('placeholder', '어느 숙소를 찾으시나요?')
+  fireEvent.click(tablist.getByRole('tab', { name: '추천코스' }))
+  expect(field()).toHaveAttribute('placeholder', '어떤 여행 코스를 찾으시나요?')
+  fireEvent.click(tablist.getByRole('tab', { name: '축제·행사' }))
+  expect(field()).toHaveAttribute('placeholder', '어떤 축제를 찾으시나요?')
+})
+
 test('a home tab selection carries its category into the search', async () => {
   vi.stubGlobal('fetch', publicFetch())
   render(<AppShell />)

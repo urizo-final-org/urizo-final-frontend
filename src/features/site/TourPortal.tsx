@@ -71,6 +71,21 @@ const HOME_SECTIONS: CurationSection[] = [
   ] },
 ]
 
+/**
+ * 탭별 검색창 안내 문구. 시안이 6종에 달아 둔 문구를 그대로 옮기고, 시안에 없는 전체·축제·행사
+ * 2종은 팀이 정한 문구를 쓴다. 표현이라 화면 쪽에 두고 portal-meta의 탭 상수는 건드리지 않는다.
+ */
+const TAB_PLACEHOLDERS: Record<string, string> = {
+  all: '어디로 떠나볼까요?',
+  attraction: '어디를 여행하고 싶으신가요?',
+  stay: '어느 숙소를 찾으시나요?',
+  food: '무엇을 맛보고 싶으신가요?',
+  leisure: '어떤 체험을 해볼까요?',
+  course: '어떤 여행 코스를 찾으시나요?',
+  shopping: '무엇을 쇼핑하고 싶으신가요?',
+  event: '어떤 축제를 찾으시나요?',
+}
+
 function SectionHead({ title, kicker }: { title: string; kicker: string }) {
   return <div className="flex items-end justify-between gap-5">
     <div>
@@ -118,7 +133,7 @@ export function PortalHome() {
 
       <form onSubmit={submit} className="mx-auto mt-9 flex h-16 max-w-[45rem] items-center gap-3 rounded-full border border-field-line bg-panel py-0 pl-6 pr-2 shadow-[0_2px_14px_rgba(22,34,47,0.07)]">
         <SearchGlyph />
-        <input value={draft} onChange={(event) => setDraft(event.target.value)} aria-label="여행지 검색" placeholder="어디로 떠나볼까요?" className="min-w-0 flex-1 border-0 bg-transparent text-base text-ink outline-0" />
+        <input value={draft} onChange={(event) => setDraft(event.target.value)} aria-label="여행지 검색" placeholder={TAB_PLACEHOLDERS[tab] ?? TAB_PLACEHOLDERS.all} className="min-w-0 flex-1 border-0 bg-transparent text-base text-ink outline-0" />
         <button type="submit" className="h-12 flex-none rounded-full bg-primary px-8 text-[0.9375rem] font-bold text-white">검색</button>
       </form>
     </section>
