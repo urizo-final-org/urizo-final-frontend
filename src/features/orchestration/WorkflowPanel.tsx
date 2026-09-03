@@ -5,7 +5,7 @@ import {
   Badge, Callout, Tag, control, dangerButton, panel, primaryButton, secondaryButton,
 } from '../../shared/ui/primitives'
 import type {
-  ProfileAuthoringSnapshot, ProfileEditorLayoutApiClient, ProfileKey, ProfileModelBinding, ProfileNodeType, ProfileSnapshotConfig,
+  ProfileAuthoringSnapshot, ProfileDefaultTemplateApiClient, ProfileEditorLayoutApiClient, ProfileKey, ProfileModelBinding, ProfileNodeType, ProfileSnapshotConfig,
   ProfileSnapshotEdge, ProfileSnapshotNode, ProfileVersion, ProfileVersionApiClient,
 } from './api'
 
@@ -334,7 +334,7 @@ export const starterSnapshots: Record<ProfileKey, ProfileAuthoringSnapshot> = {
   },
 }
 
-export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient & ProfileEditorLayoutApiClient }) {
+export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient & ProfileEditorLayoutApiClient & ProfileDefaultTemplateApiClient }) {
   const [profileKey, setProfileKey] = useState<ProfileKey>('LLM_OPS')
   const [versions, setVersions] = useState<ProfileVersion[]>([])
   const [selectedVersionId, setSelectedVersionId] = useState<string | null>(null)
@@ -414,11 +414,15 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient & 
         ?? null
       setVersions(items)
       if (preferred) applySnapshot(preferred.snapshot, preferred.profileVersionId)
-      else applySnapshot(starterSnapshots[key], null)
+      else {
+        const template = await api.getDefaultTemplate(key)
+        if (request !== versionRequest.current) return false
+        applySnapshot(template.snapshot, null)
+      }
       if (preferred) await loadEditorLayout(preferred.snapshot, preferred.profileVersionId, request)
       setStatus(preferred
         ? `${key} v${preferred.profileVersion} ${preferred.status} Snapshot을 불러왔습니다.`
-        : `${key} 저장 Version이 없어 production 기본 Snapshot을 불러왔습니다.`)
+        : `${key} 저장 Version이 없어 기본 템플릿을 불러왔습니다.`)
       return true
     } catch (error) {
       if (request === versionRequest.current) {
@@ -526,6 +530,40 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient & 
       if (await loadVersions(profileKey, created.profileVersionId)) {
         setNotice(`v${created.profileVersion} DRAFT를 저장하고 다시 조회했습니다.`)
       }
+    } catch (error) {
+      setFailure(describeFailure(error))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function loadDefaultTemplate() {
+    if (!window.confirm(`${profileKey} 기본 템플릿을 편집 화면에 불러올까요? 현재 저장 Version은 변경되지 않습니다.`)) return
+    setSaving(true)
+    setStatus('')
+    setFailure(null)
+    setNotice(null)
+    try {
+      const template = await api.getDefaultTemplate(profileKey)
+      applySnapshot(template.snapshot, null)
+      setNotice(`${profileKey} 기본 템플릿을 불러왔습니다. 변경 후 새 DRAFT로 저장할 수 있습니다.`)
+    } catch (error) {
+      setFailure(describeFailure(error))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function saveDefaultTemplate() {
+    if (!supported || nodes.length === 0) return
+    if (!window.confirm(`현재 ${profileKey} 구성을 기본 템플릿으로 저장할까요? 기존 DRAFT와 ACTIVE는 변경되지 않습니다.`)) return
+    setSaving(true)
+    setStatus('')
+    setFailure(null)
+    setNotice(null)
+    try {
+      await api.saveDefaultTemplate(profileKey, authoringSnapshot())
+      setNotice(`현재 ${profileKey} 구성을 기본 템플릿으로 저장했습니다.`)
     } catch (error) {
       setFailure(describeFailure(error))
     } finally {
@@ -782,7 +820,7 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient & 
     <WorkflowStatusToast message={notice ?? status} />
     <section id="agent-settings-panel-workflow" role="tabpanel" aria-labelledby="agent-settings-tab-workflow">
     <Callout tone="ok" icon="shield-check">
-      저장된 LLM_OPS·NATURAL_CMS Snapshot을 편집해 새 불변 DRAFT로 저장합니다. 활성화 검증은 Backend Validator가 최종 강제합니다.
+      Profile별 기본 템플릿 또는 저장된 Snapshot을 편집해 새 불변 DRAFT로 저장합니다. 활성화 검증은 Backend Validator가 최종 강제합니다.
     </Callout>
 
     <section className={`${panel} mt-3 p-4`} aria-label="Workflow Profile Version">
@@ -801,18 +839,20 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient & 
             disabled={loading || saving || versions.length === 0}
             onChange={(event) => chooseVersion(event.target.value)}
           >
-            {versions.length === 0 && <option value="">저장 Version 없음 · 기본 Snapshot</option>}
+            {selectedVersionId === null && <option value="">기본 템플릿 편집 중</option>}
             {versions.map((version) => <option key={version.profileVersionId} value={version.profileVersionId}>v{version.profileVersion} · {version.status}</option>)}
           </select>
         </label>
         <Badge tone={selectedVersion?.status === 'ACTIVE' ? 'ok' : selectedVersion?.status === 'DRAFT' ? 'wait' : 'idle'} dot={false}>
-          {loading ? '조회 중' : selectedVersion?.status ?? '기본 Snapshot'}
+          {loading ? '조회 중' : selectedVersion?.status ?? '기본 템플릿'}
         </Badge>
       </div>
       {failure && <div role="alert" className="mt-3 rounded border border-[#ead2d2] bg-fail-bg px-3 py-2 text-[0.71875rem] text-fail-fg">{failure}</div>}
       {!supported && nodes.length > 0 && <div role="alert" className="mt-3 rounded border border-[#ead2d2] bg-fail-bg px-3 py-2 text-[0.71875rem] text-fail-fg">현재 UI 허용 목록에 없는 Handler·Model Binding·Tool이 포함되어 편집과 저장을 중단했습니다.</div>}
       <div className="mt-3 flex flex-wrap gap-2">
         <button type="button" className={secondaryButton} style={{ backgroundColor: '#e8f4fa', color: '#245b78', borderColor: '#9fc7dc' }} disabled={loading || saving || nodes.length === 0} onClick={autoArrange}>자동 배치</button>
+        <button type="button" className={secondaryButton} style={{ backgroundColor: '#f4effb', color: '#684b86', borderColor: '#cdb9df' }} disabled={loading || saving} onClick={() => void loadDefaultTemplate()}>기본 템플릿 불러오기</button>
+        <button type="button" className={secondaryButton} style={{ backgroundColor: '#fff4e8', color: '#8a5a24', borderColor: '#e5c59e' }} disabled={loading || saving || !supported || nodes.length === 0} onClick={() => void saveDefaultTemplate()}>기본 템플릿 저장</button>
         <button type="button" className={primaryButton} style={{ color: '#fff' }} disabled={loading || saving || !supported || nodes.length === 0} onClick={() => void saveDraft()}>새 DRAFT 저장</button>
         <button type="button" className={secondaryButton} style={{ backgroundColor: '#e9f6ee', color: '#246b45', borderColor: '#a7d5b9' }} disabled={saving || selectedVersion?.status !== 'DRAFT'} onClick={() => void activateSelected()}>선택 DRAFT 활성화</button>
         <button type="button" className={secondaryButton} style={{ backgroundColor: '#f0f2f5', color: '#435264', borderColor: '#c6cdd6' }} disabled={loading || saving} onClick={() => void loadVersions(profileKey, selectedVersionId ?? undefined)}>다시 조회</button>

@@ -100,6 +100,12 @@ function profileApi(overrides: Partial<AgentSettingsApiClient> = {}): AgentSetti
     saveEditorLayout: vi.fn().mockResolvedValue({
       profileVersionId: 'version-3', createdAt: '2026-09-03T00:00:00Z', nodes: [],
     }),
+    getDefaultTemplate: vi.fn().mockResolvedValue({
+      profileKey: 'LLM_OPS', updatedAt: '2026-09-03T00:00:00Z', snapshot: starterSnapshots.LLM_OPS,
+    }),
+    saveDefaultTemplate: vi.fn().mockResolvedValue({
+      profileKey: 'LLM_OPS', updatedAt: '2026-09-03T00:00:00Z', snapshot: starterSnapshots.LLM_OPS,
+    }),
     listProviderCredentials: vi.fn().mockResolvedValue({
       csrfToken: 'csrf-fixture',
       providers: [
@@ -369,6 +375,40 @@ test('a Profile with no stored versions can create its first DRAFT from the curr
   fireEvent.click(screen.getByRole('button', { name: '불변 버전 저장' }))
   await screen.findByText('v1 DRAFT를 저장했습니다.')
   expect(api.create).toHaveBeenCalledWith('LLM_OPS', expect.objectContaining({ guardrailProfileKey: 'central.default' }))
+})
+
+test('default templates load and save per Profile without changing stored Versions', async () => {
+  vi.stubGlobal('confirm', vi.fn(() => true))
+  const naturalTemplate = {
+    profileKey: 'NATURAL_CMS' as const,
+    updatedAt: '2026-09-04T00:00:00Z',
+    snapshot: starterSnapshots.NATURAL_CMS,
+  }
+  const api = profileApi({
+    getDefaultTemplate: vi.fn().mockImplementation((key) => Promise.resolve(
+      key === 'NATURAL_CMS'
+        ? naturalTemplate
+        : { profileKey: 'LLM_OPS', updatedAt: '2026-09-04T00:00:00Z', snapshot: starterSnapshots.LLM_OPS },
+    )),
+  })
+  render(<AgentSettingsWorkspace api={api} />)
+
+  await screen.findByLabelText('analyze Node')
+  fireEvent.click(screen.getByRole('button', { name: '기본 템플릿 불러오기' }))
+  await screen.findByText(/LLM_OPS 기본 템플릿을 불러왔습니다/)
+  expect(api.getDefaultTemplate).toHaveBeenCalledWith('LLM_OPS')
+  expect(screen.getByLabelText('저장된 Workflow Version')).toHaveValue('')
+  expect(api.activate).not.toHaveBeenCalled()
+
+  fireEvent.click(screen.getByRole('button', { name: '기본 템플릿 저장' }))
+  await screen.findByText(/현재 LLM_OPS 구성을 기본 템플릿으로 저장했습니다/)
+  expect(api.saveDefaultTemplate).toHaveBeenCalledWith(
+    'LLM_OPS', expect.objectContaining({ nodes: expect.arrayContaining([
+      expect.objectContaining({ id: 'github_approval' }),
+      expect.objectContaining({ id: 'dev_merge_check' }),
+    ]) }),
+  )
+  expect(api.create).not.toHaveBeenCalled()
 })
 
 test('the Workflow Canvas loads the latest stored Snapshot with exact edges, bindings, and Tool policy', async () => {

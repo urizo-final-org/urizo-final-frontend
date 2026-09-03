@@ -56,6 +56,24 @@ test('preserves the public error envelope for forbidden and validation failures'
   expect(invalid).toMatchObject({ status: 400, code: 'CONTRACT_VALIDATION_FAILED', traceId: 'trace-validation' })
 })
 
+test('loads and saves Profile-scoped default templates', async () => {
+  const template = { profileKey: 'LLM_OPS', updatedAt: '2026-09-04T00:00:00Z', snapshot }
+  const fetcher = vi.fn()
+    .mockResolvedValueOnce(new Response(JSON.stringify(template)))
+    .mockResolvedValueOnce(new Response(JSON.stringify(template)))
+  vi.stubGlobal('fetch', fetcher)
+  vi.stubGlobal('crypto', { randomUUID: () => 'trace-id' })
+  const api = new ProfileVersionApi('token', vi.fn(), vi.fn())
+
+  await expect(api.getDefaultTemplate('LLM_OPS')).resolves.toEqual(template)
+  await expect(api.saveDefaultTemplate('LLM_OPS', snapshot)).resolves.toEqual(template)
+
+  expect(fetcher.mock.calls[0][0]).toBe('/api/admin/ai/profile-templates/LLM_OPS')
+  expect(fetcher.mock.calls[1][0]).toBe('/api/admin/ai/profile-templates/LLM_OPS')
+  expect(fetcher.mock.calls[1][1]).toMatchObject({ method: 'PUT' })
+  expect(JSON.parse(fetcher.mock.calls[1][1].body)).toEqual({ snapshot })
+})
+
 test('manages local provider credentials with the one-time CSRF token and never expects a returned secret', async () => {
   const overview = {
     csrfToken: 'csrf-fixture',
