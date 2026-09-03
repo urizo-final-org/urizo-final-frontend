@@ -44,6 +44,12 @@ function guardrailApi(overrides: Partial<CodingConsoleApiClient> = {}): CodingCo
     guardrailRules: vi.fn().mockResolvedValue(
       { allowNewDependency: false, maxChangedFiles: null, maxChangedLines: null }),
     saveGuardrailRules: vi.fn().mockImplementation((rules) => Promise.resolve(rules)),
+    // The execution-history screen added these two to the client after this helper was
+    // written, and a Partial cannot supply a required member. Missing, the file stopped type
+    // checking - which the frontend candidate check now runs, so every screen request would
+    // have failed on a stub nobody had filled in.
+    runnerStatus: vi.fn().mockResolvedValue({ schemaVersion: '1.0', alive: true }),
+    notifications: vi.fn().mockResolvedValue({ schemaVersion: '1.0', items: [] }),
     ...overrides,
   }
 }

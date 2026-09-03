@@ -85,21 +85,30 @@ const nextStep: Partial<Record<CodingJobStatus, string>> = {
 }
 
 /**
- * The runner only knows how to check out the backend today. That is a fact about the runner,
- * not a question for the administrator: this screen asks for a sentence in Korean, and making
- * the writer first classify their own request as "backend" or "frontend" contradicts the whole
- * point of asking in Korean. The one supported value is sent for them, and the limitation is
- * stated as a sentence rather than offered as a choice with a single answer.
+ * A Job works in one repository, because its work folder is one checkout. That cannot be
+ * inferred from the sentence reliably enough to act on: guessing wrong sends the model to a
+ * checkout where the files it needs do not exist, and it burns the whole run finding that out.
+ * So the writer says which, in the words this screen already uses for it.
+ *
+ * <p>Asking is also what the design says to do - the guide draws this choice on the request
+ * screen. It stays out of developer vocabulary: nobody is asked to pick a repository.
  */
-const REPOSITORY: CodingRepository = 'backend'
-
-const repositoryLabels: Record<string, string> = {
+const repositoryLabels: Record<CodingRepository, string> = {
   backend: '기능과 데이터',
   frontend: '화면 모양',
 }
 
+/** What each choice actually changes, in the terms the person typing already thinks in. */
+const repositoryHints: Record<CodingRepository, string> = {
+  backend: '목록에 담기는 내용, 저장되는 값, 계산과 규칙',
+  frontend: '화면에 보이는 칸, 순서, 문구와 배치',
+}
+
 function repositoryLabel(id: string): string {
-  return repositoryLabels[id] ?? id
+  // The list arrives from the server, so the value is a string until it is checked. Narrowing
+  // here rather than widening the table keeps the table itself exhaustive: a third repository
+  // would have to be named in it before it could be labelled at all.
+  return id === 'backend' || id === 'frontend' ? repositoryLabels[id] : id
 }
 
 function openJob(items: JobSummary[]): JobSummary | null {
@@ -158,6 +167,9 @@ export default function CodingWorkspace({ api, role }: { api: CodingConsoleApiCl
   const [lastFailed, setLastFailed] = useState<JobSummary | null>(null)
   const [detail, setDetail] = useState<JobDetail | null>(null)
   const [requestText, setRequestText] = useState('')
+  // Kept after a send rather than reset: the guide's order is data first and screen second, so
+  // the next request is often the other half of the same intention.
+  const [repository, setRepository] = useState<CodingRepository>('backend')
   const [submitting, setSubmitting] = useState(false)
   const [deciding, setDeciding] = useState(false)
   /* silent marks the automatic ticks: they update the data but never blank the screen with
@@ -299,12 +311,12 @@ export default function CodingWorkspace({ api, role }: { api: CodingConsoleApiCl
     setSubmitting(true)
     setFailure(null)
     try {
-      const created = await api.createJob(REPOSITORY, text)
+      const created = await api.createJob(repository, text)
       setDetail(null)
       setLastFailed(null)
       setCurrent({
         jobId: created.job.jobId,
-        repository: REPOSITORY,
+        repository,
         requestText: text,
         status: created.job.status,
         createdAt: created.request.createdAt,
@@ -392,6 +404,35 @@ export default function CodingWorkspace({ api, role }: { api: CodingConsoleApiCl
         <section className={current || lastFailed ? `${panel} mt-[0.875rem]` : panel}>
           <PanelTitle title="새 개발 요청" sub="한국어로 적으면 AI 가 계획부터 세웁니다" />
           <form className="px-4 pb-4 pt-[0.375rem]" onSubmit={submit}>
+            <fieldset className="mb-[0.875rem] border-0 p-0">
+              <legend className={fieldLabel}>어느 쪽을 바꿀까요</legend>
+              <div className="mt-[0.375rem] grid gap-2 sm:grid-cols-2">
+                {(['backend', 'frontend'] as CodingRepository[]).map((option) => <label
+                  key={option}
+                  className={`flex cursor-pointer gap-2 rounded-md border p-[0.625rem] ${
+                    repository === option
+                      ? 'border-accent bg-accent/5'
+                      : 'border-line hover:border-muted-2'}`}
+                >
+                  <input
+                    type="radio"
+                    name="coding-repository"
+                    className="mt-[0.1875rem]"
+                    value={option}
+                    checked={repository === option}
+                    onChange={() => setRepository(option)}
+                    disabled={submitting}
+                  />
+                  <span>
+                    <b className="block text-[0.8125rem] text-body">{repositoryLabels[option]}</b>
+                    <small className="block text-[0.6875rem] leading-4 text-muted-2">
+                      {repositoryHints[option]}
+                    </small>
+                  </span>
+                </label>)}
+              </div>
+            </fieldset>
+
             <label className="block">
               <span className={fieldLabel}>무엇을 바꿀까요</span>
               <textarea
@@ -406,8 +447,8 @@ export default function CodingWorkspace({ api, role }: { api: CodingConsoleApiCl
 
             <p className="mt-2 text-[0.6875rem] leading-5 text-muted-2">
               보내면 AI 가 계획을 세우고, 사람이 승인해야 다음 단계로 갑니다.
-              지금은 게시판·회원·메뉴처럼 <b>동작하는 부분</b>만 바꿀 수 있습니다.
-              색·배치 같은 <b>화면 모양</b>은 아직 준비 중입니다.
+              한 번에 <b>한 쪽만</b> 바뀝니다. 두 쪽이 다 필요하면
+              <b> 기능과 데이터를 먼저</b> 보내고, 그 다음에 화면 모양을 보내 주세요.
             </p>
 
             <button
@@ -664,9 +705,16 @@ function CandidateApproval({ detail, pending, busy, onDecide }: {
             target="_blank"
             rel="noreferrer"
           >미리보기 열기</a>
-          : <Callout tone="warn" icon="triangle-alert">
-            미리보기가 아직 준비되지 않았습니다. 눈으로 확인할 수 없는 상태이니 승인을 미뤄 주세요.
-          </Callout>}
+          // A blocked preview and a preview still being raised are not the same news. Told
+          // apart, because "잠시 기다리세요" on something that already failed keeps a person
+          // waiting for a screen that is never going to appear.
+          : detail.preview?.blocked
+            ? <Callout tone="warn" icon="triangle-alert">
+              {detail.preview.blocked}
+            </Callout>
+            : <Callout tone="warn" icon="triangle-alert">
+              미리보기가 아직 준비되지 않았습니다. 눈으로 확인할 수 없는 상태이니 승인을 미뤄 주세요.
+            </Callout>}
       </div>
 
       {rejecting
@@ -755,6 +803,20 @@ function FinalApproval({ detail, pending, busy, role, onDecide }: {
     </PanelTitle>
 
     <div className="px-4 pb-4 pt-[0.375rem]">
+      {/*
+        * The other screen is told a candidate did not pass, and nothing more: it is read by
+        * someone who cannot act on a compiler message. This reader can, so the runner's own
+        * words are here and only here.
+        */}
+      {technical?.runnerFailure && <div className="mb-[0.875rem]">
+        <Callout tone="warn" icon="triangle-alert">
+          실행기가 이 후보에서 멈췄습니다.
+          <span className="mt-1 block break-all font-mono text-[0.6875rem]">
+            {technical.runnerFailure}
+          </span>
+        </Callout>
+      </div>}
+
       {/* The Job started from a commit that may no longer be the head of dev. */}
       {technical?.baseShaFreshness?.stale && <div className="mb-[0.875rem]">
         <Callout tone="warn" icon="triangle-alert">

@@ -52,15 +52,44 @@ beforeEach(() => {
  * sentence as "backend" or "frontend" - developer words, in a choice that had exactly one
  * selectable answer. The server is told the only supported value without asking.
  */
-test('the form asks for a sentence and nothing else', async () => {
+/*
+ * A Job works in one repository because its work folder is one checkout, and the sentence
+ * cannot be trusted to say which: a wrong guess sends the model to a checkout without the
+ * files, and it spends the whole run discovering that. So the choice is asked for - but in
+ * what the change does, never in the name of a repository.
+ */
+test('the form asks which side to change, without naming a repository', async () => {
   render(<CodingWorkspace role="SUPER_ADMIN" api={consoleApi()} />)
 
   const send = await screen.findByRole('button', { name: '요청 보내기' })
   expect(send).toBeDisabled()
 
-  expect(screen.queryAllByRole('radio')).toHaveLength(0)
+  expect(screen.getByLabelText(/기능과 데이터/)).toBeChecked()
+  expect(screen.getByLabelText(/화면 모양/)).not.toBeChecked()
   expect(screen.queryByText('백엔드')).not.toBeInTheDocument()
   expect(screen.queryByText('프론트엔드')).not.toBeInTheDocument()
+})
+
+/* Two sides means two requests, and the guide puts the data one first. */
+test('the form says a request changes one side and which one comes first', async () => {
+  render(<CodingWorkspace role="SUPER_ADMIN" api={consoleApi()} />)
+
+  expect(await screen.findByText(/기능과 데이터를 먼저/)).toBeInTheDocument()
+})
+
+test('choosing the screen side sends that repository, not the default', async () => {
+  const api = consoleApi()
+  render(<CodingWorkspace role="SUPER_ADMIN" api={api} />)
+
+  await screen.findByRole('button', { name: '요청 보내기' })
+  fireEvent.click(screen.getByLabelText(/화면 모양/))
+  fireEvent.change(screen.getByLabelText('무엇을 바꿀까요'), {
+    target: { value: '회원 목록에서 역할 칸을 없애줘' },
+  })
+  fireEvent.click(screen.getByRole('button', { name: '요청 보내기' }))
+
+  await waitFor(() => expect(api.createJob)
+    .toHaveBeenCalledWith('frontend', '회원 목록에서 역할 칸을 없애줘'))
 })
 
 /*
@@ -339,6 +368,27 @@ test('an unready preview warns instead of offering a dead link', async () => {
   expect(screen.queryByRole('link', { name: '미리보기 열기' })).not.toBeInTheDocument()
 })
 
+/*
+ * "Still being raised" and "it failed" are not the same news. Told apart, because waiting for
+ * a screen that is never going to appear is how a person ends up approving the last request's
+ * preview instead of this one's.
+ */
+/*
+ * The two readers get different halves of the same fact on purpose. A path and a compiler code
+ * are unreadable to the person approving the result, and indispensable to the person who has
+ * to fix it.
+ */
+test('a blocked preview says why instead of asking the operator to keep waiting', async () => {
+  render(<CodingWorkspace role="SUPER_ADMIN" api={candidateApi({
+    ...candidateDetail,
+    preview: { ready: false, blocked: 'AI 가 만든 화면이 검사를 통과하지 못했습니다.' },
+  })} />)
+
+  expect(await screen.findByText(/검사를 통과하지 못했습니다/)).toBeInTheDocument()
+  expect(screen.queryByText(/아직 준비되지 않았습니다/)).not.toBeInTheDocument()
+  expect(screen.queryByRole('link', { name: '미리보기 열기' })).not.toBeInTheDocument()
+})
+
 test('rejecting with attempts left promises another try, and says which one', async () => {
   render(<CodingWorkspace role="SUPER_ADMIN" api={candidateApi()} />)
 
@@ -409,6 +459,24 @@ test('the code approval names the gate it is on and shows the changed files', as
   // The approval is judged on the patch itself, not on its fingerprint.
   expect(screen.getByText(/\+데모 확인/)).toBeInTheDocument()
   expect(screen.getByRole('button', { name: '네, 이 코드를 반영합니다' })).toBeInTheDocument()
+})
+
+/*
+ * The two readers get different halves of the same fact on purpose. A path and a compiler code
+ * are unreadable to the person approving the result, and indispensable to the person who has
+ * to fix it, so the plain sentence goes to one screen and the runner's own words to this one.
+ */
+test('the runner reason reaches the reader who can act on it', async () => {
+  render(<CodingWorkspace role="SUPER_ADMIN" api={finalApi({
+    ...githubDetail,
+    technical: {
+      ...githubDetail.technical!,
+      runnerFailure: 'TEST RUNNER_TEST_FAILED: src/features/cms/MemberList.tsx(12,5): error TS2322',
+    },
+  })} />)
+
+  expect(await screen.findByText(/MemberList/)).toBeInTheDocument()
+  expect(screen.getByText(/실행기가 이 후보에서 멈췄습니다/)).toBeInTheDocument()
 })
 
 test('a missing diff warns the approver instead of leaving a silent gap', async () => {

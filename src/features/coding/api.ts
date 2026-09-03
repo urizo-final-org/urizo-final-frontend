@@ -13,7 +13,7 @@ import { fetchWithSessionRefresh, type AdminSession } from '../../shared/api/ses
 export const CODING_SCHEMA_VERSION = '1.0'
 
 /** The runner only implements a backend checkout today, so the server rejects anything else. */
-export type CodingRepository = 'backend'
+export type CodingRepository = 'backend' | 'frontend'
 
 /**
  * The guardrail endpoints are wider than the job endpoints: the fence for both repositories is
@@ -109,6 +109,12 @@ export interface DecisionRecord {
 export interface PreviewLink {
   ready: boolean
   url?: string
+  /**
+   * Why there is nothing to open. Set only when a step actually failed; ready false with no
+   * reason means the preview is still being raised. Written for a reader who cannot read
+   * code, so it never names a file or a symbol.
+   */
+  blocked?: string
 }
 
 /** stale true means dev moved underneath the Job after it started. */
@@ -131,6 +137,8 @@ export interface Technical {
   checkProfile?: string
   pullRequestUrl?: string
   baseShaFreshness?: BaseShaFreshness
+  /** The runner's own words about what broke. Names files, so it is super-admin only. */
+  runnerFailure?: string
 }
 
 export interface JobDetail {
