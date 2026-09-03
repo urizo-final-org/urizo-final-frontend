@@ -335,6 +335,9 @@ export default function CmsAiAssistant({ route, target, candidates, menus, onTar
         {target
           ? <b className="mt-[0.1875rem] block truncate text-[0.71875rem] font-semibold text-ink" title={target.label}>{target.label}</b>
           : <span className="mt-[0.1875rem] block text-[0.71875rem] text-muted-2">목록에서 항목을 선택하면 그 대상에 적용합니다.</span>}
+        {route === 'menus' && <span className="mt-[0.3125rem] block text-[0.65625rem] leading-[1.5] text-muted-3">
+          선택하지 않고 요청하면 새 메뉴 만들기를 고를 수 있어요.
+        </span>}
       </div>
 
       <div className="mt-[0.875rem] flex flex-wrap gap-[0.375rem]">

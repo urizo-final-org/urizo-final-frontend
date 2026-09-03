@@ -158,8 +158,28 @@ function Menus({ api, onSelect, onCandidates, onMenus }: {
       {editing && <button type="button" className={secondaryButton} onClick={() => select(null)}><Icon name="plus" />새 메뉴</button>}
     </Heading>
     <Failure value={failure} />
-    <div className="grid gap-[0.875rem] 2xl:grid-cols-[24.375rem_minmax(0,1fr)]">
-      <form className={panel} onSubmit={submit}>
+    {/* 목록에서 고르고 폼으로 넘어가는 순서. 컨텐츠·게시판 화면과 같은 배치다. */}
+    <div className="grid gap-[0.875rem] 2xl:grid-cols-[minmax(0,1fr)_24.375rem]">
+      <section className={panel}>
+        <PanelTitle title="메뉴 목록" sub={`총 ${items.length}건`} />
+        {items.length === 0
+          ? <EmptyState icon="menu" title="등록된 메뉴가 없습니다" description="오른쪽 폼에서 첫 메뉴를 추가해 보세요." />
+          : items.map((item) => <button
+            type="button"
+            key={item.id}
+            className={`${recordRow} ${item.parentId ? 'pl-9' : ''} ${editing?.id === item.id ? 'bg-sub' : ''}`}
+            onClick={() => select(item)}
+          >
+            <span className="grid h-6 w-6 shrink-0 place-items-center rounded bg-run-bg text-[0.65625rem] font-bold text-run-fg">{item.displayOrder}</span>
+            <span className="min-w-0 flex-1">
+              <b className="block text-[0.78125rem] font-semibold text-ink">{item.parentId ? '└ ' : ''}{item.name}</b>
+              <small className="block font-mono text-[0.6875rem] text-muted-3">{item.path}</small>
+            </span>
+            <MenuLink menu={item} contents={contents} boards={boards} />
+            <Icon name="chevron-right" className="text-muted-4" />
+          </button>)}
+      </section>
+      <form className={`${panel} self-start`} onSubmit={submit}>
         <PanelTitle title={editing ? '메뉴 수정' : '메뉴 등록'} sub={editing ? '선택한 메뉴를 수정합니다.' : '새 메뉴를 추가합니다.'} />
         <div className="p-4">
           <label className={fieldLabel}>메뉴명<input className={control} value={name} onChange={(e) => setName(e.target.value)} required /></label>
@@ -174,19 +194,6 @@ function Menus({ api, onSelect, onCandidates, onMenus }: {
           </div>
         </div>
       </form>
-      <section className={panel}>
-        <PanelTitle title="메뉴 목록" sub={`총 ${items.length}건`}><Icon name="search" size={15} className="text-muted-3" /></PanelTitle>
-        {items.length === 0
-          ? <EmptyState icon="menu" title="등록된 메뉴가 없습니다" description="왼쪽 폼에서 첫 메뉴를 추가해 보세요." />
-          : items.map((item) => <button type="button" key={item.id} className={recordRow} onClick={() => select(item)}>
-            <span className="grid h-6 w-6 shrink-0 place-items-center rounded bg-run-bg text-[0.65625rem] font-bold text-run-fg">{item.displayOrder}</span>
-            <span className="min-w-0 flex-1">
-              <b className="block text-[0.78125rem] font-semibold text-ink">{item.parentId ? '└ ' : ''}{item.name}</b>
-              <small className="block font-mono text-[0.6875rem] text-muted-3">{item.path} · {targetLabel(item, contents, boards)}</small>
-            </span>
-            <Icon name="chevron-right" className="text-muted-4" />
-          </button>)}
-      </section>
     </div>
   </>
 }
@@ -447,6 +454,27 @@ export function TemplatePreview({ value, onClose }: { value: SiteTemplate; onClo
       </div>
     </section>
   </div>
+}
+
+/**
+ * 목록 오른쪽의 연결 표시.
+ *
+ * 경로는 주소이고 연결은 상태다. 한 줄에 점으로 이어 붙이면 성격이 다른 셋이 나열로 읽혀
+ * 유형만 작은 표로 띄우고 대상 이름은 한 톤 옅게 붙인다. 문구는 폼의 드롭다운과 같은 말을 쓴다.
+ */
+function MenuLink({ menu, contents, boards }: { menu: Menu; contents: Article[]; boards: Board[] }) {
+  if (menu.targetType === 'NONE') {
+    return <span className="shrink-0 text-[0.6875rem] text-muted-3">연결 없음</span>
+  }
+  const name = menu.targetType === 'CONTENT'
+    ? contents.find((item) => item.id === menu.targetId)?.title
+    : boards.find((item) => item.id === menu.targetId)?.name
+  return <span className="flex shrink-0 items-center gap-[0.375rem] text-[0.6875rem] text-muted">
+    <em className="not-italic rounded border border-[#d6e2e6] bg-[#f7fbfb] px-[0.3125rem] py-[0.0625rem] text-[0.625rem] font-semibold text-[#3f7f86]">
+      {menu.targetType === 'CONTENT' ? '컨텐츠' : '게시판'}
+    </em>
+    {name ?? '미지정'}
+  </span>
 }
 
 /** 미리보기가 변경 전으로 쓸 수 있도록 현재 값을 함께 넘긴다. */

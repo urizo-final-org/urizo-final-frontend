@@ -337,12 +337,16 @@ test('the menu assistant opens and offers a new menu beside the existing ones', 
   window.history.pushState({}, '', '/admin/menus')
   const menus = [
     { id: 10, name: '소개', path: '/about', parentId: null, displayOrder: 10, targetType: 'NONE', targetId: null },
-    { id: 11, name: '회사 소개', path: '/about/company', parentId: 10, displayOrder: 11, targetType: 'NONE', targetId: null },
+    { id: 11, name: '회사 소개', path: '/about/company', parentId: 10, displayOrder: 11, targetType: 'CONTENT', targetId: 3 },
+  ]
+  const contents = [
+    { id: 3, authorId: actorId, authorName: '관리자', title: '회사 소개', body: '본문', createdAt: '2026-09-01T00:00:00Z', updatedAt: '2026-09-01T00:00:00Z' },
   ]
   vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => {
     const url = String(input)
     if (url === '/api/auth/refresh') return Promise.resolve(json(session()))
     if (url === '/api/cms/menus') return Promise.resolve(json(menus))
+    if (url === '/api/cms/contents') return Promise.resolve(json(contents))
     return Promise.resolve(json([]))
   }))
 
@@ -350,6 +354,13 @@ test('the menu assistant opens and offers a new menu beside the existing ones', 
   expect(await screen.findByRole('heading', { name: '메뉴 관리' })).toBeInTheDocument()
   const panel = screen.getByRole('complementary', { name: '메뉴 관리 자연어 도우미' })
   expect(within(panel).queryByText('메뉴 관리 화면은 아직 자연어 변경을 지원하지 않습니다.')).not.toBeInTheDocument()
+  expect(within(panel).getByText('선택하지 않고 요청하면 새 메뉴 만들기를 고를 수 있어요.')).toBeInTheDocument()
+
+  /** 경로와 연결은 따로 읽힌다. 유형은 표로, 대상 이름은 그 옆에 둔다. */
+  const linked = await screen.findByRole('button', { name: /\/about\/company/ })
+  expect(within(linked).getByText('/about/company')).toBeInTheDocument()
+  expect(within(linked).getByText('컨텐츠')).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: /연결 없음/ })).toBeInTheDocument()
 
   fireEvent.change(within(panel).getByPlaceholderText('CMS 변경 요청을 입력하세요'), { target: { value: '자료실 메뉴 만들어 줘' } })
   fireEvent.click(within(panel).getByRole('button', { name: '요청 분석하기' }))
