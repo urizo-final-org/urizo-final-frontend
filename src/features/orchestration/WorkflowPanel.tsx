@@ -352,6 +352,7 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient & 
   const [saving, setSaving] = useState(false)
   const [failure, setFailure] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
+  const [confirmationAction, setConfirmationAction] = useState<'load' | 'save' | 'restore' | null>(null)
   const [handlerPaletteOpen, setHandlerPaletteOpen] = useState(false)
   const [toolPolicyOpen, setToolPolicyOpen] = useState(false)
   const [edgeListOpen, setEdgeListOpen] = useState(true)
@@ -538,7 +539,6 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient & 
   }
 
   async function loadDefaultTemplate() {
-    if (!window.confirm(`${profileKey} 기본 템플릿을 편집 화면에 불러올까요? 현재 저장 Version은 변경되지 않습니다.`)) return
     setSaving(true)
     setStatus('')
     setFailure(null)
@@ -556,7 +556,6 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient & 
 
   async function saveDefaultTemplate() {
     if (!supported || nodes.length === 0) return
-    if (!window.confirm(`현재 ${profileKey} 구성을 기본 템플릿으로 저장할까요? 기존 DRAFT와 ACTIVE는 변경되지 않습니다.`)) return
     setSaving(true)
     setStatus('')
     setFailure(null)
@@ -818,6 +817,22 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient & 
 
   return <>
     <WorkflowStatusToast message={notice ?? status} />
+    {confirmationAction && <WorkflowConfirmationDialog
+      action={confirmationAction}
+      profileKey={profileKey}
+      restoreDescription={selectedVersion
+        ? `선택한 v${selectedVersion.profileVersion} 저장본을 다시 불러옵니다. 저장된 버전 자체는 변경되지 않습니다.`
+        : versions.length > 0
+          ? '기본 템플릿 편집을 종료하고 최신 저장 버전을 불러옵니다. 저장된 버전 자체는 변경되지 않습니다.'
+          : '저장된 버전이 없어 기본 템플릿을 다시 불러옵니다. 기본 템플릿 자체는 변경되지 않습니다.'}
+      onCancel={() => setConfirmationAction(null)}
+      onConfirm={() => {
+        setConfirmationAction(null)
+        if (confirmationAction === 'load') void loadDefaultTemplate()
+        else if (confirmationAction === 'save') void saveDefaultTemplate()
+        else void loadVersions(profileKey, selectedVersionId ?? undefined)
+      }}
+    />}
     <section id="agent-settings-panel-workflow" role="tabpanel" aria-labelledby="agent-settings-tab-workflow">
     <Callout tone="ok" icon="shield-check">
       Profile별 기본 템플릿 또는 저장된 Snapshot을 편집해 새 불변 DRAFT로 저장합니다. 활성화 검증은 Backend Validator가 최종 강제합니다.
@@ -849,13 +864,31 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient & 
       </div>
       {failure && <div role="alert" className="mt-3 rounded border border-[#ead2d2] bg-fail-bg px-3 py-2 text-[0.71875rem] text-fail-fg">{failure}</div>}
       {!supported && nodes.length > 0 && <div role="alert" className="mt-3 rounded border border-[#ead2d2] bg-fail-bg px-3 py-2 text-[0.71875rem] text-fail-fg">현재 UI 허용 목록에 없는 Handler·Model Binding·Tool이 포함되어 편집과 저장을 중단했습니다.</div>}
-      <div className="mt-3 flex flex-wrap gap-2">
-        <button type="button" className={secondaryButton} style={{ backgroundColor: '#e8f4fa', color: '#245b78', borderColor: '#9fc7dc' }} disabled={loading || saving || nodes.length === 0} onClick={autoArrange}>자동 배치</button>
-        <button type="button" className={secondaryButton} style={{ backgroundColor: '#f4effb', color: '#684b86', borderColor: '#cdb9df' }} disabled={loading || saving} onClick={() => void loadDefaultTemplate()}>기본 템플릿 불러오기</button>
-        <button type="button" className={secondaryButton} style={{ backgroundColor: '#fff4e8', color: '#8a5a24', borderColor: '#e5c59e' }} disabled={loading || saving || !supported || nodes.length === 0} onClick={() => void saveDefaultTemplate()}>기본 템플릿 저장</button>
-        <button type="button" className={primaryButton} style={{ color: '#fff' }} disabled={loading || saving || !supported || nodes.length === 0} onClick={() => void saveDraft()}>새 DRAFT 저장</button>
-        <button type="button" className={secondaryButton} style={{ backgroundColor: '#e9f6ee', color: '#246b45', borderColor: '#a7d5b9' }} disabled={saving || selectedVersion?.status !== 'DRAFT'} onClick={() => void activateSelected()}>선택 DRAFT 활성화</button>
-        <button type="button" className={secondaryButton} style={{ backgroundColor: '#f0f2f5', color: '#435264', borderColor: '#c6cdd6' }} disabled={loading || saving} onClick={() => void loadVersions(profileKey, selectedVersionId ?? undefined)}>다시 조회</button>
+      <div className="mt-4 flex flex-wrap items-end gap-x-5 gap-y-3 border-t border-line-soft pt-3" role="group" aria-label="Workflow 작업">
+        <div className="flex flex-col gap-1.5" role="group" aria-label="템플릿 배치">
+          <span className="text-[0.6875rem] font-medium text-muted">템플릿 배치</span>
+          <button type="button" className={`${secondaryButton} whitespace-nowrap`} style={{ backgroundColor: '#e8f4fa', color: '#245b78', borderColor: '#9fc7dc' }} disabled={loading || saving || nodes.length === 0} onClick={autoArrange}>자동 배치</button>
+        </div>
+        <div className="flex flex-col gap-1.5" role="group" aria-label="기본 템플릿 작업">
+          <span className="text-[0.6875rem] font-medium text-muted">기본 템플릿</span>
+          <div className="flex flex-wrap gap-2">
+            <button type="button" className={`${secondaryButton} whitespace-nowrap`} style={{ backgroundColor: '#f4effb', color: '#684b86', borderColor: '#cdb9df' }} disabled={loading || saving} onClick={() => { setStatus(''); setNotice(null); setConfirmationAction('load') }}>기본 템플릿 불러오기</button>
+            <button type="button" className={`${secondaryButton} whitespace-nowrap`} style={{ backgroundColor: '#f4effb', color: '#684b86', borderColor: '#cdb9df' }} disabled={loading || saving || !supported || nodes.length === 0} onClick={() => { setStatus(''); setNotice(null); setConfirmationAction('save') }}>기본 템플릿 저장</button>
+          </div>
+        </div>
+        <div className="flex flex-col gap-1.5" role="group" aria-label="버전 저장 및 활성화">
+          <span className="text-[0.6875rem] font-medium text-muted">저장·활성화</span>
+          <div className="flex flex-wrap gap-2">
+            <button type="button" className={`${primaryButton} whitespace-nowrap`} style={{ color: '#fff' }} disabled={loading || saving || !supported || nodes.length === 0} onClick={() => void saveDraft()}>새 DRAFT 저장</button>
+            <button type="button" className={`${secondaryButton} whitespace-nowrap`} style={{ backgroundColor: '#e9f6ee', color: '#246b45', borderColor: '#a7d5b9' }} disabled={saving || selectedVersion?.status !== 'DRAFT'} onClick={() => void activateSelected()}>선택 DRAFT 활성화</button>
+          </div>
+        </div>
+        <div className="ml-auto flex flex-col items-end gap-1.5" role="group" aria-label="편집 취소">
+          <span className="text-[0.6875rem] font-medium text-muted">편집 취소</span>
+          <button type="button" className={`${secondaryButton} whitespace-nowrap`} style={{ backgroundColor: '#f0f2f5', color: '#435264', borderColor: '#c6cdd6' }} disabled={loading || saving} onClick={() => { setStatus(''); setNotice(null); setConfirmationAction('restore') }}>
+            <span aria-hidden="true" className="text-base leading-none">↺</span>저장본으로 되돌리기
+          </button>
+        </div>
       </div>
     </section>
 
@@ -1106,7 +1139,7 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient & 
           </section>
         </div>}
 
-        <section className="mt-5 border-t border-row-line pt-4" aria-label="Node Palette">
+        <section className="mt-5 border-t border-row-line pt-4" aria-label="노드 추가">
           <button
             type="button"
             className="flex w-full items-start justify-between gap-3 rounded text-left"
@@ -1114,7 +1147,7 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient & 
             aria-controls="handler-palette-panel"
             onClick={() => setHandlerPaletteOpen((current) => !current)}
           >
-            <span><b className="block text-[0.84375rem] font-semibold">등록 Handler Palette</b><small className="mt-1 block text-[0.6875rem] text-muted-2">Backend production 계약에 등록된 Node만 추가</small></span>
+            <span><b className="block text-[0.84375rem] font-semibold">노드 추가</b><small className="mt-1 block text-[0.6875rem] text-muted-2">사용할 노드 유형을 선택해 워크플로에 추가합니다.</small></span>
             <span className="mt-1 text-[0.6875rem] font-semibold text-muted">{handlerPaletteOpen ? '접기' : '펼치기'}</span>
           </button>
           <div id="handler-palette-panel" className={handlerPaletteOpen ? 'mt-3 grid gap-2' : 'hidden'}>
@@ -1165,6 +1198,73 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient & 
     </div>
     </section>
   </>
+}
+
+function WorkflowConfirmationDialog({ action, profileKey, restoreDescription, onCancel, onConfirm }: {
+  action: 'load' | 'save' | 'restore'
+  profileKey: ProfileKey
+  restoreDescription: string
+  onCancel: () => void
+  onConfirm: () => void
+}) {
+  const dialogRef = useRef<HTMLDialogElement>(null)
+  const cancelRef = useRef<HTMLButtonElement>(null)
+  const content = {
+    load: {
+      title: '기본 템플릿 불러오기', icon: '↓', confirm: '불러오기',
+      message: '기본 템플릿을 편집 화면에 불러올까요?',
+      description: '저장하지 않은 편집 내용은 기본 템플릿으로 교체됩니다. 기존 저장 버전은 변경되지 않습니다.',
+    },
+    save: {
+      title: '기본 템플릿 저장', icon: '✓', confirm: '저장하기',
+      message: '현재 편집한 구성을 기본 템플릿으로 저장할까요?',
+      description: '이 Profile의 기본 템플릿이 교체됩니다. 기존 DRAFT와 ACTIVE 버전은 변경되지 않습니다.',
+    },
+    restore: {
+      title: '저장본으로 되돌리기', icon: '↺', confirm: '되돌리기',
+      message: '저장하지 않은 변경사항을 버리고 저장본으로 되돌릴까요?',
+      description: restoreDescription,
+    },
+  }[action]
+
+  useEffect(() => {
+    const dialog = dialogRef.current
+    const trigger = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    dialog?.showModal()
+    cancelRef.current?.focus()
+    return () => {
+      dialog?.close()
+      trigger?.focus()
+    }
+  }, [])
+
+  return <dialog
+    ref={dialogRef}
+    aria-labelledby="template-confirmation-title"
+    aria-describedby="template-confirmation-description"
+    onCancel={(event) => { event.preventDefault(); onCancel() }}
+    className="fixed inset-0 m-auto w-[calc(100%-2rem)] max-w-[30rem] rounded-xl border border-white/10 bg-[#16293c] p-0 text-white shadow-[0_24px_70px_rgba(22,41,60,.35)] backdrop:bg-[#16293c]/50 backdrop:backdrop-blur-sm"
+  >
+    <div className="p-6 sm:p-7">
+      <div className="flex items-center gap-3">
+        <span aria-hidden="true" className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-accent text-xl font-semibold text-[#16293c]">{content.icon}</span>
+        <div>
+          <p className="mb-1 text-xs font-medium text-white/60">{profileKey}</p>
+          <h2 id="template-confirmation-title" className="text-base font-semibold text-white">{content.title}</h2>
+        </div>
+      </div>
+      <div id="template-confirmation-description" className="mt-5 text-sm leading-6 text-white/90">
+        <p>{content.message}</p>
+        <p className="mt-3 rounded-lg bg-white/5 px-4 py-3 text-xs leading-5 text-white/70">
+          {content.description}
+        </p>
+      </div>
+      <div className="mt-6 flex justify-end gap-2">
+        <button ref={cancelRef} type="button" className={`${secondaryButton} hover:brightness-125`} style={{ backgroundColor: '#223a50', border: '1px solid #64748b', color: '#fff', outlineColor: '#65c6ca' }} onClick={onCancel}>취소</button>
+        <button type="button" className={`${primaryButton} hover:brightness-110`} style={{ backgroundColor: '#65c6ca', color: '#16293c', outlineColor: '#65c6ca' }} onClick={onConfirm}>{content.confirm}</button>
+      </div>
+    </div>
+  </dialog>
 }
 
 function WorkflowStatusToast({ message }: { message: string }) {

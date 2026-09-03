@@ -266,7 +266,7 @@ function NaturalFeatureProfilePanel({ api, selectedKey, onSelect }: {
           {failure && <div role="alert" className="mt-3 rounded border border-[#ead2d2] bg-fail-bg px-3 py-2 text-[0.71875rem] text-fail-fg">{failure}</div>}
           {notice && <div role="status" className="mt-3 rounded border border-[#cfe8db] bg-ok-bg px-3 py-2 text-[0.71875rem] text-ok-fg">{notice}</div>}
           <div className="mt-3 flex flex-wrap gap-2">
-            <button type="button" className={primaryButton} disabled={!editor || saving} onClick={() => void saveDraft()}>불변 버전 저장</button>
+            <button type="button" className={primaryButton} style={{ color: '#fff' }} disabled={!editor || saving} onClick={() => void saveDraft()}>불변 버전 저장</button>
             <button type="button" className={secondaryButton} disabled={!selectedVersion || selectedVersion.status !== 'DRAFT' || saving} onClick={() => void activateSelected()}>선택 DRAFT 활성화</button>
           </div>
         </div>
@@ -454,7 +454,7 @@ function ProviderModelPanel({ api }: { api: AgentSettingsApiClient }) {
               />
             </label>
             <div className="mt-3 flex flex-wrap gap-2">
-              <button type="button" className={primaryButton} disabled={controlsDisabled || !csrfToken} onClick={() => void save(provider)}>
+              <button type="button" className={primaryButton} style={{ color: '#fff' }} disabled={controlsDisabled || !csrfToken} onClick={() => void save(provider)}>
                 {busy ? '처리 중' : status?.configured ? 'Key 교체' : 'Key 저장'}
               </button>
               {status?.configured && <button type="button" className={secondaryButton} disabled={controlsDisabled || !csrfToken} onClick={() => void testConnection(provider, status)}>연결 테스트</button>}
