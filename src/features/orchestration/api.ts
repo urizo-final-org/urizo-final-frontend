@@ -6,6 +6,8 @@ export type ProfileStatus = 'DRAFT' | 'ACTIVE' | 'INACTIVE'
 export type ModelProvider = 'OPENAI' | 'ANTHROPIC' | 'GOOGLE_GENAI'
 export type ProviderCredentialState = 'STORED' | 'VERIFIED' | 'BILLING_BLOCKED' | 'INVALID_CREDENTIAL' | 'PROVIDER_UNAVAILABLE'
 export type ProfileNodeType = 'start' | 'agent' | 'tool' | 'approval' | 'check' | 'guardrail' | 'end'
+export type ToolBindingMode = 'MODEL_OPTIONAL' | 'MODEL_REQUIRED' | 'SYSTEM_REQUIRED'
+export type ProfileToolBindings = Record<string, Record<string, ToolBindingMode>>
 
 export interface ProviderCredentialStatus {
   provider: ModelProvider
@@ -97,6 +99,8 @@ export interface ProfileAuthoringSnapshot {
   edges: ProfileSnapshotEdge[]
   config: ProfileSnapshotConfig
   modelBindings: Record<string, ProfileModelBinding>
+  /** Omitted only by legacy API snapshots; all newly authored payloads include it. */
+  toolBindings?: ProfileToolBindings
   toolPolicy: { allowedTools: string[] }
   guardrailProfileKey: string
 }

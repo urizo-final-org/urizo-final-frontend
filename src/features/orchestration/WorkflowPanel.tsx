@@ -5,7 +5,7 @@ import {
   Badge, Callout, Tag, control, dangerButton, panel, primaryButton, secondaryButton,
 } from '../../shared/ui/primitives'
 import type {
-  ModelCatalog, ModelCatalogApiClient, ModelCatalogModel, ProfileAuthoringSnapshot, ProfileDefaultTemplateApiClient, ProfileEditorLayoutApiClient, ProfileKey, ProfileModelBinding, ProfileModelSelection, ProfileNodeType, ProfileSnapshotConfig,
+  ModelCatalog, ModelCatalogApiClient, ModelCatalogModel, ProfileAuthoringSnapshot, ProfileDefaultTemplateApiClient, ProfileEditorLayoutApiClient, ProfileKey, ProfileModelBinding, ProfileModelSelection, ProfileNodeType, ProfileSnapshotConfig, ProfileToolBindings, ToolBindingMode,
   ProfileSnapshotEdge, ProfileSnapshotNode, ProfileVersion, ProfileVersionApiClient,
 } from './api'
 
@@ -18,6 +18,7 @@ interface CanvasDimensions {
   width: number
   height: number
   nodeAreaHeight: number
+  capabilityLaneTop: number
 }
 
 type EdgePortSide = 'left' | 'right'
@@ -29,6 +30,12 @@ interface HandlerDefinition {
   resultPorts: string[]
   config: Record<string, unknown>
   locked?: true
+}
+
+interface ToolCapabilityBinding {
+  nodeId: string
+  tool: string
+  mode: ToolBindingMode
 }
 
 const nodeTypes = {
@@ -92,6 +99,29 @@ const toolDetails: Record<string, { label: string; description: string }> = {
   discard_cms_preview: { label: 'CMS 미리보기 폐기', description: '생성된 CMS 변경 미리보기를 폐기 처리합니다.' },
   revalidate_cms_preview: { label: 'CMS 미리보기 재검증', description: '승인된 미리보기를 Spring의 최신 Resource Snapshot과 다시 비교합니다.' },
   apply_cms_preview: { label: 'CMS 반영 준비', description: 'Spring CmsService가 DB에 반영할 수 있는 검증된 명령을 반환합니다.' },
+}
+
+// Legacy snapshots have only profile-wide allowedTools. These Backend fixture defaults
+// hydrate the new per-node contract without changing nodes, edges, or model bindings.
+const defaultToolBindingsByHandler: Record<ProfileKey, Record<string, Record<string, ToolBindingMode>>> = {
+  LLM_OPS: {
+    'coding.code': {
+      read_file: 'MODEL_OPTIONAL', search_code: 'MODEL_OPTIONAL', read_diff: 'MODEL_OPTIONAL', apply_patch: 'MODEL_OPTIONAL',
+      run_check: 'MODEL_OPTIONAL', check_package_allowlist: 'MODEL_OPTIONAL', scan_changed_files: 'MODEL_OPTIONAL',
+    },
+    'coding.review': {
+      read_file: 'MODEL_OPTIONAL', search_code: 'MODEL_OPTIONAL', read_diff: 'MODEL_OPTIONAL', run_check: 'MODEL_OPTIONAL',
+      check_package_allowlist: 'MODEL_OPTIONAL', scan_changed_files: 'MODEL_OPTIONAL',
+    },
+    'coding.preview': {
+      read_diff: 'SYSTEM_REQUIRED', run_check: 'SYSTEM_REQUIRED', check_package_allowlist: 'SYSTEM_REQUIRED', scan_changed_files: 'SYSTEM_REQUIRED',
+    },
+  },
+  NATURAL_CMS: {
+    'cms.preview': { validate_cms_command: 'MODEL_REQUIRED', resolve_cms_target: 'SYSTEM_REQUIRED', create_cms_preview: 'SYSTEM_REQUIRED' },
+    'cms.discard': { discard_cms_preview: 'SYSTEM_REQUIRED' },
+    'cms.apply': { revalidate_cms_preview: 'SYSTEM_REQUIRED', apply_cms_preview: 'SYSTEM_REQUIRED' },
+  },
 }
 
 const NODE_WIDTH = 176
@@ -205,15 +235,152 @@ function restoreLayout(snapshot: ProfileAuthoringSnapshot, nodes: { id: string; 
   return generated.map((node) => ({ ...node, ...coordinates.get(node.id)! }))
 }
 
-function canvasDimensions(nodes: WorkflowNode[], edges: ProfileSnapshotEdge[]): CanvasDimensions {
+function cloneToolBindings(bindings: ProfileToolBindings): ProfileToolBindings {
+  return Object.fromEntries(Object.entries(bindings).map(([nodeId, tools]) => [nodeId, { ...tools }]))
+}
+
+function hydrateToolBindings(profileKey: ProfileKey, nodes: ProfileSnapshotNode[], bindings: ProfileToolBindings | undefined): ProfileToolBindings {
+  if (bindings !== undefined) return cloneToolBindings(bindings)
+  return Object.fromEntries(nodes.flatMap((node) => {
+    const defaults = defaultToolBindingsByHandler[profileKey][node.handlerKey]
+    return defaults ? [[node.id, { ...defaults }]] : []
+  }))
+}
+
+function capabilityBindings(nodes: WorkflowNode[], toolBindings: ProfileToolBindings): ToolCapabilityBinding[] {
+  return nodes.flatMap((node) => Object.entries(toolBindings[node.id] ?? {}).map(([tool, mode]) => ({ nodeId: node.id, tool, mode })))
+}
+
+function capabilityTools(profileKey: ProfileKey, toolBindings: ProfileToolBindings) {
+  const bound = new Set(Object.values(toolBindings).flatMap((tools) => Object.keys(tools)))
+  return toolCatalog[profileKey].filter((tool) => bound.has(tool))
+}
+
+function requirementFor(toolBindings: ProfileToolBindings, tool: string): ToolBindingMode {
+  const requirements = Object.values(toolBindings).map((bindings) => bindings[tool]).filter((mode): mode is ToolBindingMode => mode !== undefined)
+  if (requirements.includes('SYSTEM_REQUIRED')) return 'SYSTEM_REQUIRED'
+  if (requirements.includes('MODEL_REQUIRED')) return 'MODEL_REQUIRED'
+  return 'MODEL_OPTIONAL'
+}
+
+function lockedTools(profileKey: ProfileKey, toolBindings: ProfileToolBindings) {
+  return new Set(capabilityTools(profileKey, toolBindings).filter((tool) => requirementFor(toolBindings, tool) !== 'MODEL_OPTIONAL'))
+}
+
+function adjacencyFor(nodes: WorkflowNode[], edges: ProfileSnapshotEdge[], excludedNodeId?: string) {
+  const adjacency = new Map(nodes.filter((node) => node.id !== excludedNodeId).map((node) => [node.id, new Set<string>()]))
+  for (const edge of edges) {
+    if (edge.from === excludedNodeId || edge.to === excludedNodeId || !adjacency.has(edge.from) || !adjacency.has(edge.to)) continue
+    adjacency.get(edge.from)?.add(edge.to)
+  }
+  return adjacency
+}
+
+function reachableFrom(startId: string, adjacency: Map<string, Set<string>>) {
+  const reached = new Set<string>()
+  const queue = [startId]
+  while (queue.length > 0) {
+    const nodeId = queue.shift()!
+    if (reached.has(nodeId) || !adjacency.has(nodeId)) continue
+    reached.add(nodeId)
+    for (const next of adjacency.get(nodeId) ?? []) if (!reached.has(next)) queue.push(next)
+  }
+  return reached
+}
+
+function dominates(startId: string, requiredId: string, protectedId: string, nodes: WorkflowNode[], edges: ProfileSnapshotEdge[]) {
+  return !reachableFrom(startId, adjacencyFor(nodes, edges, requiredId)).has(protectedId)
+}
+
+function portLeadsTo(sourceId: string, port: string, targetId: string, nodes: WorkflowNode[], edges: ProfileSnapshotEdge[]) {
+  const route = edges.find((edge) => edge.from === sourceId && edge.resultPort === port)?.to
+  return route !== undefined && reachableFrom(route, adjacencyFor(nodes, edges, sourceId)).has(targetId)
+}
+
+function portCannotBypass(sourceId: string, port: string, protectedId: string, nodes: WorkflowNode[], edges: ProfileSnapshotEdge[]) {
+  const route = edges.find((edge) => edge.from === sourceId && edge.resultPort === port)?.to
+  return route !== undefined && !reachableFrom(route, adjacencyFor(nodes, edges, sourceId)).has(protectedId)
+}
+
+interface RequiredSelector {
+  key: string
+  handlerKey: string
+  stage?: string
+}
+
+function profileToolPolicyViolations(profileKey: ProfileKey, nodes: WorkflowNode[], edges: ProfileSnapshotEdge[], toolBindings: ProfileToolBindings, allowedTools: string[]) {
+  const violations: string[] = []
+  const allowed = new Set(allowedTools)
+  const bindings = capabilityBindings(nodes, toolBindings)
+  for (const binding of bindings) if (!allowed.has(binding.tool)) violations.push(`${binding.nodeId}.${binding.tool} binding이 Profile allowedTools 상한 밖입니다.`)
+  for (const node of nodes) {
+    const defaults = defaultToolBindingsByHandler[profileKey][node.handlerKey]
+    if (!defaults) continue
+    for (const [tool, mode] of Object.entries(defaults)) {
+      if (mode !== 'MODEL_OPTIONAL' && toolBindings[node.id]?.[tool] !== mode) {
+        violations.push(`${node.id}.${tool} ${mode} binding이 필요합니다.`)
+      }
+    }
+  }
+  const selectors: RequiredSelector[] = profileKey === 'LLM_OPS'
+    ? [
+        { key: 'analyze', handlerKey: 'coding.analyze' }, { key: 'scope', handlerKey: 'coding.approval', stage: 'SCOPE' },
+        { key: 'code', handlerKey: 'coding.code' }, { key: 'review', handlerKey: 'coding.review' }, { key: 'preview', handlerKey: 'coding.preview' },
+        { key: 'candidate', handlerKey: 'coding.preview_approval', stage: 'CANDIDATE' }, { key: 'prRequest', handlerKey: 'coding.pr_request' },
+        { key: 'github', handlerKey: 'coding.approval', stage: 'GITHUB' }, { key: 'prComplete', handlerKey: 'coding.pr_complete' },
+        { key: 'deployRequest', handlerKey: 'coding.deploy_request' }, { key: 'deployApproval', handlerKey: 'coding.approval', stage: 'DEPLOY' },
+        { key: 'mergeCheck', handlerKey: 'coding.dev_merge_check' }, { key: 'deploy', handlerKey: 'coding.deploy' },
+      ]
+    : [
+        { key: 'analyze', handlerKey: 'cms.analyze' }, { key: 'preview', handlerKey: 'cms.preview' },
+        { key: 'approval', handlerKey: 'cms.approval', stage: 'PREVIEW' }, { key: 'apply', handlerKey: 'cms.apply' }, { key: 'discard', handlerKey: 'cms.discard' },
+      ]
+  const selected = new Map<string, WorkflowNode>()
+  for (const selector of selectors) {
+    const matches = nodes.filter((node) => node.handlerKey === selector.handlerKey && (selector.stage === undefined || node.config.stage === selector.stage))
+    if (matches.length !== 1) violations.push(`${selector.handlerKey}${selector.stage ? ` ${selector.stage}` : ''} 필수 business stage가 ${matches.length === 0 ? '없습니다' : '중복되었습니다'}.`)
+    else selected.set(selector.key, matches[0])
+  }
+  if (profileKey === 'LLM_OPS' && nodes.filter((node) => node.handlerKey === 'coding.approval').length !== 3) violations.push('coding.approval 위험 Handler가 중복되었거나 필수 stage가 없습니다.')
+  const start = nodes.find((node) => node.type === 'start')
+  const requires = (...keys: string[]) => keys.every((key) => selected.has(key))
+  if (start && profileKey === 'LLM_OPS' && requires('analyze', 'scope', 'code', 'review', 'preview', 'candidate', 'prRequest', 'github', 'prComplete', 'deployRequest', 'deployApproval', 'mergeCheck', 'deploy')) {
+    const ordered = ['analyze', 'scope', 'code', 'review', 'preview', 'candidate', 'prRequest', 'github', 'prComplete', 'deployRequest', 'deployApproval', 'mergeCheck', 'deploy'].map((key) => selected.get(key)!)
+    for (let index = 1; index < ordered.length; index += 1) if (!dominates(start.id, ordered[index - 1].id, ordered[index].id, nodes, edges)) violations.push(`${ordered[index - 1].handlerKey} Approval/Stage를 우회해 ${ordered[index].handlerKey}에 도달할 수 있습니다.`)
+    if (!portLeadsTo(selected.get('scope')!.id, 'approved', selected.get('code')!.id, nodes, edges)) violations.push('SCOPE Approval approved 결과가 coding.code로 이어지지 않습니다.')
+    if (!portLeadsTo(selected.get('candidate')!.id, 'approved', selected.get('prRequest')!.id, nodes, edges)) violations.push('CANDIDATE Approval approved 결과가 coding.pr_request로 이어지지 않습니다.')
+    if (!portCannotBypass(selected.get('candidate')!.id, 'rejected', selected.get('prRequest')!.id, nodes, edges)) violations.push('CANDIDATE Approval rejected 결과가 coding.pr_request를 우회하지 않습니다.')
+    if (!portLeadsTo(selected.get('github')!.id, 'approved', selected.get('prComplete')!.id, nodes, edges)) violations.push('GITHUB Approval approved 결과가 coding.pr_complete로 이어지지 않습니다.')
+    if (!portLeadsTo(selected.get('deployApproval')!.id, 'approved', selected.get('mergeCheck')!.id, nodes, edges)) violations.push('DEPLOY Approval approved 결과가 coding.dev_merge_check로 이어지지 않습니다.')
+  }
+  if (start && profileKey === 'NATURAL_CMS' && requires('analyze', 'preview', 'approval', 'apply', 'discard')) {
+    const analyze = selected.get('analyze')!
+    const preview = selected.get('preview')!
+    const approval = selected.get('approval')!
+    const apply = selected.get('apply')!
+    const discard = selected.get('discard')!
+    if (!dominates(start.id, analyze.id, preview.id, nodes, edges) || !dominates(start.id, preview.id, approval.id, nodes, edges)) violations.push('CMS analyze → preview → approval 필수 stage를 우회할 수 있습니다.')
+    if (!dominates(start.id, approval.id, apply.id, nodes, edges) || !dominates(start.id, approval.id, discard.id, nodes, edges)) violations.push('CMS Approval을 우회해 apply 또는 discard에 도달할 수 있습니다.')
+    if (!portLeadsTo(approval.id, 'approved', apply.id, nodes, edges)) violations.push('CMS Approval approved 결과가 cms.apply로 이어지지 않습니다.')
+    if (!portCannotBypass(approval.id, 'approved', discard.id, nodes, edges)) violations.push('CMS Approval approved 결과가 cms.discard를 우회하지 않습니다.')
+    if (!portLeadsTo(approval.id, 'rejected', discard.id, nodes, edges)) violations.push('CMS Approval rejected 결과가 cms.discard로 이어지지 않습니다.')
+    if (!portCannotBypass(approval.id, 'rejected', apply.id, nodes, edges)) violations.push('CMS Approval rejected 결과가 cms.apply를 우회하지 않습니다.')
+  }
+  return Array.from(new Set(violations))
+}
+
+function canvasDimensions(nodes: WorkflowNode[], edges: ProfileSnapshotEdge[], capabilityCount: number): CanvasDimensions {
   const farthestRight = Math.max(0, ...nodes.map((node) => node.x + NODE_WIDTH))
   const farthestBottom = Math.max(0, ...nodes.map((node) => node.y + NODE_HEIGHT))
   const detourCount = edges.filter((edge) => isDetourEdge(edge, nodes)).length
   const nodeAreaHeight = Math.max(MIN_NODE_AREA_HEIGHT, farthestBottom + CANVAS_PADDING)
+  const capabilityRows = Math.max(1, Math.ceil(capabilityCount / 5))
+  const capabilityLaneTop = nodeAreaHeight + CANVAS_PADDING
   return {
     width: Math.max(MIN_CANVAS_WIDTH, farthestRight + CANVAS_PADDING),
-    height: nodeAreaHeight + CANVAS_PADDING + Math.max(1, detourCount) * DETOUR_LANE_GAP,
+    height: capabilityLaneTop + capabilityRows * 92 + CANVAS_PADDING + Math.max(1, detourCount) * DETOUR_LANE_GAP,
     nodeAreaHeight,
+    capabilityLaneTop,
   }
 }
 
@@ -278,6 +445,11 @@ export const starterSnapshots: Record<ProfileKey, ProfileAuthoringSnapshot> = {
       code: { primary: 'llm-ops-code', fallback: [] },
       review: { primary: 'llm-ops-review', fallback: [] },
     },
+    toolBindings: {
+      code: { ...defaultToolBindingsByHandler.LLM_OPS['coding.code'] },
+      review: { ...defaultToolBindingsByHandler.LLM_OPS['coding.review'] },
+      preview: { ...defaultToolBindingsByHandler.LLM_OPS['coding.preview'] },
+    },
     toolPolicy: { allowedTools: [...toolCatalog.LLM_OPS] },
     guardrailProfileKey: 'central.default',
   },
@@ -314,6 +486,11 @@ export const starterSnapshots: Record<ProfileKey, ProfileAuthoringSnapshot> = {
       analyze: { primary: 'natural-cms-analyze', fallback: [] },
       preview: { primary: 'natural-cms-command', fallback: [] },
     },
+    toolBindings: {
+      preview: { ...defaultToolBindingsByHandler.NATURAL_CMS['cms.preview'] },
+      discard: { ...defaultToolBindingsByHandler.NATURAL_CMS['cms.discard'] },
+      apply: { ...defaultToolBindingsByHandler.NATURAL_CMS['cms.apply'] },
+    },
     toolPolicy: { allowedTools: [...toolCatalog.NATURAL_CMS] },
     guardrailProfileKey: 'central.default',
   },
@@ -328,6 +505,7 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient & 
   const [config, setConfig] = useState<ProfileSnapshotConfig>(starterSnapshots.LLM_OPS.config)
   const [modelBindings, setModelBindings] = useState<Record<string, ProfileModelBinding>>({})
   const [modelCatalog, setModelCatalog] = useState<ModelCatalog | null>(null)
+  const [toolBindings, setToolBindings] = useState<ProfileToolBindings>({})
   const [allowedTools, setAllowedTools] = useState<string[]>([])
   const [guardrailProfileKey, setGuardrailProfileKey] = useState('central.default')
   const [selectedId, setSelectedId] = useState('')
@@ -338,7 +516,7 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient & 
   const [saving, setSaving] = useState(false)
   const [failure, setFailure] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
-  const [confirmationAction, setConfirmationAction] = useState<'load' | 'save' | 'restore' | null>(null)
+  const [confirmationAction, setConfirmationAction] = useState<'load' | 'save' | 'restore' | 'draft' | null>(null)
   const [handlerPaletteOpen, setHandlerPaletteOpen] = useState(false)
   const [toolPolicyOpen, setToolPolicyOpen] = useState(false)
   const [edgeListOpen, setEdgeListOpen] = useState(true)
@@ -354,10 +532,15 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient & 
   const selected = nodes.find((node) => node.id === selectedId) ?? null
   const selectedDefinition = selected ? definitionFor(profileKey, selected.handlerKey) : null
   const selectedVersion = versions.find((version) => version.profileVersionId === selectedVersionId) ?? null
-  const canvas = canvasDimensions(nodes, edges)
+  const capabilityLaneTools = capabilityTools(profileKey, toolBindings)
+  const capabilityLockedTools = lockedTools(profileKey, toolBindings)
+  const capabilityLaneBindings = capabilityBindings(nodes, toolBindings)
+  const saveViolations = profileToolPolicyViolations(profileKey, nodes, edges, toolBindings, allowedTools)
+  const canvas = canvasDimensions(nodes, edges, capabilityLaneTools.length)
   const catalogModels = modelCatalog?.models ?? []
   const supported = nodes.every((node) => matchesDefinition(profileKey, node))
     && allowedTools.every((tool) => toolCatalog[profileKey].includes(tool))
+    && capabilityLaneBindings.every((binding) => toolCatalog[profileKey].includes(binding.tool))
     && nodes.filter((node) => node.type === 'agent').every((node) => {
       const binding = modelBindings[node.id]
       return binding !== undefined
@@ -459,6 +642,7 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient & 
       nodeId,
       cloneBinding(binding),
     ])))
+    setToolBindings(hydrateToolBindings(profileKey, snapshot.nodes, snapshot.toolBindings))
     setAllowedTools([...snapshot.toolPolicy.allowedTools])
     setGuardrailProfileKey(snapshot.guardrailProfileKey)
     setSelectedId(nextSelected?.id ?? '')
@@ -497,6 +681,7 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient & 
           .map((limit) => ({ ...limit })),
       },
       modelBindings: agentBindings,
+      toolBindings: cloneToolBindings(toolBindings),
       toolPolicy: { allowedTools: [...allowedTools] },
       guardrailProfileKey,
     }
@@ -624,6 +809,8 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient & 
         [node.id]: withSelection({ primary: initialModel.selectionId, fallback: [] }, initialModel),
       }))
     }
+    const defaults = defaultToolBindingsByHandler[profileKey][node.handlerKey]
+    if (defaults) setToolBindings({ ...toolBindings, [node.id]: { ...defaults } })
     setSelectedId(node.id)
     setConnectPort(node.resultPorts[0] ?? '')
     setConnectFrom(null)
@@ -726,10 +913,21 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient & 
     })
   }
 
-  function toggleTool(tool: string) {
-    setAllowedTools((current) => current.includes(tool)
-      ? current.filter((item) => item !== tool)
-      : [...current, tool])
+  function toggleOptionalToolBinding(tool: string) {
+    if (!selected) return
+    const mode = defaultToolBindingsByHandler[profileKey][selected.handlerKey]?.[tool]
+    if (mode !== 'MODEL_OPTIONAL') return
+    if (toolBindings[selected.id]?.[tool] !== 'MODEL_OPTIONAL' && !allowedTools.includes(tool)) {
+      setStatus(`${tool}은(는) Profile allowedTools 상한에 없어 연결할 수 없습니다.`)
+      return
+    }
+    const next = cloneToolBindings(toolBindings)
+    const selectedBindings = { ...(next[selected.id] ?? {}) }
+    if (selectedBindings[tool] === 'MODEL_OPTIONAL') delete selectedBindings[tool]
+    else selectedBindings[tool] = 'MODEL_OPTIONAL'
+    if (Object.keys(selectedBindings).length === 0) delete next[selected.id]
+    else next[selected.id] = selectedBindings
+    setToolBindings(next)
   }
 
   function deleteSelected() {
@@ -738,6 +936,7 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient & 
     setNodes(remaining)
     setEdges((current) => current.filter((edge) => edge.from !== selected.id && edge.to !== selected.id))
     setModelBindings((current) => Object.fromEntries(Object.entries(current).filter(([nodeId]) => nodeId !== selected.id)))
+    setToolBindings(Object.fromEntries(Object.entries(toolBindings).filter(([nodeId]) => nodeId !== selected.id)))
     const nextSelected = remaining[0] ?? null
     setSelectedId(nextSelected?.id ?? '')
     setConnectPort(nextSelected?.resultPorts[0] ?? '')
@@ -852,6 +1051,7 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient & 
 
   const relatedEdges = selected ? edges.filter((edge) => edge.from === selected.id || edge.to === selected.id) : []
   const selectedBinding = selected?.type === 'agent' ? modelBindings[selected.id] : null
+  const selectedToolDefaults = selected ? defaultToolBindingsByHandler[profileKey][selected.handlerKey] ?? {} : {}
 
   return <>
     <WorkflowStatusToast message={notice ?? status} />
@@ -863,11 +1063,14 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient & 
         : versions.length > 0
           ? '기본 템플릿 편집을 종료하고 최신 저장 버전을 불러옵니다. 저장된 버전 자체는 변경되지 않습니다.'
           : '저장된 버전이 없어 기본 템플릿을 다시 불러옵니다. 기본 템플릿 자체는 변경되지 않습니다.'}
+      violations={confirmationAction === 'save' || confirmationAction === 'draft' ? saveViolations : []}
       onCancel={() => setConfirmationAction(null)}
       onConfirm={() => {
+        if (saveViolations.length > 0 && (confirmationAction === 'save' || confirmationAction === 'draft')) return
         setConfirmationAction(null)
         if (confirmationAction === 'load') void loadDefaultTemplate()
         else if (confirmationAction === 'save') void saveDefaultTemplate()
+        else if (confirmationAction === 'draft') void saveDraft()
         else void loadVersions(profileKey, selectedVersionId ?? undefined)
       }}
     />}
@@ -917,7 +1120,7 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient & 
         <div className="flex flex-col gap-1.5" role="group" aria-label="버전 저장 및 활성화">
           <span className="text-[0.6875rem] font-medium text-muted">저장·활성화</span>
           <div className="flex flex-wrap gap-2">
-            <button type="button" className={`${primaryButton} whitespace-nowrap`} style={{ color: '#fff' }} disabled={loading || saving || !supported || nodes.length === 0} onClick={() => void saveDraft()}>새 DRAFT 저장</button>
+            <button type="button" className={`${primaryButton} whitespace-nowrap`} style={{ color: '#fff' }} disabled={loading || saving || !supported || nodes.length === 0} onClick={() => { setStatus(''); setNotice(null); setConfirmationAction('draft') }}>새 DRAFT 저장</button>
             <button type="button" className={`${secondaryButton} whitespace-nowrap`} style={{ backgroundColor: '#e9f6ee', color: '#246b45', borderColor: '#a7d5b9' }} disabled={saving || selectedVersion?.status !== 'DRAFT'} onClick={() => void activateSelected()}>선택 DRAFT 활성화</button>
           </div>
         </div>
@@ -998,9 +1201,35 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient & 
                   markerEnd={active ? 'url(#workflow-edge-arrow-active)' : 'url(#workflow-edge-arrow)'}
                 />
               })}
+              {capabilityLaneBindings.map((binding) => {
+                const source = nodes.find((node) => node.id === binding.nodeId)
+                const toolIndex = capabilityLaneTools.indexOf(binding.tool)
+                if (!source || toolIndex < 0) return null
+                const toolX = CANVAS_PADDING + (toolIndex % 5) * 216
+                const toolY = canvas.capabilityLaneTop + Math.floor(toolIndex / 5) * 92
+                const x1 = source.x + NODE_WIDTH / 2
+                const y1 = source.y + NODE_HEIGHT
+                const x2 = toolX + 90
+                const y2 = toolY
+                const active = selectedId === source.id
+                return <path
+                  key={`${binding.nodeId}:${binding.tool}:${binding.mode}`}
+                  d={`M ${x1} ${y1} C ${x1} ${y1 + 28}, ${x2} ${y2 - 28}, ${x2} ${y2}`}
+                  data-capability-edge="true"
+                  data-capability-from={source.id}
+                  data-capability-tool={binding.tool}
+                  data-capability-requirement={binding.mode}
+                  fill="none"
+                  stroke={active ? '#65c6ca' : '#7b8794'}
+                  strokeWidth={active ? 2 : 1.25}
+                  strokeDasharray="4 5"
+                  strokeLinecap="round"
+                  opacity={active ? 1 : 0.7}
+                />
+              })}
             </svg>
 
-            {nodes.map((node, index) => {
+            {nodes.map((node) => {
               const info = nodeTypes[node.type]
               const definition = definitionFor(profileKey, node.handlerKey)
               const active = selectedId === node.id
@@ -1009,6 +1238,7 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient & 
                 key={node.id}
                 aria-label={`${node.id} Node`}
                 aria-current={active ? 'true' : undefined}
+                data-business-node="true"
                 data-node-selected={active ? 'true' : 'false'}
                 data-node-x={node.x}
                 data-node-y={node.y}
@@ -1042,7 +1272,32 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient & 
                   <span className={`grid h-6 w-6 place-items-center rounded ${info.skin}`}><Icon name={info.icon} size={13} /></span>
                   <span className="min-w-0 flex-1 truncate text-[0.75rem] font-semibold">{definition?.label ?? node.handlerKey}</span>
                 </button>
-                <div className="mt-2 text-[0.625rem] text-muted-2"><code className="block truncate">{node.id}</code><span>{info.meta} · 순서 {index + 1}</span></div>
+                <div className="mt-2 text-[0.625rem] text-muted-2">
+                  <code className="block truncate">{node.id}</code>
+                  <span className="mt-1 flex flex-wrap gap-1"><span className="rounded bg-slate-100 px-1 py-0.5 font-semibold text-slate-600">Business Node</span><span className="rounded bg-slate-100 px-1 py-0.5">Handler · {node.handlerKey}</span></span>
+                </div>
+              </article>
+            })}
+            <section className="absolute left-0 right-0 border-t border-dashed border-[#64748b] bg-[#151a20]/75 px-3 pt-2" style={{ top: canvas.capabilityLaneTop - 28, minHeight: canvas.height - canvas.capabilityLaneTop + 28 }} aria-label="MCP Capability Lane">
+              <div className="text-[0.625rem] font-semibold tracking-wide text-[#cbd5df]">MCP Capability Lane <span className="font-normal text-[#93a4b4]">· 점선은 Tool 사용 관계이며 Snapshot Edge에 저장되지 않습니다.</span></div>
+            </section>
+            {capabilityLaneTools.map((tool, index) => {
+              const requirement = requirementFor(toolBindings, tool)
+              const enabled = capabilityLockedTools.has(tool) || allowedTools.includes(tool)
+              const x = CANVAS_PADDING + (index % 5) * 216
+              const y = canvas.capabilityLaneTop + Math.floor(index / 5) * 92
+              return <article
+                key={tool}
+                aria-label={`MCP Tool ${tool}`}
+                data-capability-tool-node={tool}
+                data-capability-requirement={requirement}
+                data-capability-locked={capabilityLockedTools.has(tool) ? 'true' : 'false'}
+                className={`absolute z-10 rounded-md border p-2 shadow-[0_6px_16px_#070a0e4d] ${enabled ? 'border-[#79bfc2] bg-[#eaf8f8]' : 'border-[#687685] bg-[#e7ebef]'}`}
+                style={{ left: x, top: y, width: 180, minHeight: 66 }}
+              >
+                <div className="flex items-center gap-1.5"><span className="grid h-5 w-5 place-items-center rounded bg-[#d6f0f1] text-[#245b78]"><Icon name="plug" size={12} /></span><span className="min-w-0 flex-1 truncate text-[0.65625rem] font-semibold text-[#243746]">{toolDetails[tool]?.label ?? tool}</span></div>
+                <code className="mt-1 block truncate text-[0.5625rem] text-[#425466]">{tool}</code>
+                <div className="mt-1 flex items-center justify-between gap-1 text-[0.53125rem]"><span className="rounded bg-white/80 px-1 py-0.5 font-semibold text-[#34536a]">{requirement}</span><span className="text-[#506172]">{capabilityLockedTools.has(tool) ? 'locked' : enabled ? 'enabled' : 'optional'}</span></div>
               </article>
             })}
             </div>
@@ -1121,6 +1376,21 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient & 
               </div>
             </fieldset>
           </div>}
+
+          {Object.keys(selectedToolDefaults).length > 0 && <section className="mt-3 border-t border-row-line pt-3" aria-label="선택 Node MCP Tool binding">
+            <b className="text-[0.71875rem] font-semibold text-body">MCP Tool binding</b>
+            <p className="mt-1 text-[0.625rem] leading-4 text-muted-2">연결은 Snapshot Edge가 아닙니다. MODEL_OPTIONAL만 이 Node에서 연결하거나 해제할 수 있습니다.</p>
+            <div className="mt-2 space-y-2">
+              {Object.entries(selectedToolDefaults).map(([tool, mode]) => {
+                const bound = toolBindings[selected.id]?.[tool] === mode
+                const locked = mode !== 'MODEL_OPTIONAL'
+                return <label key={tool} className="flex items-start gap-2 text-[0.65625rem] text-body">
+                  <input type="checkbox" aria-label={`Tool binding ${tool}`} checked={bound} disabled={locked || loading || saving || !supported} onChange={() => toggleOptionalToolBinding(tool)} />
+                  <span className="min-w-0"><span className="block font-semibold">{toolDetails[tool]?.label ?? tool} <code className="font-normal">({tool})</code> <span className="rounded bg-sub px-1 py-0.5 text-[0.5625rem] text-muted-2">{mode}{locked ? ' · locked' : ''}</span></span></span>
+                </label>
+              })}
+            </div>
+          </section>}
 
           {selected.handlerKey === 'coding.approval' && <div className="mt-3 border-t border-row-line pt-3">
             <label className="block text-[0.71875rem] font-semibold text-body">승인 Stage
@@ -1239,13 +1509,16 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient & 
           </button>
           <fieldset id="profile-tool-policy-panel" className={toolPolicyOpen ? 'mt-2 space-y-2' : 'hidden'} disabled={loading || saving || !supported}>
             <legend className="sr-only">Profile 허용 도구 (Tool)</legend>
-            <p className="text-[0.625rem] leading-4 text-muted-2">선택한 도구만 이 Profile에서 사용할 수 있으며 Snapshot의 toolPolicy에 저장됩니다.</p>
+            <p className="text-[0.625rem] leading-4 text-muted-2">Capability Lane의 실제 MCP Tool을 표시합니다. SYSTEM_REQUIRED·MODEL_REQUIRED는 잠금 상태이며, MODEL_OPTIONAL만 선택을 바꿀 수 있습니다.</p>
             {toolCatalog[profileKey].map((tool) => {
               const detail = toolDetails[tool]
+              const requirement = requirementFor(toolBindings, tool)
+              const locked = capabilityLockedTools.has(tool)
+              const checked = allowedTools.includes(tool)
               return <label key={tool} className="flex items-start gap-2 text-[0.65625rem] text-body">
-                <input className="mt-0.5" type="checkbox" aria-label={`허용 Tool ${tool}`} checked={allowedTools.includes(tool)} onChange={() => toggleTool(tool)} />
+                <input className="mt-0.5" type="checkbox" aria-label={`허용 Tool ${tool}`} checked={checked} disabled />
                 <span className="min-w-0">
-                  <span className="block font-semibold">{detail?.label ?? tool} <code className="font-normal">({tool})</code></span>
+                  <span className="block font-semibold">{detail?.label ?? tool} <code className="font-normal">({tool})</code> <span className="rounded bg-sub px-1 py-0.5 text-[0.5625rem] text-muted-2">{requirement}{locked ? ' · locked' : ''}</span></span>
                   <small className="mt-0.5 block text-[0.625rem] leading-4 text-muted-2">{detail?.description ?? '이 Profile에서 사용할 수 있는 등록 Tool입니다.'}</small>
                 </span>
               </label>
@@ -1258,10 +1531,11 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient & 
   </>
 }
 
-function WorkflowConfirmationDialog({ action, profileKey, restoreDescription, onCancel, onConfirm }: {
-  action: 'load' | 'save' | 'restore'
+function WorkflowConfirmationDialog({ action, profileKey, restoreDescription, violations, onCancel, onConfirm }: {
+  action: 'load' | 'save' | 'restore' | 'draft'
   profileKey: ProfileKey
   restoreDescription: string
+  violations: string[]
   onCancel: () => void
   onConfirm: () => void
 }) {
@@ -1277,6 +1551,11 @@ function WorkflowConfirmationDialog({ action, profileKey, restoreDescription, on
       title: '기본 템플릿 저장', icon: '✓', confirm: '저장하기',
       message: '현재 편집한 구성을 기본 템플릿으로 저장할까요?',
       description: '이 Profile의 기본 템플릿이 교체됩니다. 기존 DRAFT와 ACTIVE 버전은 변경되지 않습니다.',
+    },
+    draft: {
+      title: '새 DRAFT 저장', icon: '✓', confirm: '저장하기',
+      message: '현재 편집한 구성을 새 불변 DRAFT로 저장할까요?',
+      description: 'Backend Validator가 최종 계약을 검사합니다. 아래 위반이 있으면 저장할 수 없습니다.',
     },
     restore: {
       title: '저장본으로 되돌리기', icon: '↺', confirm: '되돌리기',
@@ -1316,10 +1595,14 @@ function WorkflowConfirmationDialog({ action, profileKey, restoreDescription, on
         <p className="mt-3 rounded-lg bg-white/5 px-4 py-3 text-xs leading-5 text-white/70">
           {content.description}
         </p>
+        {violations.length > 0 && <div className="mt-3 rounded-lg border border-amber-200/30 bg-amber-100/10 px-4 py-3 text-xs leading-5 text-amber-50" aria-label="저장 전 정책 위반 목록">
+          <b className="block">저장 전 정책 위반</b>
+          <ul className="mt-1 list-disc pl-4">{violations.map((violation) => <li key={violation}>{violation}</li>)}</ul>
+        </div>}
       </div>
       <div className="mt-6 flex justify-end gap-2">
         <button ref={cancelRef} type="button" className={`${secondaryButton} hover:brightness-125`} style={{ backgroundColor: '#223a50', border: '1px solid #64748b', color: '#fff', outlineColor: '#65c6ca' }} onClick={onCancel}>취소</button>
-        <button type="button" className={`${primaryButton} hover:brightness-110`} style={{ backgroundColor: '#65c6ca', color: '#16293c', outlineColor: '#65c6ca' }} onClick={onConfirm}>{content.confirm}</button>
+        <button type="button" className={`${primaryButton} hover:brightness-110`} style={{ backgroundColor: '#65c6ca', color: '#16293c', outlineColor: '#65c6ca' }} disabled={violations.length > 0} onClick={onConfirm}>{content.confirm}</button>
       </div>
     </div>
   </dialog>

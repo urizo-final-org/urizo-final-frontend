@@ -74,6 +74,11 @@ test('the LLM_OPS starter uses the v4 PR-to-deploy tail without a CMS approval n
   expect(snapshot.toolPolicy).toEqual({
     allowedTools: ['read_file', 'search_code', 'read_diff', 'apply_patch', 'run_check', 'check_package_allowlist', 'scan_changed_files'],
   })
+  expect(snapshot.toolBindings).toEqual({
+    code: expect.objectContaining({ apply_patch: 'MODEL_OPTIONAL', run_check: 'MODEL_OPTIONAL' }),
+    review: expect.objectContaining({ read_diff: 'MODEL_OPTIONAL', scan_changed_files: 'MODEL_OPTIONAL' }),
+    preview: { read_diff: 'SYSTEM_REQUIRED', run_check: 'SYSTEM_REQUIRED', check_package_allowlist: 'SYSTEM_REQUIRED', scan_changed_files: 'SYSTEM_REQUIRED' },
+  })
   expect(snapshot.guardrailProfileKey).toBe('central.default')
   expect(snapshot.nodes).toHaveLength(17)
   expect(node('cms_approval')).toBeUndefined()
@@ -628,7 +633,7 @@ test('the Workflow Canvas uses a left control dock and one scrollable coordinate
   expect(paletteToggle).toHaveAttribute('aria-expanded', 'true')
   fireEvent.click(toolPolicyToggle)
   expect(toolPolicyToggle).toHaveAttribute('aria-expanded', 'true')
-  expect(screen.getByText(/파일 읽기/)).toHaveTextContent('파일 읽기 (read_file)')
+  expect(within(document.getElementById('profile-tool-policy-panel')!).getByText(/파일 읽기/)).toHaveTextContent('파일 읽기 (read_file)')
   expect(screen.getByText('승인된 Coding 작업공간의 UTF-8 텍스트 파일 하나를 읽습니다.')).toBeInTheDocument()
   expect(canvas.querySelectorAll('[data-node-port="left"]')).toHaveLength(starterSnapshots.LLM_OPS.nodes.length)
   expect(canvas.querySelectorAll('[data-node-port="right"]')).toHaveLength(starterSnapshots.LLM_OPS.nodes.length)
@@ -703,6 +708,185 @@ test('the Workflow Profile selector loads the saved NATURAL_CMS production contr
   expect(screen.getByLabelText('허용 Tool apply_cms_preview')).toBeChecked()
 })
 
+test('MCP tools render in a separate Capability Lane with golden business-node associations', async () => {
+  render(<AgentSettingsWorkspace api={profileApi()} />)
+  await screen.findByLabelText('code Node')
+
+  const canvas = screen.getByLabelText('Node 편집 Canvas')
+  expect(screen.getByLabelText('MCP Capability Lane')).toHaveTextContent('Snapshot Edge에 저장되지 않습니다')
+  expect(canvas.querySelectorAll('[data-business-node="true"]')).toHaveLength(starterSnapshots.LLM_OPS.nodes.length)
+  expect(canvas.querySelectorAll('[data-capability-tool-node]')).toHaveLength(7)
+  expect(canvas.querySelectorAll('[data-capability-edge="true"]')).toHaveLength(17)
+  expect(canvas.querySelector('[data-capability-edge][data-capability-from="preview"][data-capability-tool="run_check"]')).toHaveAttribute('data-capability-requirement', 'SYSTEM_REQUIRED')
+  expect(canvas.querySelector('[data-capability-edge][data-capability-from="code"][data-capability-tool="apply_patch"]')).toHaveAttribute('data-capability-requirement', 'MODEL_OPTIONAL')
+  expect(screen.getByLabelText('code Node')).toHaveTextContent('Business Node')
+  expect(screen.getByLabelText('code Node')).toHaveTextContent('Handler · coding.code')
+  expect(screen.getByLabelText('MCP Tool read_diff')).toHaveAttribute('data-capability-requirement', 'SYSTEM_REQUIRED')
+  expect(screen.getByLabelText('MCP Tool apply_patch')).toHaveAttribute('data-capability-requirement', 'MODEL_OPTIONAL')
+
+  fireEvent.click(screen.getByRole('button', { name: /Profile 허용 도구/ }))
+  expect(screen.getByLabelText('허용 Tool run_check')).toBeChecked()
+  expect(screen.getByLabelText('허용 Tool run_check')).toBeDisabled()
+  fireEvent.click(screen.getByLabelText('code Node'))
+  expect(screen.getByLabelText('Tool binding apply_patch')).not.toBeDisabled()
+})
+
+test('NATURAL_CMS locks its confirmed MCP tools without turning business handlers into Tool nodes', async () => {
+  const naturalVersion: ProfileVersion = {
+    profileVersionId: 'natural-capability-version', profileKey: 'NATURAL_CMS', profileVersion: 4,
+    status: 'ACTIVE', createdAt: '2026-09-01T00:00:00Z',
+    snapshot: {
+      contractVersion: '1.0', profileVersionId: 'natural-capability-version', profileKey: 'NATURAL_CMS', profileVersion: 4,
+      ...starterSnapshots.NATURAL_CMS,
+    },
+  }
+  const api = profileApi({
+    list: vi.fn().mockImplementation((profileKey) => Promise.resolve(profileKey === 'NATURAL_CMS' ? [naturalVersion] : [activeVersion])),
+  })
+  render(<AgentSettingsWorkspace api={api} />)
+  await screen.findByLabelText('analyze Node')
+  fireEvent.change(screen.getByLabelText('Workflow Profile'), { target: { value: 'NATURAL_CMS' } })
+  await screen.findByLabelText('apply Node')
+
+  const canvas = screen.getByLabelText('Node 편집 Canvas')
+  expect(canvas.querySelectorAll('[data-capability-tool-node]')).toHaveLength(6)
+  expect(canvas.querySelectorAll('[data-capability-edge="true"]')).toHaveLength(6)
+  expect(canvas.querySelector('[data-capability-edge][data-capability-from="preview"][data-capability-tool="validate_cms_command"]')).toHaveAttribute('data-capability-requirement', 'MODEL_REQUIRED')
+  expect(canvas.querySelector('[data-capability-edge][data-capability-from="apply"][data-capability-tool="apply_cms_preview"]')).toHaveAttribute('data-capability-requirement', 'SYSTEM_REQUIRED')
+  expect(screen.getByLabelText('apply Node')).toHaveTextContent('Business Node')
+  expect(screen.getByLabelText('apply Node')).toHaveTextContent('Handler · cms.apply')
+  expect(screen.queryByLabelText('MCP Tool cms.apply')).not.toBeInTheDocument()
+
+  fireEvent.click(screen.getByRole('button', { name: /Profile 허용 도구/ }))
+  expect(screen.getByLabelText('허용 Tool validate_cms_command')).toBeChecked()
+  expect(screen.getByLabelText('허용 Tool validate_cms_command')).toBeDisabled()
+  expect(screen.getByLabelText('허용 Tool apply_cms_preview')).toBeChecked()
+  expect(screen.getByLabelText('허용 Tool apply_cms_preview')).toBeDisabled()
+})
+
+test('legacy snapshots hydrate fixture toolBindings without rewriting model inference selections', async () => {
+  const legacyVersion: ProfileVersion = {
+    ...activeVersion,
+    snapshot: {
+      ...activeVersion.snapshot,
+      toolBindings: undefined,
+      modelBindings: {
+        ...activeVersion.snapshot.modelBindings,
+        code: {
+          ...activeVersion.snapshot.modelBindings.code,
+          selections: { retained: { provider: 'OPENAI', model: 'gpt-5.4-nano', inference: { reasoningIntensity: 'HIGH' }, label: 'legacy-inference' } },
+        },
+      },
+    },
+  }
+  const create = vi.fn().mockResolvedValue({ ...legacyVersion, profileVersionId: 'version-3', profileVersion: 3, status: 'DRAFT' })
+  const api = profileApi({ list: vi.fn().mockResolvedValue([legacyVersion]), create })
+  render(<AgentSettingsWorkspace api={api} />)
+  await screen.findByLabelText('code Node')
+
+  fireEvent.click(screen.getByLabelText('code Node'))
+  expect(screen.getByLabelText('Tool binding run_check')).toBeChecked()
+  expect(screen.getByLabelText('Tool binding run_check')).not.toBeDisabled()
+  fireEvent.click(screen.getByRole('button', { name: '새 DRAFT 저장' }))
+  fireEvent.click(within(screen.getByRole('dialog', { name: '새 DRAFT 저장' })).getByRole('button', { name: '저장하기' }))
+
+  await waitFor(() => expect(create).toHaveBeenCalled())
+  const saved = create.mock.calls[0][1] as ProfileVersion['snapshot']
+  expect(saved.toolBindings).toMatchObject({
+    code: expect.objectContaining({ run_check: 'MODEL_OPTIONAL' }),
+    preview: expect.objectContaining({ run_check: 'SYSTEM_REQUIRED' }),
+  })
+  expect(saved.modelBindings.code.selections).toEqual(legacyVersion.snapshot.modelBindings.code.selections)
+})
+
+test('save confirmation lists frontend binding violations and blocks the create request', async () => {
+  const api = profileApi()
+  render(<AgentSettingsWorkspace api={api} />)
+  await screen.findByLabelText('deploy Node')
+  fireEvent.click(screen.getByLabelText('deploy Node'))
+  fireEvent.click(screen.getByRole('button', { name: 'Node 삭제' }))
+  fireEvent.click(screen.getByRole('button', { name: '새 DRAFT 저장' }))
+
+  const dialog = screen.getByRole('dialog', { name: '새 DRAFT 저장' })
+  expect(dialog).toHaveTextContent('저장 전 정책 위반')
+  expect(dialog).toHaveTextContent('coding.deploy 필수 business stage가 없습니다.')
+  expect(within(dialog).getByRole('button', { name: '저장하기' })).toBeDisabled()
+  expect(api.create).not.toHaveBeenCalled()
+})
+
+test('each required LLM_OPS approval stage is listed and blocks saving when missing', async () => {
+  for (const [nodeId, stage] of [['scope_approval', 'SCOPE'], ['preview_approval', 'CANDIDATE'], ['github_approval', 'GITHUB'], ['deploy_approval', 'DEPLOY']] as const) {
+    const snapshot = {
+      ...starterSnapshots.LLM_OPS,
+      nodes: starterSnapshots.LLM_OPS.nodes.filter((node) => node.id !== nodeId),
+      edges: starterSnapshots.LLM_OPS.edges.filter((edge) => edge.from !== nodeId && edge.to !== nodeId),
+    }
+    const version: ProfileVersion = { ...activeVersion, snapshot: { ...activeVersion.snapshot, ...snapshot } }
+    const api = profileApi({ list: vi.fn().mockResolvedValue([version]) })
+    const view = render(<AgentSettingsWorkspace api={api} />)
+    await screen.findByLabelText('analyze Node')
+    fireEvent.click(screen.getByRole('button', { name: '새 DRAFT 저장' }))
+
+    const dialog = screen.getByRole('dialog', { name: '새 DRAFT 저장' })
+    expect(dialog).toHaveTextContent(`coding.${stage === 'CANDIDATE' ? 'preview_approval' : 'approval'} ${stage} 필수 business stage가 없습니다.`)
+    expect(within(dialog).getByRole('button', { name: '저장하기' })).toBeDisabled()
+    expect(api.create).not.toHaveBeenCalled()
+    view.unmount()
+  }
+})
+
+test('approval bypasses to LLM_OPS and NATURAL_CMS side effects are listed and block saving', async () => {
+  const llmSnapshot = {
+    ...starterSnapshots.LLM_OPS,
+    edges: [...starterSnapshots.LLM_OPS.edges, { from: 'start', resultPort: 'next', to: 'deploy' }],
+  }
+  const llmVersion: ProfileVersion = { ...activeVersion, snapshot: { ...activeVersion.snapshot, ...llmSnapshot } }
+  const llmApi = profileApi({ list: vi.fn().mockResolvedValue([llmVersion]) })
+  const llmView = render(<AgentSettingsWorkspace api={llmApi} />)
+  await screen.findByLabelText('deploy Node')
+  fireEvent.click(screen.getByRole('button', { name: '새 DRAFT 저장' }))
+  expect(screen.getByRole('dialog', { name: '새 DRAFT 저장' })).toHaveTextContent('Approval/Stage를 우회해')
+  expect(llmApi.create).not.toHaveBeenCalled()
+  llmView.unmount()
+
+  const naturalSnapshot = {
+    ...starterSnapshots.NATURAL_CMS,
+    edges: [...starterSnapshots.NATURAL_CMS.edges, { from: 'start', resultPort: 'next', to: 'apply' }],
+  }
+  const naturalVersion: ProfileVersion = {
+    profileVersionId: 'natural-bypass-version', profileKey: 'NATURAL_CMS', profileVersion: 4, status: 'ACTIVE', createdAt: '2026-09-01T00:00:00Z',
+    snapshot: { contractVersion: '1.0', profileVersionId: 'natural-bypass-version', profileKey: 'NATURAL_CMS', profileVersion: 4, ...naturalSnapshot },
+  }
+  const naturalApi = profileApi({ list: vi.fn().mockImplementation((profileKey) => Promise.resolve(profileKey === 'NATURAL_CMS' ? [naturalVersion] : [activeVersion])) })
+  render(<AgentSettingsWorkspace api={naturalApi} />)
+  await screen.findByLabelText('analyze Node')
+  fireEvent.change(screen.getByLabelText('Workflow Profile'), { target: { value: 'NATURAL_CMS' } })
+  await screen.findByLabelText('apply Node')
+  fireEvent.click(screen.getByRole('button', { name: '새 DRAFT 저장' }))
+  expect(screen.getByRole('dialog', { name: '새 DRAFT 저장' })).toHaveTextContent('CMS Approval을 우회해 apply 또는 discard에 도달할 수 있습니다.')
+  expect(naturalApi.create).not.toHaveBeenCalled()
+})
+
+test('valid LLM_OPS rework/reject/failure branches and NATURAL_CMS approval paths remain saveable', async () => {
+  const llmView = render(<AgentSettingsWorkspace api={profileApi()} />)
+  await screen.findByLabelText('deploy Node')
+  fireEvent.click(screen.getByRole('button', { name: '새 DRAFT 저장' }))
+  expect(within(screen.getByRole('dialog', { name: '새 DRAFT 저장' })).getByRole('button', { name: '저장하기' })).not.toBeDisabled()
+  llmView.unmount()
+
+  const naturalVersion: ProfileVersion = {
+    profileVersionId: 'natural-valid-version', profileKey: 'NATURAL_CMS', profileVersion: 4, status: 'ACTIVE', createdAt: '2026-09-01T00:00:00Z',
+    snapshot: { contractVersion: '1.0', profileVersionId: 'natural-valid-version', profileKey: 'NATURAL_CMS', profileVersion: 4, ...starterSnapshots.NATURAL_CMS },
+  }
+  const api = profileApi({ list: vi.fn().mockImplementation((profileKey) => Promise.resolve(profileKey === 'NATURAL_CMS' ? [naturalVersion] : [activeVersion])) })
+  render(<AgentSettingsWorkspace api={api} />)
+  await screen.findByLabelText('analyze Node')
+  fireEvent.change(screen.getByLabelText('Workflow Profile'), { target: { value: 'NATURAL_CMS' } })
+  await screen.findByLabelText('apply Node')
+  fireEvent.click(screen.getByRole('button', { name: '새 DRAFT 저장' }))
+  expect(within(screen.getByRole('dialog', { name: '새 DRAFT 저장' })).getByRole('button', { name: '저장하기' })).not.toBeDisabled()
+})
+
 test('Workflow edits save a new immutable DRAFT, activate it explicitly, and restore after remount', async () => {
   let stored = [activeVersion]
   const create = vi.fn().mockImplementation(async (profileKey, snapshot) => {
@@ -727,7 +911,8 @@ test('Workflow edits save a new immutable DRAFT, activate it explicitly, and res
   fireEvent.click(screen.getByLabelText('analyze Node'))
   fireEvent.change(screen.getByLabelText('선택 주 모델'), { target: { value: 'llm-ops-claude' } })
   fireEvent.click(screen.getByLabelText('Fallback llm-ops-review'))
-  fireEvent.click(screen.getByLabelText('허용 Tool apply_patch'))
+  fireEvent.click(screen.getByLabelText('code Node'))
+  fireEvent.click(screen.getByLabelText('Tool binding apply_patch'))
   const maxNodesInput = screen.getByLabelText('최대 Node 수 (maxNodes)')
   expect(maxNodesInput).toHaveAttribute('min', String(starterSnapshots.LLM_OPS.nodes.length))
   fireEvent.change(maxNodesInput, { target: { value: '20' } })
@@ -740,6 +925,7 @@ test('Workflow edits save a new immutable DRAFT, activate it explicitly, and res
   expect(activateButton).toHaveStyle({ backgroundColor: '#e9f6ee', color: '#246b45' })
   expect(reloadButton).toHaveStyle({ backgroundColor: '#f0f2f5', color: '#435264' })
   fireEvent.click(saveDraftButton)
+  fireEvent.click(within(screen.getByRole('dialog', { name: '새 DRAFT 저장' })).getByRole('button', { name: '저장하기' }))
 
   await screen.findByText('v3 DRAFT를 저장하고 다시 조회했습니다.')
   expect(screen.getByRole('status')).toHaveTextContent('v3 DRAFT를 저장하고 다시 조회했습니다.')
@@ -748,7 +934,8 @@ test('Workflow edits save a new immutable DRAFT, activate it explicitly, and res
     edges: expect.arrayContaining([expect.objectContaining({ from: 'analyze', resultPort: 'feasible', to: 'scope_approval' })]),
     config: expect.objectContaining({ maxNodes: 20 }),
     modelBindings: expect.objectContaining({ analyze: expect.objectContaining({ primary: 'llm-ops-claude', fallback: ['llm-ops-review'] }) }),
-    toolPolicy: expect.objectContaining({ allowedTools: expect.not.arrayContaining(['apply_patch']) }),
+    toolBindings: expect.objectContaining({ code: expect.not.objectContaining({ apply_patch: expect.anything() }) }),
+    toolPolicy: expect.objectContaining({ allowedTools: expect.arrayContaining(['apply_patch']) }),
   }))
   expect(api.saveEditorLayout).toHaveBeenCalledWith('version-3', expect.any(Array))
   const savedNodes = (api.saveEditorLayout as ReturnType<typeof vi.fn>).mock.calls[0][1] as Array<Record<string, unknown>>
@@ -756,7 +943,7 @@ test('Workflow edits save a new immutable DRAFT, activate it explicitly, and res
   expect(savedNodes.every((node) => Object.keys(node).sort().join(',') === 'id,x,y')).toBe(true)
   fireEvent.click(screen.getByLabelText('analyze Node'))
   expect(screen.getByLabelText('선택 주 모델')).toHaveValue('llm-ops-claude')
-  expect(screen.getByLabelText('허용 Tool apply_patch')).not.toBeChecked()
+  expect(screen.getByLabelText('허용 Tool apply_patch')).toBeChecked()
 
   fireEvent.click(screen.getByRole('button', { name: '선택 DRAFT 활성화' }))
   await screen.findByText('v3을 ACTIVE로 전환하고 다시 조회했습니다.')
@@ -770,7 +957,7 @@ test('Workflow edits save a new immutable DRAFT, activate it explicitly, and res
   fireEvent.click(screen.getByLabelText('analyze Node'))
   expect(screen.getByLabelText('선택 주 모델')).toHaveValue('llm-ops-claude')
   expect(screen.getByLabelText('Fallback llm-ops-review')).toBeChecked()
-  expect(screen.getByLabelText('허용 Tool apply_patch')).not.toBeChecked()
+  expect(screen.getByLabelText('허용 Tool apply_patch')).toBeChecked()
 })
 
 test('catalog selections save only edited inference metadata and reject duplicate Provider Model fallbacks', async () => {
@@ -817,6 +1004,7 @@ test('catalog selections save only edited inference metadata and reject duplicat
   expect(screen.getByLabelText('Fallback openai-gpt-5-6-terra-alias')).toBeDisabled()
   fireEvent.click(screen.getByLabelText('Fallback openai-gpt-5-4-nano'))
   fireEvent.click(screen.getByRole('button', { name: '새 DRAFT 저장' }))
+  fireEvent.click(within(screen.getByRole('dialog', { name: '새 DRAFT 저장' })).getByRole('button', { name: '저장하기' }))
 
   await waitFor(() => expect(create).toHaveBeenCalled())
   const saved = create.mock.calls[0][1] as ProfileVersion['snapshot']
@@ -841,6 +1029,7 @@ test('a DRAFT remains visible when its separate Editor Layout save fails', async
   await screen.findByLabelText('guardrail Node')
 
   fireEvent.click(screen.getByRole('button', { name: '새 DRAFT 저장' }))
+  fireEvent.click(within(screen.getByRole('dialog', { name: '새 DRAFT 저장' })).getByRole('button', { name: '저장하기' }))
 
   expect(await screen.findByRole('alert')).toHaveTextContent('v3 DRAFT는 저장됐지만 Editor Layout 저장에 실패했습니다.')
   expect(screen.getByLabelText('저장된 Workflow Version')).toHaveValue('version-3')
@@ -879,6 +1068,7 @@ test('Workflow DRAFT validation failures remain visible with the Backend error c
   await screen.findByLabelText('guardrail Node')
 
   fireEvent.click(screen.getByRole('button', { name: '새 DRAFT 저장' }))
+  fireEvent.click(within(screen.getByRole('dialog', { name: '새 DRAFT 저장' })).getByRole('button', { name: '저장하기' }))
 
   expect(await screen.findByRole('alert')).toHaveTextContent('Snapshot 검증 실패 [CONTRACT_VALIDATION_FAILED]')
 })
