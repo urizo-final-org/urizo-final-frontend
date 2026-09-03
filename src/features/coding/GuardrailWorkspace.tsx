@@ -279,7 +279,12 @@ export default function GuardrailWorkspace({ api }: { api: CodingConsoleApiClien
   }
 
   const anyLoaded = REPOSITORIES.some((repository) => repos[repository].stored !== null)
-  const backendBlocked = totalAllowed > 0 && repos.backend.allowed.size === 0
+  /* Both sides now take requests, so this is no longer a backend-only warning. A side with
+   * nothing ticked is refused at intake - the server reads the sentence, sees the side it
+   * belongs to is closed, and turns the request down before any work starts. */
+  const closedSides = totalAllowed > 0
+    ? REPOSITORIES.filter((repository) => repos[repository].allowed.size === 0)
+    : []
 
   return <>
     <PageHead
@@ -296,13 +301,10 @@ export default function GuardrailWorkspace({ api }: { api: CodingConsoleApiClien
       </Callout>
     </div>}
 
-    {/* The snapshot joins both repositories into one list and the check compares bare folder
-      * names, so a fence with only frontend folders matches no backend path at all — every
-      * backend job would fail its check. */}
-    {backendBlocked && <div className="mt-[0.875rem]">
+    {closedSides.length > 0 && <div className="mt-[0.875rem]">
       <Callout tone="warn" icon="triangle-alert">
-        백엔드 쪽 허용 폴더가 없습니다. 이대로 저장하면 지금 AI 작업 대상인 백엔드의 모든
-        요청이 울타리 위반으로 실패합니다.
+        {closedSides.map((repository) => REPOSITORY_TITLES[repository]).join(' · ')} 쪽
+        허용 폴더가 없습니다. 이대로 저장하면 그 쪽 요청은 접수 단계에서 거절됩니다.
       </Callout>
     </div>}
 
@@ -323,7 +325,9 @@ export default function GuardrailWorkspace({ api }: { api: CodingConsoleApiClien
             title={`📁 ${REPOSITORY_TITLES[repository]}`}
             sub={state.stored === null
               ? '불러오는 중입니다…'
-              : `${storedAllowed(repository).length}개 허용됨${repository === 'backend' ? ' · 지금 AI 작업 대상' : ' · AI 작업은 아직 백엔드만'}`}
+              : storedAllowed(repository).length === 0
+                ? '허용된 폴더 없음 · 이 쪽 요청은 접수에서 거절됩니다'
+                : `${storedAllowed(repository).length}개 허용됨`}
           >
             <button
               type="button"

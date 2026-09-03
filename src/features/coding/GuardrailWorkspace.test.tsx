@@ -138,16 +138,17 @@ test('a shared folder asks for confirmation before it is allowed', async () => {
 })
 
 /*
- * The job snapshot joins both repositories into one list and the check compares bare folder
- * names, so a fence holding only frontend folders matches no backend path — every backend job
- * would fail. The screen warns before that fence can be saved.
+ * A side with nothing ticked is refused at intake: the server reads the sentence, sees the
+ * side it belongs to is closed, and turns the request down before any work starts. Both sides
+ * take requests now, so the warning names whichever side is empty rather than only backend.
  */
-test('a fence with no backend folder warns that every backend job would fail', async () => {
+test('a side with no folder warns that its requests are refused at intake', async () => {
   render(<GuardrailWorkspace api={guardrailApi()} />)
 
   fireEvent.click(await screen.findByRole('checkbox', { name: /CMS 화면/ }))
 
-  expect(screen.getByText(/백엔드의 모든\s*요청이 울타리 위반으로 실패합니다/)).toBeInTheDocument()
+  expect(screen.getByText(/백엔드 쪽\s*허용 폴더가 없습니다/)).toBeInTheDocument()
+  expect(screen.getByText(/접수 단계에서 거절됩니다/)).toBeInTheDocument()
 })
 
 /* 6-울타리.md 6-6: the rules that name no path travel through their own endpoint. */
