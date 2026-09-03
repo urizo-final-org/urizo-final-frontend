@@ -88,13 +88,30 @@ export interface ProfileVersion {
   snapshot: VersionedProfileSnapshot
 }
 
+export interface ProfileEditorLayoutNode {
+  id: string
+  x: number
+  y: number
+}
+
+export interface ProfileEditorLayout {
+  profileVersionId: string
+  createdAt: string
+  nodes: ProfileEditorLayoutNode[]
+}
+
 export interface ProfileVersionApiClient {
   list(profileKey?: ProfileKey): Promise<ProfileVersion[]>
   create(profileKey: ProfileKey, snapshot: ProfileAuthoringSnapshot): Promise<ProfileVersion>
   activate(profileVersionId: string): Promise<ProfileVersion>
 }
 
-export interface AgentSettingsApiClient extends ProfileVersionApiClient {
+export interface ProfileEditorLayoutApiClient {
+  getEditorLayout(profileVersionId: string): Promise<ProfileEditorLayout>
+  saveEditorLayout(profileVersionId: string, nodes: ProfileEditorLayoutNode[]): Promise<ProfileEditorLayout>
+}
+
+export interface AgentSettingsApiClient extends ProfileVersionApiClient, ProfileEditorLayoutApiClient {
   listProviderCredentials(): Promise<ProviderCredentialOverview>
   storeProviderCredential(provider: ModelProvider, credential: string, csrfToken: string): Promise<ProviderCredentialStatus>
   testProviderCredential(provider: ModelProvider, csrfToken: string): Promise<ProviderConnectionTestResult>
@@ -150,6 +167,15 @@ export class ProfileVersionApi implements AgentSettingsApiClient {
   activate = (profileVersionId: string) => this.request<ProfileVersion>(
     `/api/admin/ai/profile-versions/${encodeURIComponent(profileVersionId)}/activate`,
     { method: 'POST' },
+  )
+
+  getEditorLayout = (profileVersionId: string) => this.request<ProfileEditorLayout>(
+    `/api/admin/ai/profile-versions/${encodeURIComponent(profileVersionId)}/editor-layout`,
+  )
+
+  saveEditorLayout = (profileVersionId: string, nodes: ProfileEditorLayoutNode[]) => this.request<ProfileEditorLayout>(
+    `/api/admin/ai/profile-versions/${encodeURIComponent(profileVersionId)}/editor-layout`,
+    { method: 'PUT', body: JSON.stringify({ nodes }) },
   )
 
   listProviderCredentials = () => this.request<ProviderCredentialOverview>(
