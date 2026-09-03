@@ -61,6 +61,35 @@ export interface ProfileSnapshotConfig {
 export interface ProfileModelBinding {
   primary: string
   fallback: string[]
+  selections?: Record<string, ProfileModelSelection>
+}
+
+export interface ProfileModelSelection {
+  provider: ModelProvider
+  model: string
+  inference: {
+    reasoningIntensity: string
+    reasoningBudgetTokens?: number
+  }
+  [key: string]: unknown
+}
+
+export interface ModelCatalogModel {
+  selectionId: string
+  provider: ModelProvider
+  model: string
+  capabilities: string[]
+  inference: {
+    default: { reasoningIntensity: string; reasoningBudgetTokens: number | null }
+    reasoningIntensity: string[]
+    reasoningBudgetTokens: { min: number; max: number; multipleOf: number } | null
+  }
+}
+
+export interface ModelCatalog {
+  schemaVersion: '1.0'
+  profileKey: ProfileKey
+  models: ModelCatalogModel[]
 }
 
 export interface ProfileAuthoringSnapshot {
@@ -122,7 +151,11 @@ export interface ProfileDefaultTemplateApiClient {
   saveDefaultTemplate(profileKey: ProfileKey, snapshot: ProfileAuthoringSnapshot): Promise<ProfileDefaultTemplate>
 }
 
-export interface AgentSettingsApiClient extends ProfileVersionApiClient, ProfileEditorLayoutApiClient, ProfileDefaultTemplateApiClient {
+export interface ModelCatalogApiClient {
+  listModelCatalog(profileKey: ProfileKey): Promise<ModelCatalog>
+}
+
+export interface AgentSettingsApiClient extends ProfileVersionApiClient, ProfileEditorLayoutApiClient, ProfileDefaultTemplateApiClient, ModelCatalogApiClient {
   listProviderCredentials(): Promise<ProviderCredentialOverview>
   storeProviderCredential(provider: ModelProvider, credential: string, csrfToken: string): Promise<ProviderCredentialStatus>
   testProviderCredential(provider: ModelProvider, csrfToken: string): Promise<ProviderConnectionTestResult>
@@ -196,6 +229,10 @@ export class ProfileVersionApi implements AgentSettingsApiClient {
   saveDefaultTemplate = (profileKey: ProfileKey, snapshot: ProfileAuthoringSnapshot) => this.request<ProfileDefaultTemplate>(
     `/api/admin/ai/profile-templates/${encodeURIComponent(profileKey)}`,
     { method: 'PUT', body: JSON.stringify({ snapshot }) },
+  )
+
+  listModelCatalog = (profileKey: ProfileKey) => this.request<ModelCatalog>(
+    `/api/admin/ai/model-catalog?profileKey=${encodeURIComponent(profileKey)}`,
   )
 
   listProviderCredentials = () => this.request<ProviderCredentialOverview>(

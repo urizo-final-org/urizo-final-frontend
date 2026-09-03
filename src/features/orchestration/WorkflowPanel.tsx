@@ -5,7 +5,7 @@ import {
   Badge, Callout, Tag, control, dangerButton, panel, primaryButton, secondaryButton,
 } from '../../shared/ui/primitives'
 import type {
-  ProfileAuthoringSnapshot, ProfileDefaultTemplateApiClient, ProfileEditorLayoutApiClient, ProfileKey, ProfileModelBinding, ProfileNodeType, ProfileSnapshotConfig,
+  ModelCatalog, ModelCatalogApiClient, ModelCatalogModel, ProfileAuthoringSnapshot, ProfileDefaultTemplateApiClient, ProfileEditorLayoutApiClient, ProfileKey, ProfileModelBinding, ProfileModelSelection, ProfileNodeType, ProfileSnapshotConfig,
   ProfileSnapshotEdge, ProfileSnapshotNode, ProfileVersion, ProfileVersionApiClient,
 } from './api'
 
@@ -71,21 +71,6 @@ const handlerCatalog: Record<ProfileKey, HandlerDefinition[]> = {
     { key: 'common.check', type: 'check', label: '공통 Check', resultPorts: ['passed', 'failed'], config: {} },
     { key: 'common.end', type: 'end', label: 'End', resultPorts: [], config: {}, locked: true },
   ],
-}
-
-const modelBindingCatalog: Record<ProfileKey, string[]> = {
-  LLM_OPS: ['llm-ops-analyze', 'llm-ops-code', 'llm-ops-review', 'llm-ops-claude'],
-  NATURAL_CMS: ['natural-cms-analyze', 'natural-cms-command', 'natural-cms-claude'],
-}
-
-const modelBindingDetails: Record<string, { provider: string; model: string }> = {
-  'llm-ops-analyze': { provider: 'OpenAI', model: 'gpt-5.4-nano' },
-  'llm-ops-code': { provider: 'OpenAI', model: 'gpt-5.4-nano' },
-  'llm-ops-review': { provider: 'Google', model: 'gemini-3.5-flash-lite' },
-  'llm-ops-claude': { provider: 'Anthropic', model: 'claude-haiku-4-5-20251001' },
-  'natural-cms-analyze': { provider: 'OpenAI', model: 'gpt-5.4-nano' },
-  'natural-cms-command': { provider: 'Google', model: 'gemini-3.5-flash-lite' },
-  'natural-cms-claude': { provider: 'Anthropic', model: 'claude-haiku-4-5-20251001' },
 }
 
 const toolCatalog: Record<ProfileKey, string[]> = {
@@ -334,7 +319,7 @@ export const starterSnapshots: Record<ProfileKey, ProfileAuthoringSnapshot> = {
   },
 }
 
-export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient & ProfileEditorLayoutApiClient & ProfileDefaultTemplateApiClient }) {
+export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient & ProfileEditorLayoutApiClient & ProfileDefaultTemplateApiClient & ModelCatalogApiClient }) {
   const [profileKey, setProfileKey] = useState<ProfileKey>('LLM_OPS')
   const [versions, setVersions] = useState<ProfileVersion[]>([])
   const [selectedVersionId, setSelectedVersionId] = useState<string | null>(null)
@@ -342,6 +327,7 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient & 
   const [edges, setEdges] = useState<ProfileSnapshotEdge[]>([])
   const [config, setConfig] = useState<ProfileSnapshotConfig>(starterSnapshots.LLM_OPS.config)
   const [modelBindings, setModelBindings] = useState<Record<string, ProfileModelBinding>>({})
+  const [modelCatalog, setModelCatalog] = useState<ModelCatalog | null>(null)
   const [allowedTools, setAllowedTools] = useState<string[]>([])
   const [guardrailProfileKey, setGuardrailProfileKey] = useState('central.default')
   const [selectedId, setSelectedId] = useState('')
@@ -358,6 +344,7 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient & 
   const [edgeListOpen, setEdgeListOpen] = useState(true)
   const [canvasZoom, setCanvasZoom] = useState(1)
   const versionRequest = useRef(0)
+  const catalogRequest = useRef(0)
   const canvasViewport = useRef<HTMLDivElement>(null)
   const drag = useRef<{ id: string; pointerX: number; pointerY: number; x: number; y: number; moved: boolean } | null>(null)
   const pan = useRef<{ pointerId: number; pointerX: number; pointerY: number; scrollLeft: number; scrollTop: number } | null>(null)
@@ -368,19 +355,37 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient & 
   const selectedDefinition = selected ? definitionFor(profileKey, selected.handlerKey) : null
   const selectedVersion = versions.find((version) => version.profileVersionId === selectedVersionId) ?? null
   const canvas = canvasDimensions(nodes, edges)
+  const catalogModels = modelCatalog?.models ?? []
   const supported = nodes.every((node) => matchesDefinition(profileKey, node))
     && allowedTools.every((tool) => toolCatalog[profileKey].includes(tool))
     && nodes.filter((node) => node.type === 'agent').every((node) => {
       const binding = modelBindings[node.id]
       return binding !== undefined
-        && modelBindingCatalog[profileKey].includes(binding.primary)
-        && binding.fallback.every((item) => modelBindingCatalog[profileKey].includes(item))
+        && typeof binding.primary === 'string'
+        && binding.fallback.every((item) => typeof item === 'string')
     })
 
   useEffect(() => {
     void loadVersions(profileKey)
-    return () => { versionRequest.current += 1 }
+    void loadModelCatalog(profileKey)
+    return () => { versionRequest.current += 1; catalogRequest.current += 1 }
   }, [api, profileKey])
+
+  async function loadModelCatalog(key: ProfileKey) {
+    const request = ++catalogRequest.current
+    try {
+      const catalog = await api.listModelCatalog(key)
+      if (request === catalogRequest.current && catalog.profileKey === key) setModelCatalog(catalog)
+    } catch (error) {
+      if (request !== catalogRequest.current) return
+      setModelCatalog(null)
+      setFailure(describeFailure(error))
+    }
+  }
+
+  function targetFor(binding: ProfileModelBinding, selectionId: string) {
+    return catalogModels.find((model) => model.selectionId === selectionId) ?? binding.selections?.[selectionId]
+  }
 
   useEffect(() => {
     const viewport = canvasViewport.current
@@ -452,7 +457,7 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient & 
     })
     setModelBindings(Object.fromEntries(Object.entries(snapshot.modelBindings).map(([nodeId, binding]) => [
       nodeId,
-      { primary: binding.primary, fallback: [...binding.fallback] },
+      cloneBinding(binding),
     ])))
     setAllowedTools([...snapshot.toolPolicy.allowedTools])
     setGuardrailProfileKey(snapshot.guardrailProfileKey)
@@ -476,7 +481,7 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient & 
     const routes = new Set(edges.map((edge) => `${edge.from}:${edge.resultPort}:${edge.to}`))
     const agentBindings = Object.fromEntries(nodes.filter((node) => node.type === 'agent').map((node) => {
       const binding = modelBindings[node.id] ?? { primary: defaultBinding(profileKey, node.handlerKey), fallback: [] }
-      return [node.id, { primary: binding.primary, fallback: [...binding.fallback] }]
+      return [node.id, cloneBinding(binding)]
     }))
     return {
       nodes: nodes.map(({ x: _x, y: _y, ...node }) => ({
@@ -590,6 +595,10 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient & 
 
   function addNode(definition: HandlerDefinition) {
     if (!supported || loading || saving) return
+    if (definition.type === 'agent' && catalogModels.length === 0) {
+      setStatus('Agent Node를 추가하려면 검증 Credential의 Model Catalog가 필요합니다.')
+      return
+    }
     if (nodes.length >= config.maxNodes) {
       setStatus(`현재 Snapshot의 maxNodes ${config.maxNodes}개를 초과할 수 없습니다.`)
       return
@@ -609,9 +618,10 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient & 
     }
     setNodes((current) => [...current, node])
     if (node.type === 'agent') {
+      const initialModel = catalogModels[0]
       setModelBindings((current) => ({
         ...current,
-        [node.id]: { primary: defaultBinding(profileKey, node.handlerKey), fallback: [] },
+        [node.id]: withSelection({ primary: initialModel.selectionId, fallback: [] }, initialModel),
       }))
     }
     setSelectedId(node.id)
@@ -663,28 +673,56 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient & 
       : node))
   }
 
-  function updatePrimaryBinding(primary: string) {
+  function updatePrimaryBinding(model: ModelCatalogModel) {
     if (!selected || selected.type !== 'agent') return
     setModelBindings((current) => {
-      const binding = current[selected.id] ?? { primary, fallback: [] }
-      return { ...current, [selected.id]: { primary, fallback: binding.fallback.filter((item) => item !== primary) } }
+      const binding = current[selected.id] ?? { primary: model.selectionId, fallback: [] }
+      if (binding.fallback.some((item) => sameTarget(targetFor(binding, item), model))) {
+        setStatus('주 모델과 같은 Provider·Model은 Fallback으로 둘 수 없습니다.')
+        return current
+      }
+      return {
+        ...current,
+        [selected.id]: withSelection({ ...binding, primary: model.selectionId, fallback: binding.fallback.filter((item) => item !== model.selectionId) }, model),
+      }
     })
   }
 
-  function toggleFallback(bindingKey: string) {
+  function toggleFallback(model: ModelCatalogModel) {
     if (!selected || selected.type !== 'agent') return
     setModelBindings((current) => {
       const binding = current[selected.id]
-      if (!binding || binding.primary === bindingKey) return current
+      if (!binding || binding.primary === model.selectionId) return current
+      const enabled = binding.fallback.includes(model.selectionId)
+      if (!enabled && (sameTarget(targetFor(binding, binding.primary), model)
+        || binding.fallback.some((item) => sameTarget(targetFor(binding, item), model)))) {
+        setStatus('동일한 Provider·Model은 Primary 또는 Fallback에 중복할 수 없습니다.')
+        return current
+      }
       return {
         ...current,
         [selected.id]: {
           ...binding,
-          fallback: binding.fallback.includes(bindingKey)
-            ? binding.fallback.filter((item) => item !== bindingKey)
-            : [...binding.fallback, bindingKey],
+          fallback: enabled
+            ? binding.fallback.filter((item) => item !== model.selectionId)
+            : [...binding.fallback, model.selectionId],
+          ...(enabled ? {} : { selections: withSelection(binding, model).selections }),
         },
       }
+    })
+  }
+
+  function updateInference(selectionId: string, model: ModelCatalogModel, patch: Partial<ProfileModelSelection['inference']>) {
+    if (!selected || selected.type !== 'agent') return
+    setModelBindings((current) => {
+      const binding = current[selected.id]
+      if (!binding) return current
+      const currentSelection = binding.selections?.[selectionId]
+      const selection: ProfileModelSelection = {
+        ...(currentSelection ?? {}), provider: model.provider, model: model.model,
+        inference: { ...inferenceFor(model, currentSelection?.inference), ...patch },
+      }
+      return { ...current, [selected.id]: { ...binding, selections: { ...binding.selections, [selectionId]: selection } } }
     })
   }
 
@@ -1047,19 +1085,39 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient & 
 
           {selected.type === 'agent' && selectedBinding && <div className="mt-3 border-t border-row-line pt-3">
             <label className="block text-[0.71875rem] font-semibold text-body">주 모델 (Primary Model)
-              <select aria-label="선택 주 모델" className={control} value={selectedBinding.primary} onChange={(event) => updatePrimaryBinding(event.target.value)}>
-                {modelBindingCatalog[profileKey].map((binding) => <option key={binding} value={binding}>{modelBindingLabel(binding)}</option>)}
+              <select aria-label="선택 주 모델" className={control} value={selectedBinding.primary} disabled={saving || catalogModels.length === 0} onChange={(event) => {
+                const model = catalogModels.find((item) => item.selectionId === event.target.value)
+                if (model) updatePrimaryBinding(model)
+              }}>
+                {!catalogModels.some((model) => model.selectionId === selectedBinding.primary) && <option value={selectedBinding.primary}>{modelBindingLabel(selectedBinding.primary, catalogModels)}</option>}
+                {catalogModels.map((model) => <option key={model.selectionId} value={model.selectionId} disabled={selectedBinding.fallback.some((fallback) => sameTarget(targetFor(selectedBinding, fallback), model))}>{modelBindingLabel(model.selectionId, catalogModels)}</option>)}
               </select>
-              <small className="mt-1 block text-[0.625rem] font-normal leading-4 text-muted-2">괄호 안 Binding Key를 Snapshot에 저장하고 Backend가 실제 Provider·Model로 해석합니다.</small>
+              <small className="mt-1 block text-[0.625rem] font-normal leading-4 text-muted-2">등록·검증된 Credential Provider의 Model만 선택할 수 있습니다. 저장된 Legacy binding은 자동으로 바꾸지 않습니다.</small>
             </label>
+            {catalogModels.find((model) => model.selectionId === selectedBinding.primary) && <InferenceSettingsControls
+              selectionId={selectedBinding.primary}
+              model={catalogModels.find((model) => model.selectionId === selectedBinding.primary)!}
+              selection={selectedBinding.selections?.[selectedBinding.primary]}
+              onChange={(patch) => updateInference(selectedBinding.primary, catalogModels.find((model) => model.selectionId === selectedBinding.primary)!, patch)}
+            />}
             <fieldset className="mt-3">
               <legend className="text-[0.71875rem] font-semibold text-body">대체 모델 (Fallback Model)</legend>
               <p className="mt-1 text-[0.625rem] leading-4 text-muted-2">주 모델의 미설정·사용량 제한·시간 초과·Provider 장애 등 일시적 오류에 사용할 후보입니다.</p>
               <div className="mt-2 space-y-2">
-                {modelBindingCatalog[profileKey].filter((binding) => binding !== selectedBinding.primary).map((binding) => <label key={binding} className="flex items-start gap-2 text-[0.65625rem] text-body">
-                  <input type="checkbox" aria-label={`Fallback ${binding}`} checked={selectedBinding.fallback.includes(binding)} onChange={() => toggleFallback(binding)} />
-                  <span className="break-all">{modelBindingLabel(binding)}</span>
-                </label>)}
+                {selectedBinding.fallback.filter((binding) => !catalogModels.some((model) => model.selectionId === binding)).map((binding) => <p key={binding} className="text-[0.65625rem] text-muted-2">{modelBindingLabel(binding, catalogModels)}</p>)}
+                {catalogModels.filter((model) => model.selectionId !== selectedBinding.primary).map((model) => {
+                  const checked = selectedBinding.fallback.includes(model.selectionId)
+                  const duplicate = !checked && (sameTarget(targetFor(selectedBinding, selectedBinding.primary), model)
+                    || selectedBinding.fallback.some((binding) => sameTarget(targetFor(selectedBinding, binding), model)))
+                  return <div key={model.selectionId}>
+                    <label className="flex items-start gap-2 text-[0.65625rem] text-body">
+                      <input type="checkbox" aria-label={`Fallback ${model.selectionId}`} checked={checked} disabled={saving || duplicate} onChange={() => toggleFallback(model)} />
+                      <span className="break-all">{modelBindingLabel(model.selectionId, catalogModels)}</span>
+                    </label>
+                    {checked && <InferenceSettingsControls selectionId={model.selectionId} model={model} selection={selectedBinding.selections?.[model.selectionId]} onChange={(patch) => updateInference(model.selectionId, model, patch)} />}
+                  </div>
+                })}
+                {catalogModels.length === 0 && <p className="text-[0.65625rem] text-muted-2">선택 가능한 검증 Credential Model이 없습니다.</p>}
               </div>
             </fieldset>
           </div>}
@@ -1285,9 +1343,73 @@ function ApprovalRole({ value, onChange }: { value: string; onChange: (value: st
   </label>
 }
 
-function modelBindingLabel(bindingKey: string) {
-  const detail = modelBindingDetails[bindingKey]
-  return detail ? `${detail.provider} · ${detail.model} (${bindingKey})` : bindingKey
+function cloneBinding(binding: ProfileModelBinding): ProfileModelBinding {
+  return {
+    ...binding,
+    fallback: [...binding.fallback],
+    ...(binding.selections === undefined ? {} : {
+      selections: Object.fromEntries(Object.entries(binding.selections).map(([selectionId, selection]) => [selectionId, {
+        ...selection,
+        inference: { ...selection.inference },
+      }])),
+    }),
+  }
+}
+
+function inferenceFor(model: ModelCatalogModel, current?: ProfileModelSelection['inference']): ProfileModelSelection['inference'] {
+  if (current !== undefined) return { ...current }
+  return {
+    reasoningIntensity: model.inference.default.reasoningIntensity,
+    ...(model.inference.default.reasoningBudgetTokens === null ? {} : { reasoningBudgetTokens: model.inference.default.reasoningBudgetTokens }),
+  }
+}
+
+function withSelection(binding: ProfileModelBinding, model: ModelCatalogModel): ProfileModelBinding {
+  const existing = binding.selections?.[model.selectionId]
+  return {
+    ...binding,
+    selections: {
+      ...binding.selections,
+      [model.selectionId]: {
+        ...(existing ?? {}),
+        provider: model.provider,
+        model: model.model,
+        inference: inferenceFor(model, existing?.inference),
+      },
+    },
+  }
+}
+
+function sameTarget(left: { provider: string; model: string } | undefined, right: { provider: string; model: string } | undefined) {
+  return left !== undefined && right !== undefined && left.provider === right.provider && left.model === right.model
+}
+
+function modelBindingLabel(bindingKey: string, catalog: ModelCatalogModel[]) {
+  const detail = catalog.find((model) => model.selectionId === bindingKey)
+  return detail ? `${detail.provider} · ${detail.model} (${bindingKey})` : `${bindingKey} (저장된 Legacy binding)`
+}
+
+function InferenceSettingsControls({ selectionId, model, selection, onChange }: {
+  selectionId: string
+  model: ModelCatalogModel
+  selection: ProfileModelSelection | undefined
+  onChange: (patch: Partial<ProfileModelSelection['inference']>) => void
+}) {
+  const settings = inferenceFor(model, selection?.inference)
+  const budget = model.inference.reasoningBudgetTokens
+  return <div className="mt-2 rounded border border-row-line bg-page p-2 text-[0.65625rem] text-body">
+    <label className="block font-semibold">추론 강도
+      <select aria-label={`추론 강도 ${selectionId}`} className={`${control} mt-1`} value={settings.reasoningIntensity} onChange={(event) => onChange({ reasoningIntensity: event.target.value })}>
+        {model.inference.reasoningIntensity.map((intensity) => <option key={intensity} value={intensity}>{intensity}</option>)}
+      </select>
+    </label>
+    {budget !== null && <label className="mt-2 block font-semibold">추론 예산 (tokens)
+      <input aria-label={`추론 예산 ${selectionId}`} className={`${control} mt-1`} type="number" min={budget.min} max={budget.max} step={budget.multipleOf} value={settings.reasoningBudgetTokens ?? ''} onChange={(event) => {
+        const value = Number.parseInt(event.target.value, 10)
+        if (Number.isInteger(value)) onChange({ reasoningBudgetTokens: value })
+      }} />
+    </label>}
+  </div>
 }
 
 function definitionFor(profileKey: ProfileKey, handlerKey: string) {
@@ -1306,7 +1428,7 @@ function defaultBinding(profileKey: ProfileKey, handlerKey: string) {
   if (handlerKey === 'coding.code') return 'llm-ops-code'
   if (handlerKey === 'coding.review') return 'llm-ops-review'
   if (handlerKey === 'cms.preview') return 'natural-cms-command'
-  return modelBindingCatalog[profileKey][0]
+  return profileKey === 'LLM_OPS' ? 'llm-ops-analyze' : 'natural-cms-analyze'
 }
 
 function uniqueNodeId(base: string, nodes: WorkflowNode[]) {
