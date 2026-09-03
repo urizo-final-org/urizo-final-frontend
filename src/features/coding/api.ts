@@ -68,6 +68,12 @@ export interface JobSummary {
   finishedAt?: string
   /** Present only when the job failed; the screen turns it into a sentence. */
   failureCode?: string
+  /**
+   * The analyst judged the request outside what it may change. The pipeline then ends
+   * normally and the status reads COMPLETED, which to the person turned down looks like
+   * success - so the screen leans on this instead of on the status.
+   */
+  refused?: boolean
 }
 
 export interface JobList {
@@ -144,6 +150,7 @@ export interface JobDetail {
   technical?: Technical
   createdAt: string
   finishedAt?: string
+  refused?: boolean
 }
 
 /** The server returns the whole worker-facing Job as well; the console reads only these. */

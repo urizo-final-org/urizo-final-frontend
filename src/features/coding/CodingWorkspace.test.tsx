@@ -612,3 +612,44 @@ test('no news means no panel rather than an empty one', async () => {
   await screen.findByRole('button', { name: '요청 보내기' })
   expect(screen.queryByText('최근 알림')).not.toBeInTheDocument()
 })
+
+/*
+ * A refusal ends the pipeline normally, so the server stores it as COMPLETED. Shown as "완료"
+ * it tells the person who was turned down the opposite of what happened.
+ */
+test('a refused request says so instead of reading as completed', async () => {
+  const refusedJob = {
+    jobId: 'cccccccc-3333-4333-8333-333333333333',
+    repository: 'backend',
+    requestText: '상태 점검 응답에 서버 버전도 넣어줘',
+    status: 'COMPLETED' as const,
+    createdAt: '2026-09-03T01:00:00Z',
+    finishedAt: '2026-09-03T01:00:03Z',
+    refused: true,
+  }
+  render(<CodingWorkspace role="GENERAL_ADMIN" api={consoleApi({
+    listJobs: vi.fn().mockResolvedValue({ schemaVersion: '1.0', items: [refusedJob] }),
+    getJob: vi.fn().mockResolvedValue({
+      schemaVersion: '1.0',
+      jobId: refusedJob.jobId,
+      repository: 'backend',
+      requestText: refusedJob.requestText,
+      status: 'COMPLETED',
+      pipelineAttempt: 1,
+      maxPipelineAttempts: 3,
+      plan: {
+        summary: '이 작업은 상태 점검 영역이라 진행할 수 없습니다. 최고 관리자에게 요청해 주세요.',
+        acceptanceCriteria: [],
+      },
+      decisions: [],
+      refused: true,
+      createdAt: refusedJob.createdAt,
+    }),
+  })} />)
+
+  expect(await screen.findByText('이 요청은 진행할 수 없습니다')).toBeInTheDocument()
+  expect(screen.getByText(/상태 점검 영역이라 진행할 수 없습니다/)).toBeInTheDocument()
+  // The history must not call it 완료 either.
+  expect(screen.getByText('진행 안 함')).toBeInTheDocument()
+  expect(screen.queryByText('완료')).not.toBeInTheDocument()
+})

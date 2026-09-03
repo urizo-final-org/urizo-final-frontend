@@ -203,11 +203,17 @@ export default function CodingWorkspace({ api, role }: { api: CodingConsoleApiCl
       setCurrent(open)
       // Only the newest request, and only while nothing newer runs: an old failure from a
       // previous day must not become a permanent banner over a screen that has moved on.
-      setLastFailed(!open && newest?.status === 'FAILED' ? newest : null)
-      if (!open) setDetail(null)
-      if (open) {
+      // A refusal ends the pipeline as an ordinary success, so status alone would file it
+      // under "완료" and say nothing. The reader was turned down and has to be told.
+      setLastFailed(!open && (newest?.status === 'FAILED' || newest?.refused === true)
+        ? newest : null)
+      // The refused request needs its detail too: the analyst's own words are the reason
+      // shown to the person who was turned down.
+      const opened = open ?? (newest?.refused ? newest : null)
+      if (!opened) setDetail(null)
+      if (opened) {
         try {
-          const loaded = await api.getJob(open.jobId)
+          const loaded = await api.getJob(opened.jobId)
           if (active) setDetail(loaded ?? null)
         }
         catch (error: unknown) {
@@ -345,9 +351,17 @@ export default function CodingWorkspace({ api, role }: { api: CodingConsoleApiCl
         {/* A stopped request answers here instead of disappearing. The sentence carries the
           * next step, because "실패" alone leaves the writer with nothing to do about it. */}
         {!current && lastFailed && <section className={panel}>
-          <PanelTitle title="직전 요청이 중단됐습니다" sub={lastFailed.requestText} />
+          <PanelTitle
+            title={lastFailed.refused ? '이 요청은 진행할 수 없습니다' : '직전 요청이 중단됐습니다'}
+            sub={lastFailed.requestText}
+          />
           <div className="px-4 pb-4 pt-[0.375rem]">
-            <Callout tone="warn" icon="triangle-alert">{failureReason(lastFailed.failureCode)}</Callout>
+            <Callout tone="warn" icon="triangle-alert">
+              {lastFailed.refused
+                ? (detail?.plan?.summary
+                  ?? '요청한 내용이 지금 허용된 작업 범위 밖이라 진행하지 않았습니다. 최고관리자에게 울타리 설정을 요청해 주세요.')
+                : failureReason(lastFailed.failureCode)}
+            </Callout>
           </div>
         </section>}
 
@@ -438,7 +452,9 @@ function ExecutionHistory({ items, nowMs }: { items: JobSummary[]; nowMs: number
       ? <p className="px-4 pb-4 pt-[0.375rem] text-[0.71875rem] text-muted-2">아직 보낸 요청이 없습니다.</p>
       : <ul className="px-4 pb-4 pt-[0.375rem]">
         {items.slice(0, 8).map((job) => {
-          const presentation = statusPresentation[job.status]
+          const presentation = job.refused
+            ? { label: '진행 안 함', tone: 'idle' as const }
+            : statusPresentation[job.status]
           const elapsed = elapsedLabel(job.createdAt, job.finishedAt, nowMs)
           return <li
             key={job.jobId}
