@@ -79,8 +79,8 @@ const openStatuses: CodingJobStatus[] = ['PENDING', 'RUNNING', 'WAITING_APPROVAL
  * question they actually have.
  */
 const nextStep: Partial<Record<CodingJobStatus, string>> = {
-  PENDING: '차례를 기다리는 중입니다. 잠시 뒤 새로고침을 눌러 주세요.',
-  RUNNING: 'AI 가 작업하는 중입니다. 잠시 뒤 새로고침을 눌러 주세요.',
+  PENDING: '차례를 기다리는 중입니다. 진행되면 이 화면이 저절로 바뀝니다.',
+  RUNNING: 'AI 가 작업하는 중입니다. 진행되면 이 화면이 저절로 바뀝니다.',
   WAITING_APPROVAL: '아래에서 내용을 확인하고 승인해 주세요.',
 }
 
@@ -166,6 +166,7 @@ export default function CodingWorkspace({ api, role }: { api: CodingConsoleApiCl
   const [history, setHistory] = useState<JobSummary[]>([])
   const [runner, setRunner] = useState<RunnerStatus | null>(null)
   const [notifications, setNotifications] = useState<CodingNotification[]>([])
+  const [refusedReason, setRefusedReason] = useState<string | null>(null)
   const [nowMs, setNowMs] = useState(() => Date.now())
 
   /**
@@ -201,24 +202,34 @@ export default function CodingWorkspace({ api, role }: { api: CodingConsoleApiCl
       if (!active) return
       setNowMs(Date.now())
       setCurrent(open)
-      // Only the newest request, and only while nothing newer runs: an old failure from a
-      // previous day must not become a permanent banner over a screen that has moved on.
-      // A refusal ends the pipeline as an ordinary success, so status alone would file it
-      // under "완료" and say nothing. The reader was turned down and has to be told.
-      setLastFailed(!open && (newest?.status === 'FAILED' || newest?.refused === true)
+      // The newest request answers for itself. It used to be shown only when nothing else
+      // was open, so a request refused seconds ago stayed invisible behind an approval left
+      // waiting from an hour before - which reads as "the guardrail did not refuse it".
+      // A refusal also ends the pipeline as an ordinary success, so status alone would file
+      // it under "완료" and say nothing at all.
+      setLastFailed(newest && (newest.status === 'FAILED' || newest.refused === true)
         ? newest : null)
-      // The refused request needs its detail too: the analyst's own words are the reason
-      // shown to the person who was turned down.
-      const opened = open ?? (newest?.refused ? newest : null)
-      if (!opened) setDetail(null)
-      if (opened) {
+      if (!open) setDetail(null)
+      if (open) {
         try {
-          const loaded = await api.getJob(opened.jobId)
+          const loaded = await api.getJob(open.jobId)
           if (active) setDetail(loaded ?? null)
         }
         catch (error: unknown) {
           if (active && !reload.silent) setFailure(describeFailure(error))
         }
+      }
+      // The refusal's reason is the analyst's own sentence, and it lives in that request's
+      // detail - not in the detail of whatever else happens to be open.
+      if (newest?.refused) {
+        try {
+          const refusedDetail = await api.getJob(newest.jobId)
+          if (active) setRefusedReason(refusedDetail?.plan?.summary ?? null)
+        }
+        catch { /* the card falls back to its own sentence */ }
+      }
+      else if (active) {
+        setRefusedReason(null)
       }
       if (active && !reload.silent) setLoading(false)
       // The runner warning rides the same tick. A failed read keeps the last known verdict
@@ -325,7 +336,27 @@ export default function CodingWorkspace({ api, role }: { api: CodingConsoleApiCl
     {loading
       ? <section className={panel}><p className="p-4 text-[0.78125rem] text-muted">불러오는 중입니다…</p></section>
       : <>
+        {/* A stopped request answers here instead of disappearing. The sentence carries the
+          * next step, because "실패" alone leaves the writer with nothing to do about it. */}
+        {lastFailed && <section className={`${panel}${current ? ' mb-[0.875rem]' : ''}`}>
+          <PanelTitle
+            title={lastFailed.refused ? '이 요청은 진행할 수 없습니다' : '직전 요청이 중단됐습니다'}
+            sub={lastFailed.requestText}
+          />
+          <div className="px-4 pb-4 pt-[0.375rem]">
+            <Callout tone="warn" icon="triangle-alert">
+              {lastFailed.refused
+                ? (refusedReason
+                  ?? '요청한 내용이 지금 허용된 작업 범위 밖이라 진행하지 않았습니다. 최고관리자에게 울타리 설정을 요청해 주세요.')
+                : failureReason(lastFailed.failureCode)}
+            </Callout>
+          </div>
+        </section>}
+
         {current && <>
+          {lastFailed && <p className="mb-[0.875rem] text-[0.71875rem] leading-5 text-muted-2">
+            아래는 이전에 보낸 요청이며, 아직 승인을 기다리고 있습니다.
+          </p>}
           <CurrentRequest job={current} />
           {detail?.pendingApproval?.stage === 'SCOPE' && <PlanApproval
             plan={detail.plan}
@@ -347,23 +378,6 @@ export default function CodingWorkspace({ api, role }: { api: CodingConsoleApiCl
             onDecide={decide}
           />}
         </>}
-
-        {/* A stopped request answers here instead of disappearing. The sentence carries the
-          * next step, because "실패" alone leaves the writer with nothing to do about it. */}
-        {!current && lastFailed && <section className={panel}>
-          <PanelTitle
-            title={lastFailed.refused ? '이 요청은 진행할 수 없습니다' : '직전 요청이 중단됐습니다'}
-            sub={lastFailed.requestText}
-          />
-          <div className="px-4 pb-4 pt-[0.375rem]">
-            <Callout tone="warn" icon="triangle-alert">
-              {lastFailed.refused
-                ? (detail?.plan?.summary
-                  ?? '요청한 내용이 지금 허용된 작업 범위 밖이라 진행하지 않았습니다. 최고관리자에게 울타리 설정을 요청해 주세요.')
-                : failureReason(lastFailed.failureCode)}
-            </Callout>
-          </div>
-        </section>}
 
         {/*
           * The form is always here. Hiding it while a request was open sounded tidy until an

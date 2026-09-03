@@ -653,3 +653,50 @@ test('a refused request says so instead of reading as completed', async () => {
   expect(screen.getByText('진행 안 함')).toBeInTheDocument()
   expect(screen.queryByText('완료')).not.toBeInTheDocument()
 })
+
+/*
+ * Measured 2026-09-03: three requests were refused in a row and none of them appeared, because
+ * an approval left waiting an hour earlier held the one visible slot. To the person typing, the
+ * guardrail looked broken. The newest request now answers for itself either way.
+ */
+test('a refusal is shown even while an older request still waits for approval', async () => {
+  const refused = {
+    jobId: 'dddddddd-4444-4444-8444-444444444444',
+    repository: 'backend',
+    requestText: '상태 점검에 서버 버전 넣어줘',
+    status: 'COMPLETED' as const,
+    createdAt: '2026-09-03T01:24:00Z',
+    finishedAt: '2026-09-03T01:24:03Z',
+    refused: true,
+  }
+  const stillWaiting = {
+    jobId: 'eeeeeeee-5555-4555-8555-555555555555',
+    repository: 'backend',
+    requestText: '회원 목록 조회 응답에 가입일 정보도 함께 내려주세요',
+    status: 'WAITING_APPROVAL' as const,
+    createdAt: '2026-09-03T00:57:00Z',
+  }
+  render(<CodingWorkspace role="GENERAL_ADMIN" api={consoleApi({
+    listJobs: vi.fn().mockResolvedValue({ schemaVersion: '1.0', items: [refused, stillWaiting] }),
+    getJob: vi.fn().mockImplementation((jobId: string) => Promise.resolve(
+      jobId === refused.jobId
+        ? {
+          schemaVersion: '1.0', jobId, repository: 'backend', requestText: refused.requestText,
+          status: 'COMPLETED', pipelineAttempt: 1, maxPipelineAttempts: 3,
+          plan: { summary: '상태 점검 영역은 허용되지 않아 진행할 수 없습니다.', acceptanceCriteria: [] },
+          decisions: [], refused: true, createdAt: refused.createdAt,
+        }
+        : {
+          schemaVersion: '1.0', jobId, repository: 'backend', requestText: stillWaiting.requestText,
+          status: 'WAITING_APPROVAL', pipelineAttempt: 1, maxPipelineAttempts: 3,
+          decisions: [], createdAt: stillWaiting.createdAt,
+        })),
+  })} />)
+
+  // The refusal, with the analyst's own reason.
+  expect(await screen.findByText('이 요청은 진행할 수 없습니다')).toBeInTheDocument()
+  expect(screen.getByText(/상태 점검 영역은 허용되지 않아/)).toBeInTheDocument()
+  // And the older approval is still reachable, labelled as the older one.
+  expect(screen.getByText(/아래는 이전에 보낸 요청이며/)).toBeInTheDocument()
+  expect(screen.getAllByText(stillWaiting.requestText).length).toBeGreaterThan(0)
+})
