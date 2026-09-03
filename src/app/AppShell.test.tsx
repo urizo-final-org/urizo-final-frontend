@@ -267,12 +267,13 @@ test('a general administrator is redirected away from site management', async ()
   expect(within(navigation).queryByRole('button', { name: /사이트 관리/ })).not.toBeInTheDocument()
 })
 
+/** 마지막 값은 대상을 고르지 않았을 때의 안내다. 메뉴만 등록 경로가 있어 문구가 다르다. */
 test.each([
-  ['/admin/menus', '메뉴 관리', '메뉴 AI', '컨텐츠 본문, 게시글, 템플릿은 변경하지 않아요.'],
-  ['/admin/contents', '컨텐츠 관리', '컨텐츠 AI', '메뉴 구조, 게시판·게시글, 템플릿은 변경하지 않아요.'],
-  ['/admin/boards', '게시판 관리', '게시판 AI', '메뉴 연결, 정적 컨텐츠, 템플릿은 변경하지 않아요.'],
-  ['/admin/templates', '템플릿 관리', '템플릿 AI', '메뉴, 컨텐츠 본문, 게시판·게시글은 변경하지 않아요.'],
-])('%s shows a page-scoped AI panel', async (path, section, assistant, excluded) => {
+  ['/admin/menus', '메뉴 관리', '메뉴 AI', '컨텐츠 본문, 게시글, 템플릿은 변경하지 않아요.', '목록에서 고르거나, 바로 요청해 새 메뉴를 만들 수 있어요.'],
+  ['/admin/contents', '컨텐츠 관리', '컨텐츠 AI', '메뉴 구조, 게시판·게시글, 템플릿은 변경하지 않아요.', '목록에서 항목을 선택하면 그 대상에 적용합니다.'],
+  ['/admin/boards', '게시판 관리', '게시판 AI', '메뉴 연결, 정적 컨텐츠, 템플릿은 변경하지 않아요.', '목록에서 항목을 선택하면 그 대상에 적용합니다.'],
+  ['/admin/templates', '템플릿 관리', '템플릿 AI', '메뉴, 컨텐츠 본문, 게시판·게시글은 변경하지 않아요.', '목록에서 항목을 선택하면 그 대상에 적용합니다.'],
+])('%s shows a page-scoped AI panel', async (path, section, assistant, excluded, empty) => {
   window.history.pushState({}, '', path)
   vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => {
     if (String(input) === '/api/auth/refresh') return Promise.resolve(json(session()))
@@ -285,7 +286,7 @@ test.each([
   expect(within(panel).getByRole('heading', { name: assistant })).toBeInTheDocument()
   expect(within(panel).getByText('현재 화면 전용')).toBeInTheDocument()
   expect(within(panel).getByText(excluded)).toBeInTheDocument()
-  expect(within(panel).getByText('목록에서 항목을 선택하면 그 대상에 적용합니다.')).toBeInTheDocument()
+  expect(within(panel).getByText(empty)).toBeInTheDocument()
   expect(within(panel).getByRole('button', { name: '요청 분석하기' })).toBeDisabled()
 })
 
@@ -354,7 +355,7 @@ test('the menu assistant opens and offers a new menu beside the existing ones', 
   expect(await screen.findByRole('heading', { name: '메뉴 관리' })).toBeInTheDocument()
   const panel = screen.getByRole('complementary', { name: '메뉴 관리 자연어 도우미' })
   expect(within(panel).queryByText('메뉴 관리 화면은 아직 자연어 변경을 지원하지 않습니다.')).not.toBeInTheDocument()
-  expect(within(panel).getByText('선택하지 않고 요청하면 새 메뉴 만들기를 고를 수 있어요.')).toBeInTheDocument()
+  expect(within(panel).getByText('목록에서 고르거나, 바로 요청해 새 메뉴를 만들 수 있어요.')).toBeInTheDocument()
 
   /** 경로와 연결은 따로 읽힌다. 유형은 표로, 대상 이름은 그 옆에 둔다. */
   const linked = await screen.findByRole('button', { name: /\/about\/company/ })

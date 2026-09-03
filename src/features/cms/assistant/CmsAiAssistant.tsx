@@ -62,6 +62,8 @@ type AssistantProfile = {
   section: string
   title: string
   description: string
+  /** 대상을 고르지 않았을 때의 안내. 화면마다 할 수 있는 것이 다르다. */
+  empty: string
   capabilities: string[]
   excluded: string
   suggestions: string[]
@@ -72,6 +74,7 @@ const profiles: Record<AssistedRoute, AssistantProfile> = {
     section: '메뉴 관리',
     title: '메뉴 AI',
     description: '메뉴 구조와 연결 상태를 자연어로 정리해 보세요.',
+    empty: '목록에서 고르거나, 바로 요청해 새 메뉴를 만들 수 있어요.',
     capabilities: ['메뉴 등록·수정·삭제', '상·하위 구조', '노출 순서', '콘텐츠·게시판 연결'],
     excluded: '컨텐츠 본문, 게시글, 템플릿은 변경하지 않아요.',
     suggestions: ['고객지원 아래에 자료실 메뉴를 만들어 줘', '비전을 맨 위로 올려 줘', '소개 메뉴에 회사 소개 컨텐츠를 연결해 줘'],
@@ -80,6 +83,7 @@ const profiles: Record<AssistedRoute, AssistantProfile> = {
     section: '컨텐츠 관리',
     title: '컨텐츠 AI',
     description: '정적 페이지의 제목과 본문 초안을 빠르게 다듬어 보세요.',
+    empty: '목록에서 항목을 선택하면 그 대상에 적용합니다.',
     capabilities: ['컨텐츠 등록·수정', '제목·본문 편집', '문단·목록 서식', '삭제 전 확인'],
     excluded: '메뉴 구조, 게시판·게시글, 템플릿은 변경하지 않아요.',
     suggestions: ['선택한 컨텐츠를 세 문단으로 정리해 줘', '제목을 더 명확하게 다듬어 줘', '새 안내 페이지 초안을 만들어 줘'],
@@ -88,6 +92,7 @@ const profiles: Record<AssistedRoute, AssistantProfile> = {
     section: '게시판 관리',
     title: '게시판 AI',
     description: '게시판과 게시글 작성 작업을 현재 화면 안에서 도와드려요.',
+    empty: '목록에서 항목을 선택하면 그 대상에 적용합니다.',
     capabilities: ['게시판 등록·수정', '게시글 작성·편집', '제목·본문 정리', '삭제 전 확인'],
     excluded: '메뉴 연결, 정적 컨텐츠, 템플릿은 변경하지 않아요.',
     suggestions: ['공지사항 게시판 설명을 작성해 줘', '선택한 게시글 제목을 다듬어 줘', '게시글 본문을 읽기 쉽게 정리해 줘'],
@@ -96,6 +101,7 @@ const profiles: Record<AssistedRoute, AssistantProfile> = {
     section: '템플릿 관리',
     title: '템플릿 AI',
     description: '사용자 사이트의 공통 디자인 설정을 자연어로 조정해 보세요.',
+    empty: '목록에서 항목을 선택하면 그 대상에 적용합니다.',
     capabilities: ['레이아웃 선택', '브랜드 색상', 'Header·Footer', '메인 이미지·문구·버튼'],
     excluded: '메뉴, 컨텐츠 본문, 게시판·게시글은 변경하지 않아요.',
     suggestions: ['대표 색상을 차분한 보라색으로 바꿔 줘', '메인 문구를 더 간결하게 다듬어 줘', 'Footer 문구를 전문적으로 정리해 줘'],
@@ -334,10 +340,7 @@ export default function CmsAiAssistant({ route, target, candidates, menus, onTar
         <small className="block text-[0.65625rem] text-muted-3">변경 대상</small>
         {target
           ? <b className="mt-[0.1875rem] block truncate text-[0.71875rem] font-semibold text-ink" title={target.label}>{target.label}</b>
-          : <span className="mt-[0.1875rem] block text-[0.71875rem] text-muted-2">목록에서 항목을 선택하면 그 대상에 적용합니다.</span>}
-        {route === 'menus' && <span className="mt-[0.3125rem] block text-[0.65625rem] leading-[1.5] text-muted-3">
-          선택하지 않고 요청하면 새 메뉴 만들기를 고를 수 있어요.
-        </span>}
+          : <span className="mt-[0.1875rem] block text-[0.71875rem] leading-[1.55] text-muted-2">{profile.empty}</span>}
       </div>
 
       <div className="mt-[0.875rem] flex flex-wrap gap-[0.375rem]">
