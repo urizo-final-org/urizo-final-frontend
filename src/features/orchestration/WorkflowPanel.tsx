@@ -14,6 +14,12 @@ interface WorkflowNode extends ProfileSnapshotNode {
   y: number
 }
 
+interface CanvasDimensions {
+  width: number
+  height: number
+  nodeAreaHeight: number
+}
+
 interface HandlerDefinition {
   key: string
   type: ProfileNodeType
@@ -70,6 +76,65 @@ const modelBindingCatalog: Record<ProfileKey, string[]> = {
 const toolCatalog: Record<ProfileKey, string[]> = {
   LLM_OPS: ['read_file', 'search_code', 'read_diff', 'apply_patch', 'run_check', 'check_package_allowlist', 'scan_changed_files'],
   NATURAL_CMS: ['resolve_cms_target', 'validate_cms_command', 'create_cms_preview', 'discard_cms_preview', 'revalidate_cms_preview', 'apply_cms_preview'],
+}
+
+const NODE_WIDTH = 176
+const NODE_HEIGHT = 88
+const NODE_PORT_Y = 42
+const CANVAS_PADDING = 48
+const LAYER_GAP_X = 244
+const LANE_GAP_Y = 124
+const DETOUR_LANE_GAP = 32
+const MIN_CANVAS_WIDTH = 1180
+const MIN_NODE_AREA_HEIGHT = 680
+
+function isDetourEdge(edge: ProfileSnapshotEdge, nodes: WorkflowNode[]) {
+  const from = nodes.find((node) => node.id === edge.from)
+  const to = nodes.find((node) => node.id === edge.to)
+  return /retry|reject|changes_requested/i.test(edge.resultPort) || (from !== undefined && to !== undefined && to.x <= from.x)
+}
+
+function layoutSnapshotNodes(snapshotNodes: ProfileSnapshotNode[], edges: ProfileSnapshotEdge[]): WorkflowNode[] {
+  const levels = new Map(snapshotNodes.map((node) => [node.id, 0]))
+  const forwardEdges = edges.filter((edge) => !/retry|reject|changes_requested/i.test(edge.resultPort))
+
+  for (let pass = 0; pass < snapshotNodes.length; pass += 1) {
+    let changed = false
+    for (const edge of forwardEdges) {
+      const fromLevel = levels.get(edge.from)
+      const toLevel = levels.get(edge.to)
+      if (fromLevel === undefined || toLevel === undefined || toLevel >= fromLevel + 1) continue
+      levels.set(edge.to, fromLevel + 1)
+      changed = true
+    }
+    if (!changed) break
+  }
+
+  const lanes = new Map<number, number>()
+  return snapshotNodes.map((node) => {
+    const level = levels.get(node.id) ?? 0
+    const lane = lanes.get(level) ?? 0
+    lanes.set(level, lane + 1)
+    return {
+      ...node,
+      resultPorts: [...node.resultPorts],
+      config: { ...node.config },
+      x: CANVAS_PADDING + level * LAYER_GAP_X,
+      y: CANVAS_PADDING + lane * LANE_GAP_Y,
+    }
+  })
+}
+
+function canvasDimensions(nodes: WorkflowNode[], edges: ProfileSnapshotEdge[]): CanvasDimensions {
+  const farthestRight = Math.max(0, ...nodes.map((node) => node.x + NODE_WIDTH))
+  const farthestBottom = Math.max(0, ...nodes.map((node) => node.y + NODE_HEIGHT))
+  const detourCount = edges.filter((edge) => isDetourEdge(edge, nodes)).length
+  const nodeAreaHeight = Math.max(MIN_NODE_AREA_HEIGHT, farthestBottom + CANVAS_PADDING)
+  return {
+    width: Math.max(MIN_CANVAS_WIDTH, farthestRight + CANVAS_PADDING),
+    height: nodeAreaHeight + CANVAS_PADDING + Math.max(1, detourCount) * DETOUR_LANE_GAP,
+    nodeAreaHeight,
+  }
 }
 
 export const starterSnapshots: Record<ProfileKey, ProfileAuthoringSnapshot> = {
@@ -184,13 +249,19 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient })
   const [saving, setSaving] = useState(false)
   const [failure, setFailure] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
+  const [handlerPaletteOpen, setHandlerPaletteOpen] = useState(true)
+  const [toolPolicyOpen, setToolPolicyOpen] = useState(true)
   const versionRequest = useRef(0)
+  const canvasViewport = useRef<HTMLDivElement>(null)
   const drag = useRef<{ id: string; pointerX: number; pointerY: number; x: number; y: number; moved: boolean } | null>(null)
+  const pan = useRef<{ pointerId: number; pointerX: number; pointerY: number; scrollLeft: number; scrollTop: number } | null>(null)
   const ignoreClick = useRef<string | null>(null)
+  const [panning, setPanning] = useState(false)
 
   const selected = nodes.find((node) => node.id === selectedId) ?? null
   const selectedDefinition = selected ? definitionFor(profileKey, selected.handlerKey) : null
   const selectedVersion = versions.find((version) => version.profileVersionId === selectedVersionId) ?? null
+  const canvas = canvasDimensions(nodes, edges)
   const supported = nodes.every((node) => matchesDefinition(profileKey, node))
     && allowedTools.every((tool) => toolCatalog[profileKey].includes(tool))
     && nodes.filter((node) => node.type === 'agent').every((node) => {
@@ -239,13 +310,7 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient })
   }
 
   function applySnapshot(snapshot: ProfileAuthoringSnapshot, versionId: string | null) {
-    const nextNodes = snapshot.nodes.map((node, index) => ({
-      ...node,
-      resultPorts: [...node.resultPorts],
-      config: { ...node.config },
-      x: 24 + (index % 4) * 176,
-      y: 48 + Math.floor(index / 4) * 118,
-    }))
+    const nextNodes = layoutSnapshotNodes(snapshot.nodes, snapshot.edges)
     const nextSelected = nextNodes.find((node) => node.type === 'guardrail') ?? nextNodes[0] ?? null
     setSelectedVersionId(versionId)
     setNodes(nextNodes)
@@ -341,14 +406,16 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient })
     }
     if (definition.locked && nodes.some((node) => node.type === definition.type)) return
     const id = uniqueNodeId(definition.key.split('.').at(-1) ?? definition.type, nodes)
+    const furthestColumn = Math.max(CANVAS_PADDING, ...nodes.map((item) => item.x))
+    const columnNodes = nodes.filter((item) => item.x === furthestColumn).length
     const node: WorkflowNode = {
       id,
       type: definition.type,
       handlerKey: definition.key,
       resultPorts: [...definition.resultPorts],
       config: { ...definition.config },
-      x: 24 + (nodes.length % 4) * 176,
-      y: 48 + Math.floor(nodes.length / 4) * 118,
+      x: furthestColumn + LAYER_GAP_X,
+      y: CANVAS_PADDING + columnNodes * LANE_GAP_Y,
     }
     setNodes((current) => [...current, node])
     if (node.type === 'agent') {
@@ -481,8 +548,10 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient })
     const deltaX = event.clientX - active.pointerX
     const deltaY = event.clientY - active.pointerY
     if (Math.abs(deltaX) + Math.abs(deltaY) > 3) active.moved = true
+    const maxX = Math.max(CANVAS_PADDING, canvas.width - NODE_WIDTH - CANVAS_PADDING + LAYER_GAP_X)
+    const maxY = Math.max(CANVAS_PADDING, canvas.nodeAreaHeight - NODE_HEIGHT - CANVAS_PADDING + LANE_GAP_Y)
     setNodes((current) => current.map((node) => node.id === active.id
-      ? { ...node, x: Math.max(12, Math.min(730, active.x + deltaX)), y: Math.max(12, Math.min(470, active.y + deltaY)) }
+      ? { ...node, x: Math.max(CANVAS_PADDING, Math.min(maxX, active.x + deltaX)), y: Math.max(CANVAS_PADDING, Math.min(maxY, active.y + deltaY)) }
       : node))
   }
 
@@ -496,6 +565,37 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient })
       setNodes((current) => [...current].sort((left, right) => left.y - right.y || left.x - right.x))
       setStatus(`${node.id} Node 위치와 Snapshot 순서를 변경했습니다.`)
     }
+  }
+
+  function startCanvasPan(event: ReactPointerEvent<HTMLDivElement>) {
+    if (event.target !== event.currentTarget) return
+    const viewport = canvasViewport.current
+    if (!viewport) return
+    event.currentTarget.setPointerCapture?.(event.pointerId)
+    pan.current = {
+      pointerId: event.pointerId,
+      pointerX: event.clientX,
+      pointerY: event.clientY,
+      scrollLeft: viewport.scrollLeft,
+      scrollTop: viewport.scrollTop,
+    }
+    setPanning(true)
+  }
+
+  function moveCanvasPan(event: ReactPointerEvent<HTMLDivElement>) {
+    const active = pan.current
+    const viewport = canvasViewport.current
+    if (!active || !viewport || active.pointerId !== event.pointerId) return
+    viewport.scrollLeft = active.scrollLeft - (event.clientX - active.pointerX)
+    viewport.scrollTop = active.scrollTop - (event.clientY - active.pointerY)
+  }
+
+  function endCanvasPan(event: ReactPointerEvent<HTMLDivElement>) {
+    const active = pan.current
+    if (!active || active.pointerId !== event.pointerId) return
+    if (event.currentTarget.hasPointerCapture?.(event.pointerId)) event.currentTarget.releasePointerCapture?.(event.pointerId)
+    pan.current = null
+    setPanning(false)
   }
 
   const relatedEdges = selected ? edges.filter((edge) => edge.from === selected.id || edge.to === selected.id) : []
@@ -540,58 +640,69 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient })
       </div>
     </section>
 
-    <div className={`${panel} mt-3 grid min-h-[39rem] overflow-hidden xl:grid-cols-[15rem_minmax(0,1fr)_18rem]`}>
-      <aside className="border-b border-line-soft bg-sub p-4 xl:border-b-0 xl:border-r" aria-label="Node Palette">
-        <b className="text-[0.84375rem] font-semibold">등록 Handler Palette</b>
-        <small className="mt-1 block text-[0.6875rem] text-muted-2">Backend production 계약에 등록된 Node만 추가</small>
-        <div className="mt-3 grid gap-2">
-          {handlerCatalog[profileKey].map((definition) => {
-            const info = nodeTypes[definition.type]
-            const exists = definition.locked && nodes.some((node) => node.type === definition.type)
-            return <button
-              key={definition.key}
-              type="button"
-              className="flex items-center gap-2 rounded-md border border-btn-line bg-white px-3 py-[0.625rem] text-left text-xs font-semibold enabled:hover:bg-page disabled:opacity-45"
-              disabled={exists || loading || saving || !supported}
-              onClick={() => addNode(definition)}
-            >
-              <span className={`grid h-6 w-6 shrink-0 place-items-center rounded ${info.skin}`}><Icon name={info.icon} size={13} /></span>
-              <span className="min-w-0"><span className="block truncate">{definition.label}</span><code className="block truncate text-[0.5625rem] font-normal text-muted-2">{definition.key}</code></span>
-            </button>
-          })}
-        </div>
-
-        <fieldset className="mt-4 border-t border-row-line pt-3" disabled={loading || saving || !supported}>
-          <legend className="text-[0.71875rem] font-semibold text-body">Profile 허용 Tool</legend>
-          <p className="mt-1 text-[0.625rem] leading-4 text-muted-2">Snapshot toolPolicy에 저장됩니다.</p>
-          <div className="mt-2 space-y-2">
-            {toolCatalog[profileKey].map((tool) => <label key={tool} className="flex items-start gap-2 text-[0.65625rem] text-body">
-              <input type="checkbox" aria-label={`허용 Tool ${tool}`} checked={allowedTools.includes(tool)} onChange={() => toggleTool(tool)} />
-              <code className="break-all">{tool}</code>
-            </label>)}
-          </div>
-        </fieldset>
-      </aside>
-
-      <div className="min-w-0 bg-[#f8fafc]">
+    <div className={`${panel} mt-3 grid min-h-[48rem] overflow-hidden xl:grid-cols-[20rem_minmax(0,1fr)]`}>
+      <div className="order-2 flex min-h-0 min-w-0 flex-col bg-[#f8fafc] xl:order-2">
         <div className="flex flex-wrap items-center gap-2 border-b border-line-soft bg-white px-4 py-3">
           <b className="text-[0.8125rem] font-semibold">{profileKey} Snapshot</b>
           <Tag>등록 Handler</Tag><Tag>Version API</Tag>
           <span className="ml-auto text-[0.6875rem] text-muted-2">Node {nodes.length} · Edge {edges.length}</span>
         </div>
-        <div className="overflow-auto p-3">
-          <div className="relative h-[35rem] min-w-[56rem] overflow-hidden rounded-md border border-line bg-[radial-gradient(circle,#dfe5eb_1px,transparent_1px)] [background-size:18px_18px]" aria-label="Node 편집 Canvas">
-            <svg className="pointer-events-none absolute inset-0 h-full w-full" viewBox="0 0 896 560" preserveAspectRatio="none" aria-hidden="true">
-              {edges.map((edge) => {
+        <div ref={canvasViewport} className="min-h-0 flex-1 overflow-auto p-4" data-canvas-viewport>
+          <div
+            className={`relative overflow-hidden rounded-md border border-[#343c46] bg-[#20262e] bg-[radial-gradient(circle,#596472_1px,transparent_1px)] [background-size:20px_20px] ${panning ? 'cursor-grabbing' : 'cursor-grab'}`}
+            aria-label="Node 편집 Canvas"
+            data-canvas-width={canvas.width}
+            data-canvas-height={canvas.height}
+            style={{ width: canvas.width, height: canvas.height }}
+            onPointerDown={startCanvasPan}
+            onPointerMove={moveCanvasPan}
+            onPointerUp={endCanvasPan}
+            onPointerCancel={endCanvasPan}
+          >
+            <div className="pointer-events-none absolute right-3 top-3 z-20 flex items-center gap-3 rounded-md border border-white/10 bg-[#151a20]/90 px-3 py-2 text-[0.625rem] text-[#cbd5df] shadow-lg">
+              <span>입력 Port</span><span aria-hidden="true">←</span><b className="font-semibold text-white">Node</b><span aria-hidden="true">→</span><span>출력 Port</span>
+              <span className="h-3 border-l border-white/15" aria-hidden="true" />
+              <span>Retry·Reject 하단 Routing</span>
+            </div>
+            <svg className="pointer-events-none absolute inset-0 h-full w-full" viewBox={`0 0 ${canvas.width} ${canvas.height}`} preserveAspectRatio="none" aria-hidden="true">
+              <defs>
+                <marker id="workflow-edge-arrow" viewBox="0 0 7 7" refX="6" refY="3.5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                  <path d="M 0 0 L 7 3.5 L 0 7 z" fill="#8f9aa8" />
+                </marker>
+                <marker id="workflow-edge-arrow-active" viewBox="0 0 7 7" refX="6" refY="3.5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                  <path d="M 0 0 L 7 3.5 L 0 7 z" fill="#60a5fa" />
+                </marker>
+              </defs>
+              {edges.map((edge, edgeIndex) => {
                 const from = nodes.find((node) => node.id === edge.from)
                 const to = nodes.find((node) => node.id === edge.to)
                 if (!from || !to) return null
-                const x1 = from.x + 152
-                const y1 = from.y + 36
+                const x1 = from.x + NODE_WIDTH
+                const y1 = from.y + NODE_PORT_Y
                 const x2 = to.x
-                const y2 = to.y + 36
+                const y2 = to.y + NODE_PORT_Y
                 const bend = Math.max(42, Math.abs(x2 - x1) * 0.45)
-                return <path key={`${edge.from}-${edge.resultPort}-${edge.to}`} d={`M ${x1} ${y1} C ${x1 + bend} ${y1}, ${x2 - bend} ${y2}, ${x2} ${y2}`} fill="none" stroke="var(--primary)" strokeWidth="2" opacity=".62" />
+                const detour = isDetourEdge(edge, nodes)
+                const detourIndex = edges.slice(0, edgeIndex).filter((item) => isDetourEdge(item, nodes)).length
+                const detourY = canvas.height - CANVAS_PADDING - detourIndex * DETOUR_LANE_GAP
+                const detourRight = Math.min(canvas.width - CANVAS_PADDING / 2, x1 + 68)
+                const detourLeft = Math.max(CANVAS_PADDING / 2, x2 - 68)
+                const path = detour
+                  ? `M ${x1} ${y1} C ${x1 + 34} ${y1}, ${x1 + 34} ${detourY}, ${detourRight} ${detourY} L ${detourLeft} ${detourY} C ${x2 - 34} ${detourY}, ${x2 - 34} ${y2}, ${x2} ${y2}`
+                  : `M ${x1} ${y1} C ${x1 + bend} ${y1}, ${x2 - bend} ${y2}, ${x2} ${y2}`
+                const active = selectedId === edge.from || selectedId === edge.to
+                return <path
+                  key={`${edge.from}-${edge.resultPort}-${edge.to}`}
+                  d={path}
+                  data-edge-route={detour ? 'detour' : 'direct'}
+                  data-edge-lane={detour ? detourIndex : undefined}
+                  data-edge-active={active ? 'true' : 'false'}
+                  fill="none"
+                  stroke={active ? '#60a5fa' : '#8f9aa8'}
+                  strokeWidth={active ? 2.5 : 1.75}
+                  opacity={active ? 1 : 0.82}
+                  markerEnd={active ? 'url(#workflow-edge-arrow-active)' : 'url(#workflow-edge-arrow)'}
+                />
               })}
             </svg>
 
@@ -603,12 +714,14 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient })
               return <article
                 key={node.id}
                 aria-label={`${node.id} Node`}
-                className={`absolute w-[9.5rem] rounded-md border bg-white p-[0.625rem] shadow-[0_5px_14px_#1426381f] ${active ? 'border-primary ring-2 ring-accent/45' : source ? 'border-wait-dot ring-2 ring-wait-bg' : 'border-line'}`}
-                style={{ left: node.x, top: node.y }}
+                data-node-x={node.x}
+                data-node-y={node.y}
+                className={`absolute z-10 rounded-md border bg-white p-[0.625rem] shadow-[0_8px_22px_#070a0e59] ${active ? 'border-[#60a5fa] ring-2 ring-[#60a5fa]/45' : source ? 'border-wait-dot ring-2 ring-wait-bg' : 'border-[#cbd3dc]'}`}
+                style={{ left: node.x, top: node.y, width: NODE_WIDTH, minHeight: NODE_HEIGHT }}
                 onClick={() => selectNode(node.id)}
               >
-                <span className="absolute -left-[0.25rem] top-1/2 h-2 w-2 -translate-y-1/2 rounded-full border border-primary bg-white" aria-hidden="true" />
-                <span className="absolute -right-[0.25rem] top-1/2 h-2 w-2 -translate-y-1/2 rounded-full border border-primary bg-white" aria-hidden="true" />
+                <span data-node-port="input" className="absolute -left-[0.3125rem] top-1/2 h-2.5 w-2.5 -translate-y-1/2 rounded-full border-2 border-[#778392] bg-white shadow-[0_0_0_2px_#20262e]" aria-hidden="true" />
+                <span data-node-port="output" className={`absolute -right-[0.3125rem] top-1/2 h-2.5 w-2.5 -translate-y-1/2 rounded-full border-2 bg-white shadow-[0_0_0_2px_#20262e] ${source ? 'border-[#f0a34a]' : active ? 'border-[#60a5fa]' : 'border-[#778392]'}`} aria-hidden="true" />
                 <button
                   type="button"
                   aria-label={`${node.id} Node 이동`}
@@ -629,7 +742,7 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient })
         <div className="border-t border-line-soft bg-white px-4 py-2 text-[0.6875rem] text-muted" aria-live="polite">{status}</div>
       </div>
 
-      <aside className="border-t border-line-soft bg-white p-4 xl:border-l xl:border-t-0" aria-label="선택 Node 설정">
+      <aside className="order-1 min-h-0 overflow-y-auto border-t border-line-soft bg-white p-4 xl:order-1 xl:border-r xl:border-t-0" aria-label="Workflow control dock">
         <b className="text-[0.84375rem] font-semibold">Node 설정</b>
         {!selected && <p className="mt-3 text-xs text-muted-2">Node를 선택하세요.</p>}
         {selected && <div className="mt-3">
@@ -721,6 +834,56 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient })
             </div>
           </div>
         </div>}
+
+        <section className="mt-5 border-t border-row-line pt-4" aria-label="Node Palette">
+          <button
+            type="button"
+            className="flex w-full items-start justify-between gap-3 rounded text-left"
+            aria-expanded={handlerPaletteOpen}
+            aria-controls="handler-palette-panel"
+            onClick={() => setHandlerPaletteOpen((current) => !current)}
+          >
+            <span><b className="block text-[0.84375rem] font-semibold">등록 Handler Palette</b><small className="mt-1 block text-[0.6875rem] text-muted-2">Backend production 계약에 등록된 Node만 추가</small></span>
+            <span className="mt-1 text-[0.6875rem] font-semibold text-muted">{handlerPaletteOpen ? '접기' : '펼치기'}</span>
+          </button>
+          <div id="handler-palette-panel" className={handlerPaletteOpen ? 'mt-3 grid gap-2' : 'hidden'}>
+            {handlerCatalog[profileKey].map((definition) => {
+              const info = nodeTypes[definition.type]
+              const exists = definition.locked && nodes.some((node) => node.type === definition.type)
+              return <button
+                key={definition.key}
+                type="button"
+                className="flex items-center gap-2 rounded-md border border-btn-line bg-white px-3 py-[0.625rem] text-left text-xs font-semibold enabled:hover:bg-page disabled:opacity-45"
+                disabled={exists || loading || saving || !supported}
+                onClick={() => addNode(definition)}
+              >
+                <span className={`grid h-6 w-6 shrink-0 place-items-center rounded ${info.skin}`}><Icon name={info.icon} size={13} /></span>
+                <span className="min-w-0"><span className="block truncate">{definition.label}</span><code className="block truncate text-[0.5625rem] font-normal text-muted-2">{definition.key}</code></span>
+              </button>
+            })}
+          </div>
+        </section>
+
+        <section className="mt-4 border-t border-row-line pt-4">
+          <button
+            type="button"
+            className="flex w-full items-center justify-between gap-3 text-left"
+            aria-expanded={toolPolicyOpen}
+            aria-controls="profile-tool-policy-panel"
+            onClick={() => setToolPolicyOpen((current) => !current)}
+          >
+            <span className="text-[0.71875rem] font-semibold text-body">Profile 허용 Tool</span>
+            <span className="text-[0.6875rem] font-semibold text-muted">{toolPolicyOpen ? '접기' : '펼치기'}</span>
+          </button>
+          <fieldset id="profile-tool-policy-panel" className={toolPolicyOpen ? 'mt-2 space-y-2' : 'hidden'} disabled={loading || saving || !supported}>
+            <legend className="sr-only">Profile 허용 Tool</legend>
+            <p className="text-[0.625rem] leading-4 text-muted-2">Snapshot toolPolicy에 저장됩니다.</p>
+            {toolCatalog[profileKey].map((tool) => <label key={tool} className="flex items-start gap-2 text-[0.65625rem] text-body">
+              <input type="checkbox" aria-label={`허용 Tool ${tool}`} checked={allowedTools.includes(tool)} onChange={() => toggleTool(tool)} />
+              <code className="break-all">{tool}</code>
+            </label>)}
+          </fieldset>
+        </section>
       </aside>
     </div>
   </section>
