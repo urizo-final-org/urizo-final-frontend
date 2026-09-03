@@ -6,9 +6,10 @@ import {
   secondaryButton, smallButton, textarea, type Tone,
 } from '../../shared/ui/primitives'
 import type {
-  ApprovalDecision, ApprovalStage, CodingConsoleApiClient, CodingJobStatus, CodingRepository,
-  JobDetail, JobSummary, PendingApproval, RunnerStatus,
+  ApprovalDecision, ApprovalStage, CodingConsoleApiClient, CodingJobStatus, CodingNotification,
+  CodingRepository, JobDetail, JobSummary, PendingApproval, RunnerStatus,
 } from './api'
+import { markSeen, notificationSentence, sinceLabel } from './notifications'
 
 /**
  * E1, the request screen.
@@ -164,6 +165,7 @@ export default function CodingWorkspace({ api, role }: { api: CodingConsoleApiCl
   const [reload, setReload] = useState({ token: 0, silent: false })
   const [history, setHistory] = useState<JobSummary[]>([])
   const [runner, setRunner] = useState<RunnerStatus | null>(null)
+  const [notifications, setNotifications] = useState<CodingNotification[]>([])
   const [nowMs, setNowMs] = useState(() => Date.now())
 
   /**
@@ -220,6 +222,16 @@ export default function CodingWorkspace({ api, role }: { api: CodingConsoleApiCl
         if (active) setRunner(status)
       }
       catch { /* keep the last known status */ }
+      try {
+        const feed = await api.notifications()
+        if (active) {
+          setNotifications(feed.items)
+          // Reading this screen is reading the news; the list is on it. Marking here as
+          // well as on the bell keeps the badge from counting what is already in view.
+          markSeen()
+        }
+      }
+      catch { /* keep the last known feed */ }
     })()
     return () => { active = false }
   }, [api, reload])
@@ -375,9 +387,43 @@ export default function CodingWorkspace({ api, role }: { api: CodingConsoleApiCl
           </form>
         </section>
 
+        <RecentNotifications items={notifications} nowMs={nowMs} />
+
         <ExecutionHistory items={history} nowMs={nowMs} />
       </>}
   </>
+}
+
+/**
+ * What happened while this administrator was away.
+ *
+ * The two administrators take turns - one approves the plan, the other the release - and
+ * neither could see the other's move without opening every request one by one. Each line
+ * names the person, because "누가 승인했나" is what an approval ledger is for.
+ */
+function RecentNotifications({ items, nowMs }: { items: CodingNotification[]; nowMs: number }) {
+  if (items.length === 0) return <></>
+  return <section className={`${panel} mt-[0.875rem]`}>
+    <PanelTitle title="최근 알림" sub="다른 관리자의 결정과 내 승인 차례" />
+    <ul className="px-4 pb-4 pt-[0.375rem]">
+      {items.slice(0, 8).map((item) => <li
+        key={`${item.kind}-${item.jobId}-${item.occurredAt ?? ''}`}
+        className="flex flex-wrap items-baseline justify-between gap-x-5 gap-y-1 border-b border-row-line py-[0.5625rem] last:border-b-0"
+      >
+        <span className="min-w-0 flex-1">
+          <span className="text-[0.78125rem] leading-[1.6] text-body">
+            {notificationSentence(item)}
+          </span>
+          {item.requestText && <small className="mt-[0.125rem] block truncate text-[0.6875rem] text-muted-2">
+            {item.requestText}
+          </small>}
+        </span>
+        <small className="shrink-0 text-[0.6875rem] text-muted-2">
+          {sinceLabel(item.occurredAt, nowMs)}
+        </small>
+      </li>)}
+    </ul>
+  </section>
 }
 
 /**

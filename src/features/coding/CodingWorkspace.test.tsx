@@ -30,6 +30,7 @@ function consoleApi(overrides: Partial<CodingConsoleApiClient> = {}): CodingCons
     getJob: vi.fn(),
     runnerStatus: vi.fn().mockResolvedValue(
       { schemaVersion: '1.0', alive: true, lastSeenAt: '2026-09-02T02:00:00Z' }),
+    notifications: vi.fn().mockResolvedValue({ schemaVersion: '1.0', items: [] }),
     decideApproval: vi.fn(),
     guardrailSelections: vi.fn(),
     saveGuardrailSelections: vi.fn(),
@@ -567,4 +568,47 @@ test('the screen refetches by itself on the polling cadence', async () => {
   finally {
     vi.useRealTimers()
   }
+})
+
+/*
+ * The two administrators take turns, and neither can see the other's move without being
+ * told. The line names the person, which is what an approval ledger is for.
+ */
+test('the screen lists what another administrator decided, naming them', async () => {
+  render(<CodingWorkspace role="GENERAL_ADMIN" api={consoleApi({
+    notifications: vi.fn().mockResolvedValue({
+      schemaVersion: '1.0',
+      items: [
+        {
+          kind: 'APPROVAL_DECIDED',
+          jobId: 'aaaaaaaa-1111-4111-8111-111111111111',
+          requestText: '회원 목록에 가입일도 보이게 해줘',
+          stage: '코드',
+          decision: 'APPROVED',
+          actorName: '최고 관리자',
+          actorRole: 'SUPER_ADMIN',
+          occurredAt: new Date(Date.now() - 3 * 60_000).toISOString(),
+        },
+        {
+          kind: 'APPROVAL_WAITING',
+          jobId: 'bbbbbbbb-2222-4222-8222-222222222222',
+          requestText: '공지사항에 첨부파일을 붙일 수 있게 해줘',
+          stage: '계획',
+          occurredAt: new Date(Date.now() - 60_000).toISOString(),
+        },
+      ],
+    }),
+  })} />)
+
+  expect(await screen.findByText('최근 알림')).toBeInTheDocument()
+  expect(screen.getByText('최고 관리자님이 코드 단계를 승인했습니다')).toBeInTheDocument()
+  expect(screen.getByText('3분 전')).toBeInTheDocument()
+  expect(screen.getByText('계획 단계에서 승인을 기다리고 있습니다')).toBeInTheDocument()
+})
+
+test('no news means no panel rather than an empty one', async () => {
+  render(<CodingWorkspace role="GENERAL_ADMIN" api={consoleApi()} />)
+
+  await screen.findByRole('button', { name: '요청 보내기' })
+  expect(screen.queryByText('최근 알림')).not.toBeInTheDocument()
 })

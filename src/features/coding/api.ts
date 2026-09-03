@@ -228,11 +228,33 @@ export interface RunnerStatus {
   lastSeenAt?: string
 }
 
+/**
+ * One thing that happened while this administrator was not looking: somebody else's
+ * decision, or an approval now waiting on their own role. actorName is absent for a
+ * waiting approval, which nobody has decided yet.
+ */
+export interface CodingNotification {
+  kind: 'APPROVAL_DECIDED' | 'APPROVAL_WAITING'
+  jobId: string
+  requestText?: string
+  stage?: string
+  decision?: 'APPROVED' | 'REJECTED'
+  actorName?: string
+  actorRole?: string
+  occurredAt?: string
+}
+
+export interface NotificationList {
+  schemaVersion: string
+  items: CodingNotification[]
+}
+
 export interface CodingConsoleApiClient {
   createJob(repository: CodingRepository, requestText: string): Promise<CreateJobResponse>
   listJobs(limit?: number): Promise<JobList>
   getJob(jobId: string): Promise<JobDetail>
   runnerStatus(): Promise<RunnerStatus>
+  notifications(): Promise<NotificationList>
   decideApproval(
     jobId: string,
     pending: PendingApproval,
@@ -301,6 +323,8 @@ export class CodingConsoleApi implements CodingConsoleApiClient {
   )
 
   runnerStatus = () => this.request<RunnerStatus>('/api/admin/coding/jobs/runner-status')
+
+  notifications = () => this.request<NotificationList>('/api/admin/coding/jobs/notifications')
 
   decideApproval = (
     jobId: string,

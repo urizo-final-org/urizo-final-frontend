@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Icon } from '../../shared/ui/icons'
 import type { CodingConsoleApiClient } from './api'
+import { lastSeenAt, markSeen, unseen } from './notifications'
 
 /**
  * The header bell, told what it is ringing about.
@@ -9,6 +10,11 @@ import type { CodingConsoleApiClient } from './api'
  * the whole point is that a person decides before the AI's work goes anywhere. Until now the
  * only way to learn a request was waiting was to open the screen and press refresh, which
  * means the person has to already suspect there is something to see.
+ *
+ * It rings for two kinds of news: an approval now waiting on this administrator, and a
+ * decision somebody else made. The second one matters because the two administrators take
+ * turns - the general administrator approves the plan, the super administrator the release -
+ * and neither can see the other's move without being told.
  *
  * It counts, it does not invent: a failed poll leaves the previous count alone rather than
  * showing a zero that would read as "nothing is waiting".
@@ -28,8 +34,8 @@ export default function ApprovalBell({ api, onOpen }: {
       // A hidden tab is not being read, so it does not need to be polled.
       if (document.hidden) return
       try {
-        const list = await api.listJobs(100)
-        if (active) setWaiting(list.items.filter((job) => job.status === 'WAITING_APPROVAL').length)
+        const feed = await api.notifications()
+        if (active) setWaiting(unseen(feed.items, lastSeenAt()).length)
       }
       catch {
         // Keep the last known count. A wrong zero is worse than a stale number here.
@@ -42,13 +48,18 @@ export default function ApprovalBell({ api, onOpen }: {
   }, [api])
 
   const label = waiting && waiting > 0
-    ? `승인 대기 ${waiting}건 · LLM DevOps 열기`
+    ? `새 알림 ${waiting}건 · LLM DevOps 열기`
     : 'LLM DevOps 열기'
 
   return <button
     type="button"
     className="relative flex items-center text-muted hover:text-strong"
-    onClick={onOpen}
+    onClick={() => {
+      // Opening the screen is reading the news: the list is right there on it.
+      markSeen()
+      setWaiting(0)
+      onOpen()
+    }}
     aria-label={label}
     title={label}
   >
