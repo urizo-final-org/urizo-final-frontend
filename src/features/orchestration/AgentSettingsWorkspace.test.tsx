@@ -1,11 +1,23 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { afterEach, expect, test, vi } from 'vitest'
+import { afterAll, afterEach, beforeAll, expect, test, vi } from 'vitest'
 import { ProductApiError } from '../../shared/api/error'
 import AgentSettingsWorkspace from './AgentSettingsWorkspace'
 import { resolveEdgePorts, starterSnapshots } from './WorkflowPanel'
 import type { AgentSettingsApiClient, ProfileVersion, ProviderConnectionTestResult } from './api'
 
 afterEach(() => vi.unstubAllGlobals())
+
+// jsdom does not implement native dialog methods or the browser's modal focus trap.
+beforeAll(() => {
+  Object.defineProperties(HTMLDialogElement.prototype, {
+    showModal: { configurable: true, value() { this.setAttribute('open', '') } },
+    close: { configurable: true, value() { this.removeAttribute('open') } },
+  })
+})
+afterAll(() => {
+  Reflect.deleteProperty(HTMLDialogElement.prototype, 'showModal')
+  Reflect.deleteProperty(HTMLDialogElement.prototype, 'close')
+})
 
 test('the LLM_OPS starter uses the v4 PR-to-deploy tail without a CMS approval node', () => {
   const snapshot = starterSnapshots.LLM_OPS
@@ -99,6 +111,12 @@ function profileApi(overrides: Partial<AgentSettingsApiClient> = {}): AgentSetti
     }),
     saveEditorLayout: vi.fn().mockResolvedValue({
       profileVersionId: 'version-3', createdAt: '2026-09-03T00:00:00Z', nodes: [],
+    }),
+    getDefaultTemplate: vi.fn().mockResolvedValue({
+      profileKey: 'LLM_OPS', updatedAt: '2026-09-03T00:00:00Z', snapshot: starterSnapshots.LLM_OPS,
+    }),
+    saveDefaultTemplate: vi.fn().mockResolvedValue({
+      profileKey: 'LLM_OPS', updatedAt: '2026-09-03T00:00:00Z', snapshot: starterSnapshots.LLM_OPS,
     }),
     listProviderCredentials: vi.fn().mockResolvedValue({
       csrfToken: 'csrf-fixture',
@@ -267,6 +285,9 @@ test('replacing a verified provider key discards the prior verification evidence
   const secretInput = await screen.findByLabelText('OpenAI API Key')
   expect(await screen.findByText('연결 확인')).toBeInTheDocument()
   expect(screen.getByText(/마지막 테스트/)).toBeInTheDocument()
+  for (const button of screen.getAllByRole('button', { name: /^Key (교체|저장)$/ })) {
+    expect(button).toHaveStyle({ color: '#fff' })
+  }
   fireEvent.change(secretInput, { target: { value: 'replacement-credential' } })
   fireEvent.click(within(secretInput.closest('article') as HTMLElement).getByRole('button', { name: 'Key 교체' }))
 
@@ -371,6 +392,140 @@ test('a Profile with no stored versions can create its first DRAFT from the curr
   expect(api.create).toHaveBeenCalledWith('LLM_OPS', expect.objectContaining({ guardrailProfileKey: 'central.default' }))
 })
 
+test('default templates load and save per Profile without changing stored Versions', async () => {
+  const naturalTemplate = {
+    profileKey: 'NATURAL_CMS' as const,
+    updatedAt: '2026-09-04T00:00:00Z',
+    snapshot: starterSnapshots.NATURAL_CMS,
+  }
+  const api = profileApi({
+    getDefaultTemplate: vi.fn().mockImplementation((key) => Promise.resolve(
+      key === 'NATURAL_CMS'
+        ? naturalTemplate
+        : { profileKey: 'LLM_OPS', updatedAt: '2026-09-04T00:00:00Z', snapshot: starterSnapshots.LLM_OPS },
+    )),
+  })
+  render(<AgentSettingsWorkspace api={api} />)
+
+  await screen.findByLabelText('analyze Node')
+  fireEvent.click(screen.getByRole('button', { name: '기본 템플릿 불러오기' }))
+  const loadDialog = screen.getByRole('dialog', { name: '기본 템플릿 불러오기' })
+  expect(loadDialog).toHaveTextContent('LLM_OPS')
+  expect(loadDialog).toHaveTextContent('저장하지 않은 편집 내용은 기본 템플릿으로 교체됩니다.')
+  expect(api.getDefaultTemplate).not.toHaveBeenCalled()
+  fireEvent.click(within(loadDialog).getByRole('button', { name: '불러오기' }))
+  await screen.findByText(/LLM_OPS 기본 템플릿을 불러왔습니다/)
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  expect(api.getDefaultTemplate).toHaveBeenCalledWith('LLM_OPS')
+  expect(screen.getByLabelText('저장된 Workflow Version')).toHaveValue('')
+  expect(api.activate).not.toHaveBeenCalled()
+
+  fireEvent.click(screen.getByRole('button', { name: '기본 템플릿 저장' }))
+  const saveDialog = screen.getByRole('dialog', { name: '기본 템플릿 저장' })
+  expect(saveDialog).toHaveTextContent('기존 DRAFT와 ACTIVE 버전은 변경되지 않습니다.')
+  expect(api.saveDefaultTemplate).not.toHaveBeenCalled()
+  fireEvent.click(within(saveDialog).getByRole('button', { name: '저장하기' }))
+  await screen.findByText(/현재 LLM_OPS 구성을 기본 템플릿으로 저장했습니다/)
+  expect(api.saveDefaultTemplate).toHaveBeenCalledWith(
+    'LLM_OPS', expect.objectContaining({ nodes: expect.arrayContaining([
+      expect.objectContaining({ id: 'github_approval' }),
+      expect.objectContaining({ id: 'dev_merge_check' }),
+    ]) }),
+  )
+  expect(api.create).not.toHaveBeenCalled()
+})
+
+test('workflow confirmation dialogs cancel without API calls or editor changes and restore focus', async () => {
+  const api = profileApi()
+  render(<AgentSettingsWorkspace api={api} />)
+  await screen.findByLabelText('analyze Node')
+  const maxNodes = screen.getByLabelText('최대 Node 수 (maxNodes)')
+  fireEvent.change(maxNodes, { target: { value: '30' } })
+
+  for (const label of ['기본 템플릿 불러오기', '기본 템플릿 저장', '저장본으로 되돌리기']) {
+    const trigger = screen.getByRole('button', { name: label })
+    trigger.focus()
+    fireEvent.click(trigger)
+    let dialog = screen.getByRole('dialog', { name: label })
+    expect(within(dialog).getByRole('button', { name: '취소' })).toHaveFocus()
+    fireEvent.click(within(dialog).getByRole('button', { name: '취소' }))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(trigger).toHaveFocus()
+
+    fireEvent.click(trigger)
+    dialog = screen.getByRole('dialog', { name: label })
+    fireEvent(dialog, new Event('cancel', { bubbles: false, cancelable: true }))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(trigger).toHaveFocus()
+  }
+
+  expect(maxNodes).toHaveValue(30)
+  expect(screen.getByLabelText('저장된 Workflow Version')).toHaveValue('version-2')
+  expect(api.getDefaultTemplate).not.toHaveBeenCalled()
+  expect(api.saveDefaultTemplate).not.toHaveBeenCalled()
+  expect(api.create).not.toHaveBeenCalled()
+  expect(api.activate).not.toHaveBeenCalled()
+  expect(api.list).toHaveBeenCalledTimes(1)
+})
+
+test('the grouped toolbar restores the selected saved version only after confirmation', async () => {
+  const latest = { ...activeVersion, profileVersionId: 'version-3', profileVersion: 3, status: 'DRAFT' as const }
+  const api = profileApi({ list: vi.fn().mockResolvedValue([latest, activeVersion]) })
+  render(<AgentSettingsWorkspace api={api} />)
+  await screen.findByLabelText('analyze Node')
+
+  expect(within(screen.getByRole('group', { name: '템플릿 배치' })).getByRole('button', { name: '자동 배치' })).toBeInTheDocument()
+  expect(within(screen.getByRole('group', { name: '기본 템플릿 작업' })).getAllByRole('button')).toHaveLength(2)
+  expect(within(screen.getByRole('group', { name: '버전 저장 및 활성화' })).getAllByRole('button')).toHaveLength(2)
+  const restoreGroup = screen.getByRole('group', { name: '편집 취소' })
+  expect(restoreGroup).toHaveClass('ml-auto')
+  const restoreButton = within(restoreGroup).getByRole('button', { name: '저장본으로 되돌리기' })
+  expect(restoreButton).toHaveTextContent('↺')
+  expect(screen.queryByRole('button', { name: '다시 조회' })).not.toBeInTheDocument()
+
+  fireEvent.change(screen.getByLabelText('저장된 Workflow Version'), { target: { value: 'version-2' } })
+  fireEvent.change(screen.getByLabelText('최대 Node 수 (maxNodes)'), { target: { value: '30' } })
+  fireEvent.click(restoreButton)
+  const dialog = screen.getByRole('dialog', { name: '저장본으로 되돌리기' })
+  expect(dialog).toHaveTextContent('선택한 v2 저장본을 다시 불러옵니다.')
+  expect(api.list).toHaveBeenCalledTimes(1)
+  expect(screen.getByLabelText('최대 Node 수 (maxNodes)')).toHaveValue(30)
+  fireEvent.click(within(dialog).getByRole('button', { name: '되돌리기' }))
+  await waitFor(() => expect(restoreButton).toBeEnabled())
+  expect(screen.getByLabelText('저장된 Workflow Version')).toHaveValue('version-2')
+  expect(screen.getByLabelText('최대 Node 수 (maxNodes)')).toHaveValue(activeVersion.snapshot.config.maxNodes)
+  expect(api.list).toHaveBeenCalledTimes(2)
+  expect(api.create).not.toHaveBeenCalled()
+  expect(api.activate).not.toHaveBeenCalled()
+  expect(api.saveDefaultTemplate).not.toHaveBeenCalled()
+})
+
+test.each([true, false])('restore explains and reloads the template-editing destination (saved version: %s)', async (hasSavedVersion) => {
+  const api = profileApi({ list: vi.fn().mockResolvedValue(hasSavedVersion ? [activeVersion] : []) })
+  render(<AgentSettingsWorkspace api={api} />)
+  await screen.findByLabelText('analyze Node')
+  if (hasSavedVersion) {
+    fireEvent.click(screen.getByRole('button', { name: '기본 템플릿 불러오기' }))
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: '불러오기' }))
+    await screen.findByText(/LLM_OPS 기본 템플릿을 불러왔습니다/)
+  }
+  expect(screen.getByLabelText('저장된 Workflow Version')).toHaveValue('')
+  const restoreButton = screen.getByRole('button', { name: '저장본으로 되돌리기' })
+  fireEvent.click(restoreButton)
+  const dialog = screen.getByRole('dialog', { name: '저장본으로 되돌리기' })
+  expect(dialog).toHaveTextContent(hasSavedVersion
+    ? '기본 템플릿 편집을 종료하고 최신 저장 버전을 불러옵니다.'
+    : '저장된 버전이 없어 기본 템플릿을 다시 불러옵니다.')
+  fireEvent.click(within(dialog).getByRole('button', { name: '되돌리기' }))
+  await waitFor(() => expect(restoreButton).toBeEnabled())
+  expect(screen.getByLabelText('저장된 Workflow Version')).toHaveValue(hasSavedVersion ? 'version-2' : '')
+  expect(api.list).toHaveBeenCalledTimes(2)
+  expect(api.getDefaultTemplate).toHaveBeenCalledTimes(hasSavedVersion ? 1 : 2)
+  expect(api.saveDefaultTemplate).not.toHaveBeenCalled()
+  expect(api.create).not.toHaveBeenCalled()
+  expect(api.activate).not.toHaveBeenCalled()
+})
+
 test('the Workflow Canvas loads the latest stored Snapshot with exact edges, bindings, and Tool policy', async () => {
   const api = profileApi()
   render(<AgentSettingsWorkspace api={api} />)
@@ -443,7 +598,7 @@ test('the Workflow Canvas uses a left control dock and one scrollable coordinate
   await screen.findByLabelText('analyze Node')
   const canvas = screen.getByLabelText('Node 편집 Canvas')
   const dock = screen.getByLabelText('Workflow control dock')
-  const paletteToggle = screen.getByRole('button', { name: /등록 Handler Palette/ })
+  const paletteToggle = screen.getByRole('button', { name: /노드 추가/ })
   const toolPolicyToggle = screen.getByRole('button', { name: /Profile 허용 도구/ })
 
   expect(canvas.className).toContain('bg-[#20262e]')
@@ -561,7 +716,7 @@ test('Workflow edits save a new immutable DRAFT, activate it explicitly, and res
   const autoArrangeButton = screen.getByRole('button', { name: '자동 배치' })
   const saveDraftButton = screen.getByRole('button', { name: '새 DRAFT 저장' })
   const activateButton = screen.getByRole('button', { name: '선택 DRAFT 활성화' })
-  const reloadButton = screen.getByRole('button', { name: '다시 조회' })
+  const reloadButton = screen.getByRole('button', { name: '저장본으로 되돌리기' })
   expect(autoArrangeButton).toHaveStyle({ backgroundColor: '#e8f4fa', color: '#245b78' })
   expect(saveDraftButton).toHaveStyle({ color: '#fff' })
   expect(activateButton).toHaveStyle({ backgroundColor: '#e9f6ee', color: '#246b45' })
@@ -638,7 +793,7 @@ test('the Canvas exposes only registered handlers and result-port edges while lo
   fireEvent.click(screen.getByLabelText('deploy_request Node'))
   fireEvent.click(screen.getByRole('button', { name: 'Node 삭제' }))
   expect(screen.queryByLabelText('deploy_request Node')).not.toBeInTheDocument()
-  fireEvent.click(within(screen.getByLabelText('Node Palette')).getByRole('button', { name: /공통 Check/ }))
+  fireEvent.click(within(screen.getByLabelText('노드 추가')).getByRole('button', { name: /공통 Check/ }))
   expect(screen.getByLabelText('check Node')).toBeInTheDocument()
   expect(screen.getByLabelText('선택 Handler')).toHaveValue('common.check')
 })

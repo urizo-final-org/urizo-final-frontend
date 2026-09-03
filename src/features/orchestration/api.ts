@@ -100,6 +100,12 @@ export interface ProfileEditorLayout {
   nodes: ProfileEditorLayoutNode[]
 }
 
+export interface ProfileDefaultTemplate {
+  profileKey: ProfileKey
+  updatedAt: string
+  snapshot: ProfileAuthoringSnapshot
+}
+
 export interface ProfileVersionApiClient {
   list(profileKey?: ProfileKey): Promise<ProfileVersion[]>
   create(profileKey: ProfileKey, snapshot: ProfileAuthoringSnapshot): Promise<ProfileVersion>
@@ -111,7 +117,12 @@ export interface ProfileEditorLayoutApiClient {
   saveEditorLayout(profileVersionId: string, nodes: ProfileEditorLayoutNode[]): Promise<ProfileEditorLayout>
 }
 
-export interface AgentSettingsApiClient extends ProfileVersionApiClient, ProfileEditorLayoutApiClient {
+export interface ProfileDefaultTemplateApiClient {
+  getDefaultTemplate(profileKey: ProfileKey): Promise<ProfileDefaultTemplate>
+  saveDefaultTemplate(profileKey: ProfileKey, snapshot: ProfileAuthoringSnapshot): Promise<ProfileDefaultTemplate>
+}
+
+export interface AgentSettingsApiClient extends ProfileVersionApiClient, ProfileEditorLayoutApiClient, ProfileDefaultTemplateApiClient {
   listProviderCredentials(): Promise<ProviderCredentialOverview>
   storeProviderCredential(provider: ModelProvider, credential: string, csrfToken: string): Promise<ProviderCredentialStatus>
   testProviderCredential(provider: ModelProvider, csrfToken: string): Promise<ProviderConnectionTestResult>
@@ -176,6 +187,15 @@ export class ProfileVersionApi implements AgentSettingsApiClient {
   saveEditorLayout = (profileVersionId: string, nodes: ProfileEditorLayoutNode[]) => this.request<ProfileEditorLayout>(
     `/api/admin/ai/profile-versions/${encodeURIComponent(profileVersionId)}/editor-layout`,
     { method: 'PUT', body: JSON.stringify({ nodes }) },
+  )
+
+  getDefaultTemplate = (profileKey: ProfileKey) => this.request<ProfileDefaultTemplate>(
+    `/api/admin/ai/profile-templates/${encodeURIComponent(profileKey)}`,
+  )
+
+  saveDefaultTemplate = (profileKey: ProfileKey, snapshot: ProfileAuthoringSnapshot) => this.request<ProfileDefaultTemplate>(
+    `/api/admin/ai/profile-templates/${encodeURIComponent(profileKey)}`,
+    { method: 'PUT', body: JSON.stringify({ snapshot }) },
   )
 
   listProviderCredentials = () => this.request<ProviderCredentialOverview>(
