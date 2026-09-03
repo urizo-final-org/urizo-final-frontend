@@ -74,6 +74,27 @@ test('loads and saves Profile-scoped default templates', async () => {
   expect(JSON.parse(fetcher.mock.calls[1][1].body)).toEqual({ snapshot })
 })
 
+test('loads the Profile-scoped model catalog without credential metadata', async () => {
+  const catalog = {
+    schemaVersion: '1.0', profileKey: 'LLM_OPS', models: [{
+      selectionId: 'openai-gpt-5-6-terra', provider: 'OPENAI', model: 'gpt-5.6-terra',
+      capabilities: ['CHAT', 'TOOL_CALLING'],
+      inference: {
+        default: { reasoningIntensity: 'NONE', reasoningBudgetTokens: null },
+        reasoningIntensity: ['NONE', 'LOW', 'MEDIUM', 'HIGH'], reasoningBudgetTokens: null,
+      },
+    }],
+  }
+  const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify(catalog)))
+  vi.stubGlobal('fetch', fetcher)
+  vi.stubGlobal('crypto', { randomUUID: () => 'trace-id' })
+  const api = new ProfileVersionApi('token', vi.fn(), vi.fn())
+
+  await expect(api.listModelCatalog('LLM_OPS')).resolves.toEqual(catalog)
+  expect(fetcher.mock.calls[0][0]).toBe('/api/admin/ai/model-catalog?profileKey=LLM_OPS')
+  expect(fetcher.mock.calls[0][1].body).toBeUndefined()
+})
+
 test('manages local provider credentials with the one-time CSRF token and never expects a returned secret', async () => {
   const overview = {
     csrfToken: 'csrf-fixture',

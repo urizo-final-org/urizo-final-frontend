@@ -3,7 +3,7 @@ import { afterAll, afterEach, beforeAll, expect, test, vi } from 'vitest'
 import { ProductApiError } from '../../shared/api/error'
 import AgentSettingsWorkspace from './AgentSettingsWorkspace'
 import { resolveEdgePorts, starterSnapshots } from './WorkflowPanel'
-import type { AgentSettingsApiClient, ProfileVersion, ProviderConnectionTestResult } from './api'
+import type { AgentSettingsApiClient, ModelCatalog, ProfileVersion, ProviderConnectionTestResult } from './api'
 
 afterEach(() => vi.unstubAllGlobals())
 
@@ -100,6 +100,23 @@ const activeVersion: ProfileVersion = {
   },
 }
 
+const modelCatalog = (profileKey: 'LLM_OPS' | 'NATURAL_CMS'): ModelCatalog => ({
+  schemaVersion: '1.0', profileKey,
+  models: (profileKey === 'LLM_OPS'
+    ? [
+        ['llm-ops-analyze', 'OPENAI', 'gpt-5.4-nano'], ['llm-ops-code', 'OPENAI', 'gpt-5.4-nano'],
+        ['llm-ops-review', 'GOOGLE_GENAI', 'gemini-3.5-flash-lite'], ['llm-ops-claude', 'ANTHROPIC', 'claude-haiku-4-5-20251001'],
+      ]
+    : [
+        ['natural-cms-analyze', 'OPENAI', 'gpt-5.4-nano'], ['natural-cms-command', 'GOOGLE_GENAI', 'gemini-3.5-flash-lite'],
+        ['natural-cms-claude', 'ANTHROPIC', 'claude-haiku-4-5-20251001'],
+      ]).map(([selectionId, provider, model]) => ({
+    selectionId, provider: provider as 'OPENAI' | 'ANTHROPIC' | 'GOOGLE_GENAI', model,
+    capabilities: ['CHAT'],
+    inference: { default: { reasoningIntensity: 'NONE', reasoningBudgetTokens: null }, reasoningIntensity: ['NONE'], reasoningBudgetTokens: null },
+  })),
+})
+
 function profileApi(overrides: Partial<AgentSettingsApiClient> = {}): AgentSettingsApiClient {
   return {
     list: vi.fn().mockResolvedValue([activeVersion]),
@@ -118,6 +135,7 @@ function profileApi(overrides: Partial<AgentSettingsApiClient> = {}): AgentSetti
     saveDefaultTemplate: vi.fn().mockResolvedValue({
       profileKey: 'LLM_OPS', updatedAt: '2026-09-03T00:00:00Z', snapshot: starterSnapshots.LLM_OPS,
     }),
+    listModelCatalog: vi.fn().mockImplementation((profileKey) => Promise.resolve(modelCatalog(profileKey))),
     listProviderCredentials: vi.fn().mockResolvedValue({
       csrfToken: 'csrf-fixture',
       providers: [
@@ -547,8 +565,8 @@ test('the Workflow Canvas loads the latest stored Snapshot with exact edges, bin
   expect(screen.getByLabelText('선택 Handler')).toHaveStyle({ backgroundColor: '#f1f3f5', color: '#3f4a56' })
   expect(screen.getByLabelText('선택 Handler')).toHaveValue('coding.analyze')
   expect(screen.getByLabelText('선택 주 모델')).toHaveValue('llm-ops-analyze')
-  expect(screen.getByRole('option', { name: 'OpenAI · gpt-5.4-nano (llm-ops-analyze)' })).toBeInTheDocument()
-  expect(screen.getByText(/괄호 안 Binding Key를 Snapshot에 저장/)).toBeInTheDocument()
+  expect(screen.getByRole('option', { name: 'OPENAI · gpt-5.4-nano (llm-ops-analyze)' })).toBeInTheDocument()
+  expect(screen.getByText(/등록·검증된 Credential Provider의 Model만 선택/)).toBeInTheDocument()
   expect(screen.getByLabelText('허용 Tool apply_patch')).toBeChecked()
   expect(screen.getByText('guardrail.passed → analyze')).toBeInTheDocument()
   expect(screen.getByText('analyze.feasible → scope_approval')).toBeInTheDocument()
@@ -729,7 +747,7 @@ test('Workflow edits save a new immutable DRAFT, activate it explicitly, and res
     nodes: expect.arrayContaining([expect.objectContaining({ id: 'analyze', handlerKey: 'coding.analyze' })]),
     edges: expect.arrayContaining([expect.objectContaining({ from: 'analyze', resultPort: 'feasible', to: 'scope_approval' })]),
     config: expect.objectContaining({ maxNodes: 20 }),
-    modelBindings: expect.objectContaining({ analyze: { primary: 'llm-ops-claude', fallback: ['llm-ops-review'] } }),
+    modelBindings: expect.objectContaining({ analyze: expect.objectContaining({ primary: 'llm-ops-claude', fallback: ['llm-ops-review'] }) }),
     toolPolicy: expect.objectContaining({ allowedTools: expect.not.arrayContaining(['apply_patch']) }),
   }))
   expect(api.saveEditorLayout).toHaveBeenCalledWith('version-3', expect.any(Array))
@@ -753,6 +771,63 @@ test('Workflow edits save a new immutable DRAFT, activate it explicitly, and res
   expect(screen.getByLabelText('선택 주 모델')).toHaveValue('llm-ops-claude')
   expect(screen.getByLabelText('Fallback llm-ops-review')).toBeChecked()
   expect(screen.getByLabelText('허용 Tool apply_patch')).not.toBeChecked()
+})
+
+test('catalog selections save only edited inference metadata and reject duplicate Provider Model fallbacks', async () => {
+  const catalog: ModelCatalog = {
+    schemaVersion: '1.0', profileKey: 'LLM_OPS', models: [
+      {
+        selectionId: 'openai-gpt-5-6-terra', provider: 'OPENAI', model: 'gpt-5.6-terra', capabilities: ['CHAT'],
+        inference: { default: { reasoningIntensity: 'NONE', reasoningBudgetTokens: null }, reasoningIntensity: ['NONE', 'LOW', 'MEDIUM', 'HIGH'], reasoningBudgetTokens: null },
+      },
+      {
+        selectionId: 'openai-gpt-5-6-terra-alias', provider: 'OPENAI', model: 'gpt-5.6-terra', capabilities: ['CHAT'],
+        inference: { default: { reasoningIntensity: 'NONE', reasoningBudgetTokens: null }, reasoningIntensity: ['NONE', 'LOW', 'MEDIUM', 'HIGH'], reasoningBudgetTokens: null },
+      },
+      {
+        selectionId: 'openai-gpt-5-4-nano', provider: 'OPENAI', model: 'gpt-5.4-nano', capabilities: ['CHAT'],
+        inference: { default: { reasoningIntensity: 'NONE', reasoningBudgetTokens: null }, reasoningIntensity: ['NONE'], reasoningBudgetTokens: null },
+      },
+    ],
+  }
+  const version: ProfileVersion = {
+    ...activeVersion,
+    snapshot: {
+      ...activeVersion.snapshot,
+      modelBindings: {
+        ...activeVersion.snapshot.modelBindings,
+        code: {
+          ...activeVersion.snapshot.modelBindings.code,
+          selections: { retained: { provider: 'OPENAI', model: 'gpt-5.4-nano', inference: { reasoningIntensity: 'NONE' }, label: 'preserve-me' } },
+        },
+      },
+    },
+  }
+  const create = vi.fn().mockResolvedValue({ ...version, profileVersionId: 'version-3', profileVersion: 3, status: 'DRAFT' })
+  const api = profileApi({
+    list: vi.fn().mockResolvedValue([version]), create,
+    listModelCatalog: vi.fn().mockResolvedValue(catalog),
+  })
+  render(<AgentSettingsWorkspace api={api} />)
+  await screen.findByLabelText('analyze Node')
+  fireEvent.click(screen.getByLabelText('analyze Node'))
+  await waitFor(() => expect(screen.getByRole('option', { name: 'OPENAI · gpt-5.6-terra (openai-gpt-5-6-terra)' })).toBeInTheDocument())
+  fireEvent.change(screen.getByLabelText('선택 주 모델'), { target: { value: 'openai-gpt-5-6-terra' } })
+  fireEvent.change(screen.getByLabelText('추론 강도 openai-gpt-5-6-terra'), { target: { value: 'MEDIUM' } })
+  expect(screen.getByLabelText('Fallback openai-gpt-5-6-terra-alias')).toBeDisabled()
+  fireEvent.click(screen.getByLabelText('Fallback openai-gpt-5-4-nano'))
+  fireEvent.click(screen.getByRole('button', { name: '새 DRAFT 저장' }))
+
+  await waitFor(() => expect(create).toHaveBeenCalled())
+  const saved = create.mock.calls[0][1] as ProfileVersion['snapshot']
+  expect(saved.modelBindings.analyze).toMatchObject({
+    primary: 'openai-gpt-5-6-terra', fallback: ['openai-gpt-5-4-nano'],
+    selections: {
+      'openai-gpt-5-6-terra': { provider: 'OPENAI', model: 'gpt-5.6-terra', inference: { reasoningIntensity: 'MEDIUM' } },
+      'openai-gpt-5-4-nano': { provider: 'OPENAI', model: 'gpt-5.4-nano', inference: { reasoningIntensity: 'NONE' } },
+    },
+  })
+  expect(saved.modelBindings.code.selections).toEqual(version.snapshot.modelBindings.code.selections)
 })
 
 test('a DRAFT remains visible when its separate Editor Layout save fails', async () => {
