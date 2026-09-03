@@ -3,7 +3,7 @@ import { describeFailure } from '../../shared/api/error'
 import { ROLE_LABELS, type AdminRole } from '../../shared/api/session'
 import {
   Badge, Callout, PageHead, PanelTitle, dangerButton, fieldLabel, panel, primaryButton,
-  secondaryButton, smallButton, textarea, type Tone,
+  secondaryButton, textarea, type Tone,
 } from '../../shared/ui/primitives'
 import type {
   ApprovalDecision, ApprovalStage, CodingConsoleApiClient, CodingJobStatus, CodingNotification,
@@ -315,9 +315,9 @@ export default function CodingWorkspace({ api, role }: { api: CodingConsoleApiCl
   }
 
   return <>
-    <PageHead title="LLM DevOps" description="한국어로 개발을 요청하고 단계마다 사람이 승인합니다.">
-      <button type="button" className={smallButton} onClick={() => setReload((prev) => ({ token: prev.token + 1, silent: false }))}>새로고침</button>
-    </PageHead>
+    {/* No refresh button: the screen polls every 15 seconds, and a button that repeats what
+      * already happens on its own only asks the reader to wonder whether it is needed. */}
+    <PageHead title="LLM DevOps" description="한국어로 개발을 요청하고 단계마다 사람이 승인합니다." />
 
     {/* E6: 실행기가 죽으면 접수·진행이 조용히 멈춘다. "실패는 조용하지 않게" — 맨 위에 크게. */}
     {runner && !runner.alive && <div className="mb-[0.875rem]">
