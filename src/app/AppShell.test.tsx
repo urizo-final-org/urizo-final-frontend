@@ -17,7 +17,11 @@ test('the public URL renders the tour portal home without login', async () => {
   render(<AppShell />)
   expect(await screen.findByRole('heading', { name: '어디로 떠나볼까요?' })).toBeInTheDocument()
   expect(screen.getByRole('link', { name: 'CMS 관리자' })).toHaveAttribute('href', '/admin')
-  expect(screen.getByRole('heading', { name: '이번 주 인기 여행지' })).toBeInTheDocument()
+  // 홈 섹션은 코퍼스 집계 상위 3개 카테고리다. 근거 없는 큐레이션 제목을 쓰지 않는다.
+  for (const section of ['관광지', '음식', '숙박']) {
+    expect(screen.getByRole('heading', { name: section, level: 2 })).toBeInTheDocument()
+  }
+  expect(within(screen.getByRole('note')).getByText('샘플 데이터 · 검색 API 미배선')).toBeInTheDocument()
   expect(screen.getByRole('button', { name: '관광 도우미 열기' })).toBeInTheDocument()
   // 탭은 확정 8종이다. 시안이 6종이어도 이 개수를 따라가지 않는다.
   const tabs = within(screen.getByRole('tablist', { name: '여행 검색 카테고리' })).getAllByRole('tab')

@@ -61,32 +61,34 @@ export function PortalHeader() {
   </header>
 }
 
-type CurationCard = { name: string; desc: string }
-type CurationSection = { title: string; kicker: string; cards: CurationCard[] }
+type CurationCard = { name: string; cat: string; desc: string }
+type CurationSection = { title: string; total: number; cards: CurationCard[] }
 
-/** 홈 큐레이션은 데이터 출처가 미정이라 시안과 같은 성격의 정적 카드다(코퍼스에 실재하는 종류). */
+/**
+ * 코퍼스 500건을 탭 카테고리로 집계해 상위 3개(관광지 192·음식 95·숙박 72)를 섹션으로 삼는다.
+ * 카드는 각 카테고리의 코퍼스 순서 앞 3건이다 — 고를 근거가 없어 임의 선별 대신 순서를 쓴다.
+ *
+ * <p>"이번 주 인기"(조회수 없음)나 "가을 축제"(계절 축 없음)처럼 근거를 못 대는 제목·부제는 쓰지
+ * 않는다. 제목은 카테고리명, 부제는 집계한 건수뿐이다.
+ */
 const HOME_SECTIONS: CurationSection[] = [
-  { title: '이번 주 인기 여행지', kicker: '에디터가 고른 지금 가장 좋은 곳', cards: [
-    { name: '경주 대릉원', desc: '고분과 소나무 숲 사이를 걷는 산책로' },
-    { name: '북촌한옥마을', desc: '서울 도심 속 전통 한옥 골목길' },
-    { name: '해운대 블루라인파크', desc: '해안선을 따라 달리는 해변열차' },
+  { title: '관광지', total: 192, cards: [
+    { name: '송파책박물관', cat: '문화관광 > 전시시설', desc: '전국 최초의 공립 책 박물관으로, 책을 주제로 한 전시·교육·연구를 한다.' },
+    { name: '세계조개박물관', cat: '문화관광 > 전시시설', desc: '신안군 자은도에 있으며 갯벌의 환경지표인 조개와 고동류를 전시한다.' },
+    { name: '세계물포럼기념센터', cat: '문화관광 > 전시시설', desc: '안동시 성곡동에 있는 2015 대구경북세계물포럼 기념 시설이다.' },
   ] },
-  { title: '가을 축제', kicker: '계절이 깊어지는 여행을 만나보세요', cards: [
-    { name: '진주남강유등축제', desc: '남강 위를 수놓는 유등 불빛의 향연' },
-    { name: '안동국제탈춤페스티벌', desc: '탈춤과 전통 공연이 어우러진 안동의 가을' },
-    { name: '정읍 구절초 꽃축제', desc: '옥정호 언덕을 하얗게 뒤덮는 구절초 물결' },
+  { title: '음식', total: 95, cards: [
+    { name: '반도식당', cat: '음식 > 한식', desc: '경주에서 오래된 갈비 맛집으로, 연탄불에 한우 생갈비를 구워 먹는 노포다.' },
+    { name: '발산삼계탕', cat: '음식 > 한식', desc: '지하철 5호선 6번 출구 부근에 있고 상가 건물 앞에 자체 주차장이 있다.' },
+    { name: '바타타식탁', cat: '음식 > 한식', desc: '표선해수욕장 앞 해산물 요리 전문점으로 제주산 해산물 메뉴가 다양하다.' },
   ] },
-  { title: '한옥 스테이', kicker: '머무는 순간까지 여행이 되도록', cards: [
-    { name: '전주 도원', desc: '객리단길의 프라이빗 독채 한옥' },
-    { name: '안동 구름에', desc: '낙동강변 고택에서 보내는 고요한 하룻밤' },
-    { name: '서울 락고재', desc: '북촌 골목 안 전통 한옥에서의 하루' },
+  { title: '숙박', total: 72, cards: [
+    { name: '도원', cat: '숙박 > 펜션/민박', desc: '객리단길에 위치한 한옥독채스테이로, 마당에서 실외 욕조를 쓸 수 있다.' },
+    { name: '더블힐링펜션', cat: '숙박 > 펜션/민박', desc: '모든 객실에 스파를 갖췄고 부안 고사포 해변이 한눈에 들어온다.' },
+    { name: '더존펜션', cat: '숙박 > 펜션/민박', desc: '월악산국립공원 내에 있고 청정 1급수 용하구곡을 앞에 두고 있다.' },
   ] },
 ]
 
-/**
- * 탭별 검색창 안내 문구. 시안이 6종에 달아 둔 문구를 그대로 옮기고, 시안에 없는 전체·축제·행사
- * 2종은 팀이 정한 문구를 쓴다. 표현이라 화면 쪽에 두고 portal-meta의 탭 상수는 건드리지 않는다.
- */
 const TAB_PLACEHOLDERS: Record<string, string> = {
   all: '어디로 떠나볼까요?',
   attraction: '어디를 여행하고 싶으신가요?',
@@ -98,10 +100,11 @@ const TAB_PLACEHOLDERS: Record<string, string> = {
   event: '어떤 축제를 찾으시나요?',
 }
 
-function SectionHead({ title, kicker }: { title: string; kicker: string }) {
+function SectionHead({ title, total }: { title: string; total: number }) {
   return <div className="flex items-end justify-between gap-5">
     <div>
-      <p className="m-0 mb-[0.625rem] text-xs font-bold tracking-[.08em] text-muted">{kicker}</p>
+      {/* 시안의 감성 부제 자리. 근거를 댈 수 있는 값은 집계 건수뿐이라 그것만 남긴다. */}
+      <p className="m-0 mb-[0.625rem] text-xs font-bold tracking-[.08em] text-muted">코퍼스 {total}건 중 3건</p>
       <h2 className="m-0 text-[clamp(1.625rem,3vw,2.25rem)] font-extrabold tracking-[-.04em] text-ink">{title}</h2>
     </div>
   </div>
@@ -152,8 +155,11 @@ export function PortalHome() {
 
     <div className="mx-auto max-w-[75rem] px-7 pb-28 max-[560px]:px-4">
       {/* 첫 섹션만 1:1 대형 카드다. 플레이스홀더 위에 시안의 그라데이션을 덮어 흰 제목 대비를 확보한다. */}
-      <section className="pt-24 max-[560px]:pt-14">
-        <SectionHead title={hero.title} kicker={hero.kicker} />
+      <section className="pt-16 max-[560px]:pt-12">
+        <SampleNotice className="mb-8">
+          아래 카드는 코퍼스에 실재하는 문서를 카테고리별로 고정 표시한 것입니다. 조회수·계절 같은 큐레이션 축이 없어 집계 상위 카테고리와 코퍼스 순서로만 골랐습니다.
+        </SampleNotice>
+        <SectionHead title={hero.title} total={hero.total} />
         <div className="mt-8 grid grid-cols-3 gap-5 max-[900px]:grid-cols-2 max-[560px]:grid-cols-1">
           {hero.cards.map((card) => <article key={card.name} className="relative overflow-hidden rounded-2xl">
             <Placeholder label={`사진 · ${card.name}`} className="aspect-square">
@@ -165,11 +171,12 @@ export function PortalHome() {
       </section>
 
       {rest.map((section) => <section key={section.title} className="pt-24 max-[560px]:pt-14">
-        <SectionHead title={section.title} kicker={section.kicker} />
+        <SectionHead title={section.title} total={section.total} />
         <div className="mt-8 grid grid-cols-3 gap-5 max-[900px]:grid-cols-2 max-[560px]:grid-cols-1">
           {section.cards.map((card) => <article key={card.name}>
             <Placeholder label={`사진 · ${card.name}`} className="aspect-[4/3] rounded-2xl" />
             <strong className="mt-4 block text-lg font-bold tracking-[-.02em] text-ink">{card.name}</strong>
+            <span className="mt-1 block text-[0.6875rem] font-semibold text-muted-2">{card.cat}</span>
             <span className="mt-1 block text-sm leading-[1.6] text-muted">{card.desc}</span>
           </article>)}
         </div>
