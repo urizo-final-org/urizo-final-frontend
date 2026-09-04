@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import { describeFailure, ProductApiError } from '../../shared/api/error'
-import { Icon } from '../../shared/ui/icons'
+import { Icon, type IconName } from '../../shared/ui/icons'
 import {
   Badge, Callout, NoticePanel, Tag, control, dangerButton, panel, primaryButton, secondaryButton,
 } from '../../shared/ui/primitives'
@@ -39,13 +39,23 @@ interface ToolCapabilityBinding {
   mode: ToolBindingMode
 }
 
+interface ToolSelection {
+  nodeId: string
+  tool: string
+}
+
+interface ToolOffset {
+  x: number
+  y: number
+}
+
 const nodeTypes = {
   start: { icon: 'play' as const, meta: '요청 시작', skin: 'bg-ok-bg text-ok-fg' },
-  agent: { icon: 'bot' as const, meta: 'Model Binding', skin: 'bg-run-bg text-run-fg' },
-  tool: { icon: 'plug' as const, meta: '고정 Tool 정책', skin: 'bg-wait-bg text-wait-fg' },
+  agent: { icon: 'bot' as const, meta: 'LLM Agent', skin: 'bg-run-bg text-run-fg' },
+  tool: { icon: 'activity' as const, meta: 'Workflow Action', skin: 'bg-wait-bg text-wait-fg' },
   guardrail: { icon: 'shield-check' as const, meta: 'Snapshot 잠금 계약', skin: 'bg-[#f2ecf8] text-[#765a91]' },
-  approval: { icon: 'shield-check' as const, meta: 'production Handler', skin: 'bg-[#f2ecf8] text-[#765a91]' },
-  check: { icon: 'check-check' as const, meta: 'production Handler', skin: 'bg-[#f2ecf8] text-[#765a91]' },
+  approval: { icon: 'shield-check' as const, meta: 'Approval Gate', skin: 'bg-[#f2ecf8] text-[#765a91]' },
+  check: { icon: 'check-check' as const, meta: 'Workflow Check', skin: 'bg-[#f2ecf8] text-[#765a91]' },
   end: { icon: 'inbox' as const, meta: '결과 종료', skin: 'bg-idle-bg text-idle-fg' },
 }
 
@@ -86,20 +96,20 @@ const toolCatalog: Record<ProfileKey, string[]> = {
   NATURAL_CMS: ['resolve_cms_target', 'validate_cms_command', 'create_cms_preview', 'discard_cms_preview', 'revalidate_cms_preview', 'apply_cms_preview'],
 }
 
-const toolDetails: Record<string, { label: string; description: string }> = {
-  read_file: { label: '파일 읽기', description: '승인된 Coding 작업공간의 UTF-8 텍스트 파일 하나를 읽습니다.' },
-  search_code: { label: '코드 검색', description: '승인된 소스 파일 범위에서 지정한 문자열을 검색합니다.' },
-  read_diff: { label: '변경사항 읽기', description: '보호 경로와 비밀정보 검사를 거친 Git 변경사항 전체를 읽습니다.' },
-  apply_patch: { label: '코드 변경 적용', description: '제한된 텍스트 패치를 Git 작업공간에 적용합니다.' },
-  run_check: { label: '검사 실행', description: '등록된 정적·결정적 검사 Profile을 실행합니다.' },
-  check_package_allowlist: { label: '패키지 변경 검사', description: '의존성 Manifest와 Lockfile 변경이 허용되는지 검사합니다.' },
-  scan_changed_files: { label: '변경 파일 보안 검사', description: '새로 추가된 코드에서 비밀정보로 의심되는 패턴을 검사합니다.' },
-  resolve_cms_target: { label: 'CMS 대상 확인', description: 'Spring이 제공한 CMS Resource Snapshot에서 변경 대상을 확인합니다.' },
-  validate_cms_command: { label: 'CMS 명령 검증', description: '구조화된 CMS 명령이 현재 Resource Snapshot에 유효한지 검사합니다.' },
-  create_cms_preview: { label: 'CMS 미리보기 생성', description: 'DB를 변경하지 않고 결정적인 CMS 변경 미리보기를 생성합니다.' },
-  discard_cms_preview: { label: 'CMS 미리보기 폐기', description: '생성된 CMS 변경 미리보기를 폐기 처리합니다.' },
-  revalidate_cms_preview: { label: 'CMS 미리보기 재검증', description: '승인된 미리보기를 Spring의 최신 Resource Snapshot과 다시 비교합니다.' },
-  apply_cms_preview: { label: 'CMS 반영 준비', description: 'Spring CmsService가 DB에 반영할 수 있는 검증된 명령을 반환합니다.' },
+const toolDetails: Record<string, { label: string; description: string; icon: IconName; tone: string }> = {
+  read_file: { label: '파일 읽기', description: '승인된 Coding 작업공간의 UTF-8 텍스트 파일 하나를 읽습니다.', icon: 'file-text', tone: 'blue' },
+  search_code: { label: '코드 검색', description: '승인된 소스 파일 범위에서 지정한 문자열을 검색합니다.', icon: 'search', tone: 'violet' },
+  read_diff: { label: '변경사항 읽기', description: '보호 경로와 비밀정보 검사를 거친 Git 변경사항 전체를 읽습니다.', icon: 'git-pull-request', tone: 'indigo' },
+  apply_patch: { label: '코드 변경 적용', description: '제한된 텍스트 패치를 Git 작업공간에 적용합니다.', icon: 'code-2', tone: 'orange' },
+  run_check: { label: '검사 실행', description: '등록된 정적·결정적 검사 Profile을 실행합니다.', icon: 'check-check', tone: 'green' },
+  check_package_allowlist: { label: '패키지 변경 검사', description: '의존성 Manifest와 Lockfile 변경이 허용되는지 검사합니다.', icon: 'boxes', tone: 'teal' },
+  scan_changed_files: { label: '변경 파일 보안 검사', description: '새로 추가된 코드에서 비밀정보로 의심되는 패턴을 검사합니다.', icon: 'shield-check', tone: 'rose' },
+  resolve_cms_target: { label: 'CMS 대상 확인', description: 'Spring이 제공한 CMS Resource Snapshot에서 변경 대상을 확인합니다.', icon: 'search-check', tone: 'blue' },
+  validate_cms_command: { label: 'CMS 명령 검증', description: '구조화된 CMS 명령이 현재 Resource Snapshot에 유효한지 검사합니다.', icon: 'shield-check', tone: 'violet' },
+  create_cms_preview: { label: 'CMS 미리보기 생성', description: 'DB를 변경하지 않고 결정적인 CMS 변경 미리보기를 생성합니다.', icon: 'layers', tone: 'indigo' },
+  discard_cms_preview: { label: 'CMS 미리보기 폐기', description: '생성된 CMS 변경 미리보기를 폐기 처리합니다.', icon: 'inbox', tone: 'orange' },
+  revalidate_cms_preview: { label: 'CMS 미리보기 재검증', description: '승인된 미리보기를 Spring의 최신 Resource Snapshot과 다시 비교합니다.', icon: 'repeat', tone: 'teal' },
+  apply_cms_preview: { label: 'CMS 반영 준비', description: 'Spring CmsService가 DB에 반영할 수 있는 검증된 명령을 반환합니다.', icon: 'check', tone: 'green' },
 }
 
 const defaultModel = {
@@ -153,6 +163,7 @@ const defaultToolBindingsByHandler: Record<ProfileKey, Record<string, Record<str
 }
 
 const TOOL_LAYOUT_KEY = 'axms-workflow-tool-layout'
+const TOOL_POSITIONS_KEY = 'axms-workflow-tool-positions'
 const NODE_WIDTH = 160
 const NODE_HEIGHT = 88
 const NODE_PORT_Y = 42
@@ -280,8 +291,16 @@ function capabilityBindings(nodes: WorkflowNode[], toolBindings: ProfileToolBind
   return nodes.flatMap((node) => Object.entries(toolBindings[node.id] ?? {}).map(([tool, mode]) => ({ nodeId: node.id, tool, mode })))
 }
 
-function nodeRole(node: ProfileSnapshotNode) {
-  return node.type === 'agent' ? 'handler' as const : 'runner' as const
+const runnerHandlers = new Set(['coding.pr_complete', 'coding.deploy'])
+
+function nodeRole(node: ProfileSnapshotNode): { key: string; label: string; detail: string; icon: IconName } {
+  if (node.type === 'agent') return { key: 'agent', label: 'Agent', detail: '모델 실행 Node', icon: 'bot' }
+  if (runnerHandlers.has(node.handlerKey)) return { key: 'runner', label: 'Runner', detail: '외부 실행 Node', icon: 'network' }
+  if (node.type === 'tool') return { key: 'action', label: 'Action', detail: '워크플로 작업 Node', icon: 'activity' }
+  if (node.type === 'approval') return { key: 'approval', label: 'Approval', detail: '승인 게이트 Node', icon: 'user-round-check' }
+  if (node.type === 'guardrail') return { key: 'guardrail', label: 'Guardrail', detail: '시스템 보호 Node', icon: 'shield-check' }
+  if (node.type === 'check') return { key: 'check', label: 'Check', detail: '상태 검증 Node', icon: 'check-check' }
+  return { key: 'flow', label: 'Flow', detail: node.type === 'start' ? '흐름 시작 Node' : '흐름 종료 Node', icon: node.type === 'start' ? 'play' : 'inbox' }
 }
 
 function nodeDisplayName(profileKey: ProfileKey, node: ProfileSnapshotNode) {
@@ -305,12 +324,51 @@ function resultPortLabel(port: string) {
   return resultPortLabels[port] ?? port.replaceAll('_', ' ')
 }
 
-function orbitalToolPosition(source: WorkflowNode, index: number, count: number) {
-  const angle = count === 1 ? Math.PI / 2 : Math.PI * (0.12 + (0.76 * index) / (count - 1))
+function capabilityBindingKey(profileKey: ProfileKey, binding: Pick<ToolCapabilityBinding, 'nodeId' | 'tool'>) {
+  return `${profileKey}:${binding.nodeId}:${binding.tool}`
+}
+
+function automaticToolOffset(
+  source: WorkflowNode,
+  index: number,
+  count: number,
+  canvasWidth: number,
+  visibleLeft = 0,
+  visibleWidth = canvasWidth,
+): ToolOffset {
+  const columns = Math.min(4, count)
+  const rows = Math.ceil(count / columns)
+  const row = Math.floor(index / columns)
+  const column = index % columns
+  const rowCount = Math.min(columns, count - row * columns)
+  const horizontalGap = 88
+  const verticalGap = 94
+  const requiredWidth = 72 + rowCount * horizontalGap
+  const visibleRight = Math.min(canvasWidth, visibleLeft + visibleWidth)
+  const availableLeft = Math.max(0, source.x - visibleLeft)
+  const availableRight = Math.max(0, visibleRight - (source.x + NODE_WIDTH))
+  const placeRight = availableRight >= requiredWidth || availableRight >= availableLeft
+  const direction = placeRight ? 1 : -1
+  const firstX = placeRight ? NODE_WIDTH + 72 : -72 - 52
   return {
-    x: source.x + NODE_WIDTH / 2 + Math.cos(angle) * 92 - 22,
-    y: source.y + NODE_HEIGHT / 2 + Math.sin(angle) * 82 - 22,
+    x: firstX + direction * column * horizontalGap,
+    y: NODE_HEIGHT / 2 - 26 + (row - (rows - 1) / 2) * verticalGap,
   }
+}
+
+function storedToolOffsets(): Record<string, ToolOffset> {
+  try {
+    const value = JSON.parse(window.localStorage.getItem(TOOL_POSITIONS_KEY) ?? '{}') as Record<string, ToolOffset>
+    return Object.fromEntries(Object.entries(value).filter(([, offset]) => Number.isFinite(offset?.x) && Number.isFinite(offset?.y)))
+  } catch {
+    return {}
+  }
+}
+
+function bindingModeLabel(mode: ToolBindingMode) {
+  if (mode === 'SYSTEM_REQUIRED') return '시스템 필수'
+  if (mode === 'MODEL_REQUIRED') return '모델 필수'
+  return '모델 선택'
 }
 
 function adjacencyFor(nodes: WorkflowNode[], edges: ProfileSnapshotEdge[], excludedNodeId?: string) {
@@ -555,6 +613,8 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient & 
   const [allowedTools, setAllowedTools] = useState<string[]>([])
   const [guardrailProfileKey, setGuardrailProfileKey] = useState('central.default')
   const [selectedId, setSelectedId] = useState('')
+  const [selectedTool, setSelectedTool] = useState<ToolSelection | null>(null)
+  const [toolOffsets, setToolOffsets] = useState<Record<string, ToolOffset>>(storedToolOffsets)
   const [connectFrom, setConnectFrom] = useState<{ nodeId: string; resultPort: string } | null>(null)
   const [connectPort, setConnectPort] = useState('')
   const [status, setStatus] = useState('저장된 Profile Version을 조회하고 있습니다.')
@@ -574,8 +634,10 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient & 
   const catalogRequest = useRef(0)
   const canvasViewport = useRef<HTMLDivElement>(null)
   const drag = useRef<{ id: string; pointerX: number; pointerY: number; x: number; y: number; moved: boolean } | null>(null)
+  const toolDrag = useRef<{ key: string; nodeId: string; pointerId: number; pointerX: number; pointerY: number; x: number; y: number; moved: boolean } | null>(null)
   const pan = useRef<{ pointerId: number; pointerX: number; pointerY: number; scrollLeft: number; scrollTop: number } | null>(null)
   const ignoreClick = useRef<string | null>(null)
+  const ignoreToolClick = useRef<string | null>(null)
   const [panning, setPanning] = useState(false)
 
   const selected = nodes.find((node) => node.id === selectedId) ?? null
@@ -583,6 +645,13 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient & 
   const selectedLocked = selectedDefinition?.locked === true
   const selectedVersion = versions.find((version) => version.profileVersionId === selectedVersionId) ?? null
   const capabilityLaneBindings = capabilityBindings(nodes, toolBindings)
+  const selectedToolBinding = selectedTool
+    ? capabilityLaneBindings.find((binding) => binding.nodeId === selectedTool.nodeId && binding.tool === selectedTool.tool) ?? null
+    : null
+  const selectedToolOwner = selectedToolBinding ? nodes.find((node) => node.id === selectedToolBinding.nodeId) ?? null : null
+  const visibleCapabilityBindings = selectedId
+    ? capabilityLaneBindings.filter((binding) => binding.nodeId === selectedId)
+    : []
   const saveViolations = profileToolPolicyViolations(profileKey, nodes, edges, toolBindings, allowedTools)
   const canvas = canvasDimensions(nodes, edges, capabilityLaneBindings.length)
   const catalogModels = modelCatalog?.models ?? []
@@ -631,6 +700,14 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient & 
   useEffect(() => {
     try { window.localStorage.setItem(TOOL_LAYOUT_KEY, toolLayout) } catch { /* storage may be disabled */ }
   }, [toolLayout])
+
+  useEffect(() => {
+    try { window.localStorage.setItem(TOOL_POSITIONS_KEY, JSON.stringify(toolOffsets)) } catch { /* storage may be disabled */ }
+  }, [toolOffsets])
+
+  useEffect(() => {
+    if (selectedTool && !selectedToolBinding) setSelectedTool(null)
+  }, [selectedTool, selectedToolBinding])
 
   useEffect(() => {
     if (!notice) return
@@ -694,6 +771,7 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient & 
     setAllowedTools([...snapshot.toolPolicy.allowedTools])
     setGuardrailProfileKey(snapshot.guardrailProfileKey)
     setSelectedId(nextSelected?.id ?? '')
+    setSelectedTool(null)
     setConnectPort(nextSelected?.resultPorts[0] ?? '')
     setConnectFrom(null)
   }
@@ -859,6 +937,7 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient & 
     const defaults = defaultToolBindingsByHandler[profileKey][node.handlerKey]
     if (defaults) setToolBindings({ ...toolBindings, [node.id]: { ...defaults } })
     setSelectedId(node.id)
+    setSelectedTool(null)
     setConnectPort(node.resultPorts[0] ?? '')
     setConnectFrom(null)
     setNotice(null)
@@ -891,11 +970,13 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient & 
       setEdges((current) => [...current, { from: source.id, resultPort: connectFrom.resultPort, to: target.id }])
       setConnectFrom(null)
       setSelectedId(target.id)
+      setSelectedTool(null)
       setConnectPort(target.resultPorts[0] ?? '')
       setStatus(`${source.id}.${connectFrom.resultPort} → ${target.id} 연결을 추가했습니다.`)
       return
     }
     setSelectedId(target.id)
+    setSelectedTool(null)
     setConnectPort(target.resultPorts[0] ?? '')
     setStatus(`${target.id} Node를 선택했습니다.`)
   }
@@ -986,6 +1067,7 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient & 
     setToolBindings(Object.fromEntries(Object.entries(toolBindings).filter(([nodeId]) => nodeId !== selected.id)))
     const nextSelected = remaining[0] ?? null
     setSelectedId(nextSelected?.id ?? '')
+    setSelectedTool(null)
     setConnectPort(nextSelected?.resultPorts[0] ?? '')
     setConnectFrom(null)
     setStatus(`${selected.id} Node를 삭제했습니다.`)
@@ -1013,6 +1095,7 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient & 
     event.currentTarget.setPointerCapture?.(event.pointerId)
     drag.current = { id: node.id, pointerX: event.clientX, pointerY: event.clientY, x: node.x, y: node.y, moved: false }
     setSelectedId(node.id)
+    setSelectedTool(null)
     setConnectPort(node.resultPorts[0] ?? '')
   }
 
@@ -1039,6 +1122,73 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient & 
       setNodes((current) => [...current].sort((left, right) => left.y - right.y || left.x - right.x))
       setStatus(`${node.id} Node 위치와 Snapshot 순서를 변경했습니다.`)
     }
+  }
+
+  function selectTool(binding: ToolCapabilityBinding) {
+    const key = capabilityBindingKey(profileKey, binding)
+    if (ignoreToolClick.current === key) {
+      ignoreToolClick.current = null
+      return
+    }
+    const owner = nodes.find((node) => node.id === binding.nodeId)
+    if (!owner) return
+    setSelectedId(owner.id)
+    setSelectedTool({ nodeId: binding.nodeId, tool: binding.tool })
+    setConnectFrom(null)
+    setStatus(`${toolDetails[binding.tool]?.label ?? binding.tool} MCP Tool을 선택했습니다.`)
+  }
+
+  function startToolDrag(event: ReactPointerEvent<HTMLButtonElement>, binding: ToolCapabilityBinding, position: ToolOffset, owner: WorkflowNode) {
+    event.preventDefault()
+    event.stopPropagation()
+    const key = capabilityBindingKey(profileKey, binding)
+    event.currentTarget.setPointerCapture?.(event.pointerId)
+    toolDrag.current = {
+      key,
+      nodeId: owner.id,
+      pointerId: event.pointerId,
+      pointerX: event.clientX,
+      pointerY: event.clientY,
+      x: position.x - owner.x,
+      y: position.y - owner.y,
+      moved: false,
+    }
+    setSelectedId(owner.id)
+    setSelectedTool({ nodeId: binding.nodeId, tool: binding.tool })
+    setConnectFrom(null)
+  }
+
+  function moveToolDrag(event: ReactPointerEvent<HTMLButtonElement>) {
+    const active = toolDrag.current
+    if (!active || active.pointerId !== event.pointerId) return
+    const owner = nodes.find((node) => node.id === active.nodeId)
+    if (!owner) return
+    const deltaX = (event.clientX - active.pointerX) / canvasZoom
+    const deltaY = (event.clientY - active.pointerY) / canvasZoom
+    if (Math.abs(deltaX) + Math.abs(deltaY) > 3) active.moved = true
+    const absoluteX = Math.max(CANVAS_PADDING / 2, Math.min(canvas.width - 76, owner.x + active.x + deltaX))
+    const absoluteY = Math.max(CANVAS_PADDING / 2, Math.min(canvas.height - 86, owner.y + active.y + deltaY))
+    setToolOffsets((current) => ({ ...current, [active.key]: { x: absoluteX - owner.x, y: absoluteY - owner.y } }))
+  }
+
+  function endToolDrag(event: ReactPointerEvent<HTMLButtonElement>, binding: ToolCapabilityBinding) {
+    const active = toolDrag.current
+    if (!active || active.pointerId !== event.pointerId) return
+    if (event.currentTarget.hasPointerCapture?.(event.pointerId)) event.currentTarget.releasePointerCapture?.(event.pointerId)
+    toolDrag.current = null
+    if (active.moved) {
+      ignoreToolClick.current = active.key
+      setStatus(`${toolDetails[binding.tool]?.label ?? binding.tool} Tool 표시 위치를 이동했습니다.`)
+    }
+  }
+
+  function toolPosition(binding: ToolCapabilityBinding, owner: WorkflowNode, index: number, count: number) {
+    const key = capabilityBindingKey(profileKey, binding)
+    const viewport = canvasViewport.current
+    const visibleLeft = viewport ? viewport.scrollLeft / canvasZoom : 0
+    const visibleWidth = viewport ? viewport.clientWidth / canvasZoom : canvas.width
+    const offset = toolOffsets[key] ?? automaticToolOffset(owner, index, count, canvas.width, visibleLeft, visibleWidth)
+    return { x: owner.x + offset.x, y: owner.y + offset.y }
   }
 
   function autoArrange() {
@@ -1190,14 +1340,16 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient & 
             {(['orbit', 'dock'] as ToolLayout[]).map((layout) => <button
               key={layout}
               type="button"
-              className={`rounded px-2 py-1 text-[0.625rem] font-semibold ${toolLayout === layout ? 'bg-primary text-white' : 'border border-btn-line bg-field text-muted'}`}
+              className="workflow-tool-layout-button rounded px-2.5 py-1.5 text-[0.625rem] font-semibold"
+              data-active={toolLayout === layout ? 'true' : 'false'}
               aria-pressed={toolLayout === layout}
               onClick={() => setToolLayout(layout)}
             >{layout === 'orbit' ? '연결형' : '도킹형'}</button>)}
           </div>
           <span className="text-[0.6875rem] text-muted-2">Node {nodes.length} · Edge {edges.length}</span>
         </div>
-        <div ref={canvasViewport} className={`relative m-4 min-h-0 flex-1 overflow-auto rounded-md border border-[#343c46] bg-[#20262e] ${panning ? 'cursor-grabbing' : 'cursor-grab'}`} aria-label="Node 편집 Canvas" data-canvas-viewport data-canvas-width={canvas.width} data-canvas-height={canvas.height} data-canvas-zoom={canvasZoom}>
+        <div className="relative m-4 min-h-0 flex-1 overflow-hidden rounded-md border border-[#343c46] bg-[#20262e]">
+          <div ref={canvasViewport} className={`absolute inset-x-0 top-0 overflow-auto bg-[#20262e] ${toolLayout === 'dock' && selected && visibleCapabilityBindings.length > 0 ? 'bottom-[7.75rem]' : 'bottom-0'} ${panning ? 'cursor-grabbing' : 'cursor-grab'}`} aria-label="Node 편집 Canvas" data-canvas-viewport data-canvas-width={canvas.width} data-canvas-height={canvas.height} data-canvas-zoom={canvasZoom}>
           <div style={{ width: canvas.width * canvasZoom, height: canvas.height * canvasZoom }}>
             <div className="relative bg-[#20262e] bg-[radial-gradient(circle,#596472_1px,transparent_1px)] [background-size:20px_20px]" data-canvas-content style={{ width: canvas.width, height: canvas.height, transform: `scale(${canvasZoom})`, transformOrigin: 'top left' }} onPointerDown={startCanvasPan} onPointerMove={moveCanvasPan} onPointerUp={endCanvasPan} onPointerCancel={endCanvasPan}>
             <div className="pointer-events-none absolute right-3 top-3 z-20 flex items-center gap-3 rounded-md border border-white/10 bg-[#151a20]/90 px-3 py-2 text-[0.625rem] text-[#cbd5df] shadow-lg">
@@ -1258,17 +1410,17 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient & 
                   markerEnd={active ? 'url(#workflow-edge-arrow-active)' : 'url(#workflow-edge-arrow)'}
                 />
               })}
-              {toolLayout === 'orbit' && capabilityLaneBindings.map((binding) => {
+              {toolLayout === 'orbit' && visibleCapabilityBindings.map((binding) => {
                 const source = nodes.find((node) => node.id === binding.nodeId)
                 if (!source) return null
-                const ownerBindings = capabilityLaneBindings.filter((item) => item.nodeId === binding.nodeId)
+                const ownerBindings = visibleCapabilityBindings.filter((item) => item.nodeId === binding.nodeId)
                 const toolIndex = ownerBindings.findIndex((item) => item.tool === binding.tool)
-                const toolPosition = orbitalToolPosition(source, toolIndex, ownerBindings.length)
+                const position = toolPosition(binding, source, toolIndex, ownerBindings.length)
                 const x1 = source.x + NODE_WIDTH / 2
                 const y1 = source.y + NODE_HEIGHT
-                const x2 = toolPosition.x + 22
-                const y2 = toolPosition.y + 22
-                const active = selectedId === source.id
+                const x2 = position.x + 26
+                const y2 = position.y + 26
+                const active = selectedToolBinding?.nodeId === binding.nodeId && selectedToolBinding.tool === binding.tool
                 return <path
                   key={`${binding.nodeId}:${binding.tool}:${binding.mode}`}
                   d={`M ${x1} ${y1} C ${x1} ${y1 + 28}, ${x2} ${y2 - 28}, ${x2} ${y2}`}
@@ -1278,7 +1430,7 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient & 
                   data-capability-requirement={binding.mode}
                   data-capability-layout="orbit"
                   fill="none"
-                  stroke={active ? '#65c6ca' : '#7b8794'}
+                  stroke={active ? '#7dd3fc' : '#7b8794'}
                   strokeWidth={active ? 2 : 1.25}
                   strokeDasharray="4 5"
                   strokeLinecap="round"
@@ -1332,53 +1484,78 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient & 
                   onPointerCancel={(event) => endDrag(event, node)}
                 >
                   <span className={`grid h-[2.125rem] w-[2.125rem] shrink-0 place-items-center rounded-[0.625rem] ${info.skin}`}><Icon name={info.icon} size={18} /></span>
-                  <span className="min-w-0 flex-1 pr-4"><span className="block truncate text-[0.75rem] font-semibold">{nodeDisplayName(profileKey, node)}</span><span className="mt-0.5 block truncate text-[0.5625rem] font-normal text-muted-2">{info.meta}</span></span>
+                  <span className="min-w-0 flex-1 pr-4"><span className="block truncate text-[0.75rem] font-semibold">{nodeDisplayName(profileKey, node)}</span><span className="mt-0.5 block truncate text-[0.5625rem] font-normal text-muted-2">{role.detail}</span></span>
                 </button>
-                <span className="workflow-role-badge mt-2 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[0.5625rem] font-semibold" data-role={role}><Icon name={role === 'handler' ? 'code-2' : 'network'} size={10} />{role === 'handler' ? 'Handler' : 'Runner'}</span>
+                <span className="workflow-role-badge mt-2 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[0.5625rem] font-semibold" data-role={role.key}><Icon name={role.icon} size={10} />{role.label}</span>
               </article>
             })}
-            {toolLayout === 'orbit' && capabilityLaneBindings.map((binding) => {
+            {toolLayout === 'orbit' && visibleCapabilityBindings.map((binding) => {
               const source = nodes.find((node) => node.id === binding.nodeId)
               if (!source) return null
-              const ownerBindings = capabilityLaneBindings.filter((item) => item.nodeId === binding.nodeId)
+              const ownerBindings = visibleCapabilityBindings.filter((item) => item.nodeId === binding.nodeId)
               const index = ownerBindings.findIndex((item) => item.tool === binding.tool)
-              const position = orbitalToolPosition(source, index, ownerBindings.length)
-              return <article
+              const position = toolPosition(binding, source, index, ownerBindings.length)
+              const details = toolDetails[binding.tool]
+              const toolSelected = selectedToolBinding?.nodeId === binding.nodeId && selectedToolBinding.tool === binding.tool
+              return <button
+                type="button"
                 key={`${binding.nodeId}:${binding.tool}`}
                 aria-label={`${nodeDisplayName(profileKey, source)} MCP Tool ${toolDetails[binding.tool]?.label ?? binding.tool}`}
+                aria-pressed={toolSelected}
                 title={`${binding.tool} · ${binding.mode}`}
                 data-capability-tool-node={binding.tool}
                 data-capability-owner={binding.nodeId}
                 data-capability-layout="orbit"
                 data-capability-requirement={binding.mode}
                 data-capability-locked={binding.mode !== 'MODEL_OPTIONAL' ? 'true' : 'false'}
-                className="workflow-tool-satellite absolute z-10 grid h-11 w-11 place-items-center rounded-full border shadow-[0_6px_16px_#070a0e4d]"
+                data-tool-tone={details?.tone ?? 'blue'}
+                data-tool-selected={toolSelected ? 'true' : 'false'}
+                className="workflow-tool-satellite absolute z-10 grid h-[3.25rem] w-[3.25rem] touch-none place-items-center rounded-full border shadow-[0_6px_16px_#070a0e4d]"
                 style={{ left: position.x, top: position.y }}
-              ><Icon name="plug" size={17} /><span className="absolute top-12 w-20 text-center text-[0.5rem] leading-tight text-[#c8d7e0]">{toolDetails[binding.tool]?.label ?? binding.tool}</span></article>
-            })}
-            {toolLayout === 'dock' && nodes.map((node) => {
-              const bindings = capabilityLaneBindings.filter((binding) => binding.nodeId === node.id)
-              if (bindings.length === 0) return null
-              return <section
-                key={`dock:${node.id}`}
-                className="workflow-tool-dock absolute z-10 rounded-md border p-1.5 shadow-[0_5px_14px_#070a0e35]"
-                style={{ left: node.x, top: node.y + NODE_HEIGHT + 8, width: NODE_WIDTH }}
-                aria-label={`${nodeDisplayName(profileKey, node)} MCP Tool 도크`}
-                data-capability-dock-owner={node.id}
-              >
-                <div className="flex flex-wrap gap-1">{bindings.map((binding) => <span
-                  key={binding.tool}
-                  title={`${binding.tool} · ${binding.mode}`}
-                  data-capability-tool-node={binding.tool}
-                  data-capability-owner={binding.nodeId}
-                  data-capability-layout="dock"
-                  data-capability-requirement={binding.mode}
-                  className="inline-flex min-w-0 items-center gap-1 rounded bg-field/80 px-1.5 py-1 text-[0.5rem] font-semibold"
-                ><Icon name="plug" size={9} /><span className="truncate">{toolDetails[binding.tool]?.label ?? binding.tool}</span></span>)}</div>
-              </section>
+                onClick={() => selectTool(binding)}
+                onPointerDown={(event) => startToolDrag(event, binding, position, source)}
+                onPointerMove={moveToolDrag}
+                onPointerUp={(event) => endToolDrag(event, binding)}
+                onPointerCancel={(event) => endToolDrag(event, binding)}
+              ><Icon name={details?.icon ?? 'plug'} size={19} /><span className="workflow-tool-satellite__label absolute top-[3.65rem] w-28 text-center text-[0.5625rem] font-medium leading-tight">{details?.label ?? binding.tool}</span></button>
             })}
             </div>
           </div>
+          </div>
+          {toolLayout === 'dock' && selected && visibleCapabilityBindings.length > 0 && <section
+            className="workflow-tool-lane absolute inset-x-0 bottom-0 z-30 h-[7.75rem] border-t px-3 py-2"
+            aria-label={`${nodeDisplayName(profileKey, selected)} MCP Tool 도크`}
+            data-capability-dock-owner={selected.id}
+          >
+            <div className="mb-2 flex items-center gap-2">
+              <b className="text-[0.6875rem] font-semibold">선택 Node Tool</b>
+              <span className="text-[0.625rem] text-muted-2">{nodeDisplayName(profileKey, selected)}</span>
+              <span className="rounded-full border border-line-soft bg-field px-1.5 py-0.5 text-[0.5625rem] font-semibold text-muted-2">{visibleCapabilityBindings.length}</span>
+              <span className="ml-auto text-[0.5625rem] text-muted-2">Canvas와 분리된 Tool Lane</span>
+            </div>
+            <div className="flex gap-2 overflow-x-auto pb-1">{visibleCapabilityBindings.map((binding) => {
+              const details = toolDetails[binding.tool]
+              const toolSelected = selectedToolBinding?.nodeId === binding.nodeId && selectedToolBinding.tool === binding.tool
+              return <button
+                type="button"
+                key={binding.tool}
+                aria-label={`${nodeDisplayName(profileKey, selected)} MCP Tool ${details?.label ?? binding.tool}`}
+                aria-pressed={toolSelected}
+                title={`${binding.tool} · ${binding.mode}`}
+                data-capability-tool-node={binding.tool}
+                data-capability-owner={binding.nodeId}
+                data-capability-layout="dock"
+                data-capability-requirement={binding.mode}
+                data-tool-tone={details?.tone ?? 'blue'}
+                data-tool-selected={toolSelected ? 'true' : 'false'}
+                className="workflow-tool-lane__item grid min-w-[8.75rem] grid-cols-[2rem_minmax(0,1fr)] items-center gap-2 rounded-md border px-2 py-1.5 text-left"
+                onClick={() => selectTool(binding)}
+              >
+                <span className="workflow-tool-detail-icon grid h-8 w-8 place-items-center rounded-lg" data-tool-tone={details?.tone ?? 'blue'}><Icon name={details?.icon ?? 'plug'} size={15} /></span>
+                <span className="min-w-0"><strong className="block truncate text-[0.625rem] font-semibold">{details?.label ?? binding.tool}</strong><small className="mt-0.5 block truncate text-[0.5rem] text-muted-2">{binding.tool}</small></span>
+              </button>
+            })}</div>
+          </section>}
         </div>
       </div>
 
@@ -1405,12 +1582,34 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient & 
           <p className="mt-2 text-[0.6875rem] leading-5 text-muted-2">현재 Node {nodes.length}개 · 새 DRAFT 저장 시 적용됩니다.</p>
         </section>
 
-        <b className="mt-4 block border-t border-row-line pt-4 text-[0.84375rem] font-semibold">Node 설정</b>
+        <b className="mt-4 block border-t border-row-line pt-4 text-[0.84375rem] font-semibold">{selectedToolBinding ? 'MCP Tool 정보' : 'Node 설정'}</b>
         {!selected && <p className="mt-3 text-xs text-muted-2">Node를 선택하세요.</p>}
-        {selected && <div className="mt-3">
+        {selectedToolBinding && selectedToolOwner && <div className="mt-3" aria-label="선택 MCP Tool 기본정보">
+          <div className="grid grid-cols-[3rem_minmax(0,1fr)] items-center gap-3 rounded-lg border border-line-soft bg-sub p-3">
+            <span className="workflow-tool-detail-icon grid h-12 w-12 place-items-center rounded-xl" data-tool-tone={toolDetails[selectedToolBinding.tool]?.tone ?? 'blue'}><Icon name={toolDetails[selectedToolBinding.tool]?.icon ?? 'plug'} size={23} /></span>
+            <span className="min-w-0"><strong className="block truncate text-[0.8125rem]">{toolDetails[selectedToolBinding.tool]?.label ?? selectedToolBinding.tool}</strong><small className="mt-0.5 block text-[0.625rem] text-muted-2">MCP Tool · {bindingModeLabel(selectedToolBinding.mode)}</small></span>
+          </div>
+          <NoticePanel className="mt-3" tone="info" icon="activity" title="Canvas 표시 Tool입니다">선택한 Tool의 위치는 브라우저에만 저장되며 Snapshot과 실행 정책을 바꾸지 않습니다.</NoticePanel>
+          <label className="mt-3 block text-[0.71875rem] font-semibold text-body">Tool ID
+            <input aria-label="선택 Tool ID" className={`${control} cursor-not-allowed bg-sub text-body`} value={selectedToolBinding.tool} readOnly />
+          </label>
+          <label className="mt-3 block text-[0.71875rem] font-semibold text-body">연결 Node
+            <input aria-label="선택 Tool 연결 Node" className={`${control} cursor-not-allowed bg-sub text-body`} value={`${nodeDisplayName(profileKey, selectedToolOwner)} (${selectedToolOwner.id})`} readOnly />
+          </label>
+          <label className="mt-3 block text-[0.71875rem] font-semibold text-body">Binding 정책
+            <input aria-label="선택 Tool Binding 정책" className={`${control} cursor-not-allowed bg-sub text-body`} value={`${bindingModeLabel(selectedToolBinding.mode)} (${selectedToolBinding.mode})`} readOnly />
+          </label>
+          <section className="mt-3 rounded-md border border-line-soft bg-sub p-3" aria-label="선택 Tool 설명">
+            <b className="text-[0.6875rem] font-semibold text-body">기능 설명</b>
+            <p className="mt-1 text-[0.6875rem] leading-5 text-muted-2">{toolDetails[selectedToolBinding.tool]?.description ?? '등록된 MCP Tool입니다.'}</p>
+          </section>
+          {selectedToolBinding.mode !== 'MODEL_OPTIONAL' && <NoticePanel className="mt-3" tone="warning" icon="lock" title="필수 Binding입니다">이 Tool은 현재 Node에서 해제할 수 없습니다.</NoticePanel>}
+          <button type="button" className={`${secondaryButton} mt-3 w-full justify-center`} onClick={() => setSelectedTool(null)}>소유 Node 설정으로 돌아가기</button>
+        </div>}
+        {selected && !selectedToolBinding && <div className="mt-3">
           <div className="grid grid-cols-[2.75rem_minmax(0,1fr)] items-center gap-3 rounded-lg border border-line-soft bg-sub p-3">
             <span className={`grid h-11 w-11 place-items-center rounded-xl ${nodeTypes[selected.type].skin}`}><Icon name={nodeTypes[selected.type].icon} size={21} /></span>
-            <span className="min-w-0"><strong className="block truncate text-[0.8125rem]">{nodeDisplayName(profileKey, selected)}</strong><small className="mt-0.5 block text-[0.625rem] text-muted-2">{nodeRole(selected) === 'handler' ? 'Handler · 모델 실행 Node' : 'Runner · 워크플로 실행 Node'}</small></span>
+            <span className="min-w-0"><strong className="block truncate text-[0.8125rem]">{nodeDisplayName(profileKey, selected)}</strong><small className="mt-0.5 block text-[0.625rem] text-muted-2">{nodeRole(selected).label} · {nodeRole(selected).detail}</small></span>
           </div>
           {selectedLocked && <NoticePanel className="mt-3" tone="warning" icon="lock" title="보호된 시스템 Node입니다">이 Node는 수정하거나 삭제할 수 없습니다.</NoticePanel>}
           <label className="block text-[0.71875rem] font-semibold text-body">Node ID
