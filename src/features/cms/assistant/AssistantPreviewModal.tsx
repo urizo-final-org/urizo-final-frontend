@@ -7,11 +7,16 @@ import { primaryButton, secondaryButton, smallButton } from '../../../shared/ui/
  * 패널 폭이 좁아 트리·본문 diff·템플릿 렌더가 들어가지 않으므로 모달로 뺀다.
  * 삭제 확인도 위험 등급 때문에 이쪽을 쓴다.
  */
-export default function AssistantPreviewModal({ title, subtitle, children, busy, onApprove, onClose }: {
+/** 되돌릴 수 없는 작업은 승인 버튼 색을 달리한다. 같은 버튼이면 습관적으로 누른다. */
+const dangerButton = 'inline-flex h-8 items-center gap-[0.375rem] rounded-[0.3125rem] border border-[#e2b4ad] bg-[#c0564b] px-[0.6875rem] text-xs font-semibold text-white enabled:hover:bg-[#a94a40]'
+
+export default function AssistantPreviewModal({ title, subtitle, children, busy, approveLabel, danger, onApprove, onClose }: {
   title: string
   subtitle: string
   children: ReactNode
   busy: boolean
+  approveLabel?: string
+  danger?: boolean
   onApprove: () => void
   onClose: () => void
 }) {
@@ -38,7 +43,12 @@ export default function AssistantPreviewModal({ title, subtitle, children, busy,
 
       <div className="flex justify-end gap-2 border-t border-line-soft px-4 py-3">
         <button type="button" className={secondaryButton} onClick={onClose}>취소</button>
-        <button type="button" className={primaryButton} disabled={busy} onClick={onApprove}>승인하고 반영</button>
+        <button
+          type="button"
+          className={danger ? dangerButton : primaryButton}
+          disabled={busy}
+          onClick={onApprove}
+        >{approveLabel ?? '승인하고 반영'}</button>
       </div>
     </section>
   </div>

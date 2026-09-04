@@ -8,6 +8,13 @@ export function notifySiteUpdated() {
   window.dispatchEvent(new Event(SITE_UPDATE_EVENT))
 }
 
+/** 관리 화면이 자기 목록을 다시 읽어야 할 때. 폼이 아닌 곳에서 CMS가 바뀌면 알린다. */
+export const CMS_CHANGED_EVENT = 'axms:cms-changed'
+
+export function notifyCmsChanged() {
+  window.dispatchEvent(new Event(CMS_CHANGED_EVENT))
+}
+
 export type Member = { id: string; loginId: string; name: string; role: string }
 export type MenuTargetType = 'NONE' | 'CONTENT' | 'BOARD'
 export type Menu = {

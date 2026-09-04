@@ -1,14 +1,27 @@
-import { type FormEvent, useId, useState } from 'react'
+import { type FormEvent, useEffect, useId, useRef, useState } from 'react'
 import type { CmsRouteId } from '../../../app/routes'
 import { describeFailure } from '../../../shared/api/error'
+import { notifyCmsChanged, notifySiteUpdated } from '../api'
 import { Icon } from '../../../shared/ui/icons'
 import { Badge, control, panel, primaryButton, secondaryButton, textarea } from '../../../shared/ui/primitives'
 import AssistantPreviewModal from './AssistantPreviewModal'
+import MenuRemovalNotice from './MenuRemovalNotice'
+import MenuTreePreview from './MenuTreePreview'
+import { refusalGuide } from './refusal'
 import type { NaturalCmsApi, NaturalCmsJob } from './api'
 import { hasChange, lineDiff } from './diff'
+import { menuPreviewTree, menuRemoval, type AssistantMenu, type MenuCommand } from './menuTree'
 
 /** 되묻기에 한 번에 보여줄 후보 최대 갯수. 더 많으면 목록에서 직접 고르게 한다. */
 const MAX_CANDIDATES = 5
+
+/** 미리보기는 파이프라인이 채운다. 첫 조회는 곧바로 하고 그 뒤에만 기다린다. */
+const POLL_INTERVAL_MS = 1_500
+const POLL_ATTEMPTS = 40
+
+function wait(ms: number) {
+  return new Promise<void>((resolve) => { window.setTimeout(resolve, ms) })
+}
 
 /** 한 필드의 변경 전후를 줄 단위로 보여준다. 바뀐 줄이 없으면 그대로임을 알린다. */
 function FieldDiff({ before, after }: { before: string; after: string }) {
@@ -51,6 +64,8 @@ type AssistantProfile = {
   section: string
   title: string
   description: string
+  /** 대상을 고르지 않았을 때의 안내. 화면마다 할 수 있는 것이 다르다. */
+  empty: string
   capabilities: string[]
   excluded: string
   suggestions: string[]
@@ -61,14 +76,16 @@ const profiles: Record<AssistedRoute, AssistantProfile> = {
     section: '메뉴 관리',
     title: '메뉴 AI',
     description: '메뉴 구조와 연결 상태를 자연어로 정리해 보세요.',
-    capabilities: ['메뉴 등록·수정', '상·하위 구조', '노출 순서', '콘텐츠·게시판 연결'],
+    empty: '목록에서 고르거나, 바로 요청해 새 메뉴를 만들 수 있어요.',
+    capabilities: ['메뉴 등록·수정·삭제', '상·하위 구조', '노출 순서', '콘텐츠·게시판 연결'],
     excluded: '컨텐츠 본문, 게시글, 템플릿은 변경하지 않아요.',
-    suggestions: ['Products 아래에 새 메뉴를 추가해 줘', '연결되지 않은 메뉴만 찾아줘', '하위 메뉴 노출 순서를 정리해 줘'],
+    suggestions: ['고객지원 아래에 자료실 메뉴를 만들어 줘', '비전을 맨 위로 올려 줘', '소개 메뉴에 회사 소개 컨텐츠를 연결해 줘'],
   },
   contents: {
     section: '컨텐츠 관리',
     title: '컨텐츠 AI',
     description: '정적 페이지의 제목과 본문 초안을 빠르게 다듬어 보세요.',
+    empty: '목록에서 항목을 선택하면 그 대상에 적용합니다.',
     capabilities: ['컨텐츠 등록·수정', '제목·본문 편집', '문단·목록 서식', '삭제 전 확인'],
     excluded: '메뉴 구조, 게시판·게시글, 템플릿은 변경하지 않아요.',
     suggestions: ['선택한 컨텐츠를 세 문단으로 정리해 줘', '제목을 더 명확하게 다듬어 줘', '새 안내 페이지 초안을 만들어 줘'],
@@ -77,6 +94,7 @@ const profiles: Record<AssistedRoute, AssistantProfile> = {
     section: '게시판 관리',
     title: '게시판 AI',
     description: '게시판과 게시글 작성 작업을 현재 화면 안에서 도와드려요.',
+    empty: '목록에서 항목을 선택하면 그 대상에 적용합니다.',
     capabilities: ['게시판 등록·수정', '게시글 작성·편집', '제목·본문 정리', '삭제 전 확인'],
     excluded: '메뉴 연결, 정적 컨텐츠, 템플릿은 변경하지 않아요.',
     suggestions: ['공지사항 게시판 설명을 작성해 줘', '선택한 게시글 제목을 다듬어 줘', '게시글 본문을 읽기 쉽게 정리해 줘'],
@@ -85,6 +103,7 @@ const profiles: Record<AssistedRoute, AssistantProfile> = {
     section: '템플릿 관리',
     title: '템플릿 AI',
     description: '사용자 사이트의 공통 디자인 설정을 자연어로 조정해 보세요.',
+    empty: '목록에서 항목을 선택하면 그 대상에 적용합니다.',
     capabilities: ['레이아웃 선택', '브랜드 색상', 'Header·Footer', '메인 이미지·문구·버튼'],
     excluded: '메뉴, 컨텐츠 본문, 게시판·게시글은 변경하지 않아요.',
     suggestions: ['대표 색상을 차분한 보라색으로 바꿔 줘', '메인 문구를 더 간결하게 다듬어 줘', 'Footer 문구를 전문적으로 정리해 줘'],
@@ -103,12 +122,24 @@ type Phase =
   | { kind: 'failed'; message: string }
 
 /** 지금 자연어 변경이 가능한 리소스. 나머지 화면은 안내만 한다. */
-const SUPPORTED: ReadonlySet<CmsAssistantTarget['type']> = new Set(['CONTENT'])
+const SUPPORTED: ReadonlySet<CmsAssistantTarget['type']> = new Set(['CONTENT', 'MENU'])
 
-export default function CmsAiAssistant({ route, target, candidates, onTarget, api, collapsed, onToggle }: {
+/** 자연어 변경을 받는 화면. 리소스별 작업이 끝난 화면부터 연다. */
+const SUPPORTED_ROUTES: ReadonlySet<AssistedRoute> = new Set<AssistedRoute>(['contents', 'menus'])
+
+/** 등록은 만들기 전이라 가리킬 id가 없다. 대상 자리에 고정 표식을 보낸다. */
+export const NEW_MENU_TARGET: CmsAssistantTarget = {
+  type: 'MENU',
+  id: 'new',
+  label: '새 메뉴 만들기',
+  fields: {},
+}
+
+export default function CmsAiAssistant({ route, target, candidates, menus, onTarget, api, collapsed, onToggle }: {
   route: AssistedRoute
   target: CmsAssistantTarget | null
   candidates: CmsAssistantTarget[]
+  menus: AssistantMenu[]
   onTarget: (target: CmsAssistantTarget) => void
   api: NaturalCmsApi
   collapsed: boolean
@@ -121,7 +152,10 @@ export default function CmsAiAssistant({ route, target, candidates, onTarget, ap
   const [phase, setPhase] = useState<Phase>({ kind: 'input' })
   const [feedback, setFeedback] = useState('')
   const [detail, setDetail] = useState(false)
-  const routeSupported = route === 'contents'
+  /** 지금 유효한 대기 세대. 새 요청이나 초기화가 이전 대기를 무효로 만든다. */
+  const poll = useRef(0)
+  useEffect(() => () => { poll.current += 1 }, [])
+  const routeSupported = SUPPORTED_ROUTES.has(route)
   const supported = target !== null && SUPPORTED.has(target.type)
 
   /** 말에 대상이 없으면 이름이 겹치는 후보를 고르게 한다. 선택지는 코드가 만든다. */
@@ -131,7 +165,68 @@ export default function CmsAiAssistant({ route, target, candidates, onTarget, ap
     return (matched.length > 0 ? matched : candidates).slice(0, MAX_CANDIDATES)
   }
 
+  /**
+   * 미리보기가 생길 때까지 Job을 다시 읽는다.
+   *
+   * 생성 응답에는 미리보기가 없다. 파이프라인이 분석과 미리보기를 만든 뒤에야 채워지므로
+   * 화면이 그 시점을 기다려야 한다. 취소·새 요청이 오면 세대 번호로 이전 대기를 버린다.
+   */
+  async function awaitPreview(jobId: string, generation: number) {
+    for (let attempt = 0; attempt < POLL_ATTEMPTS; attempt += 1) {
+      if (attempt > 0) await wait(POLL_INTERVAL_MS)
+      if (poll.current !== generation) return
+      const job = await api.job(jobId)
+      if (poll.current !== generation) return
+      if (job.previewId && job.previewHash) {
+        setPhase({ kind: 'waiting', job })
+        return
+      }
+      if (job.status === 'COMPLETED') {
+        setPhase({ kind: 'done', job })
+        return
+      }
+      if (job.status === 'REJECTED') {
+        setPhase({ kind: 'rejected', job })
+        return
+      }
+    }
+    if (poll.current !== generation) return
+    setPhase({
+      kind: 'failed',
+      message: '미리보기를 받지 못했습니다. 잠시 후 다시 요청해 주세요.',
+    })
+  }
+
+  /**
+   * 승인한 변경이 실제로 반영될 때까지 Job을 다시 읽는다.
+   *
+   * 승인 응답은 결정을 기록하고 Queue에 넣은 것까지다. 반영은 파이프라인이 잠시 뒤에 한다.
+   * 응답 직후 목록을 다시 읽으면 아직 바뀌기 전 값을 받는다.
+   */
+  async function awaitApplied(jobId: string, generation: number) {
+    for (let attempt = 0; attempt < POLL_ATTEMPTS; attempt += 1) {
+      if (attempt > 0) await wait(POLL_INTERVAL_MS)
+      if (poll.current !== generation) return
+      const job = await api.job(jobId)
+      if (poll.current !== generation) return
+      if (job.status === 'COMPLETED') {
+        notifyCmsChanged()
+        notifySiteUpdated()
+        setPhase({ kind: 'done', job })
+        return
+      }
+      if (job.status === 'REJECTED') {
+        setPhase({ kind: 'rejected', job })
+        return
+      }
+    }
+    if (poll.current !== generation) return
+    setPhase({ kind: 'failed', message: '반영 결과를 받지 못했습니다. 목록을 새로고침해 확인해 주세요.' })
+  }
+
   async function start(requestText: string, chosen: CmsAssistantTarget) {
+    const generation = poll.current + 1
+    poll.current = generation
     setPhase({ kind: 'analyzing' })
     try {
       const profileVersionId = await api.activeProfileVersionId()
@@ -141,9 +236,10 @@ export default function CmsAiAssistant({ route, target, candidates, onTarget, ap
         resource: { type: chosen.type, id: chosen.id },
       })
       setDraft('')
-      setPhase({ kind: 'waiting', job })
+      await awaitPreview(job.jobId, generation)
     }
     catch (failure) {
+      if (poll.current !== generation) return
       setPhase({ kind: 'failed', message: describeFailure(failure) })
     }
   }
@@ -179,7 +275,14 @@ export default function CmsAiAssistant({ route, target, candidates, onTarget, ap
         ...(decision === 'REJECTED' ? { feedback: feedback.trim() } : {}),
       })
       setFeedback('')
-      setPhase(decision === 'APPROVED' ? { kind: 'done', job: decided } : { kind: 'rejected', job: decided })
+      if (decision === 'REJECTED') {
+        setPhase({ kind: 'rejected', job: decided })
+        return
+      }
+      // 승인은 Queue에 넣은 것까지다. 반영이 끝난 뒤에 목록을 다시 읽어야 바뀐 값이 온다.
+      setPhase({ kind: 'deciding', job: decided })
+      poll.current += 1
+      await awaitApplied(decided.jobId, poll.current)
     }
     catch (failure) {
       setPhase({ kind: 'failed', message: describeFailure(failure) })
@@ -187,6 +290,7 @@ export default function CmsAiAssistant({ route, target, candidates, onTarget, ap
   }
 
   function reset() {
+    poll.current += 1
     setFeedback('')
     setDetail(false)
     setPhase({ kind: 'input' })
@@ -195,6 +299,34 @@ export default function CmsAiAssistant({ route, target, candidates, onTarget, ap
   function commandFields(job: NaturalCmsJob) {
     const command = job.structuredCommand as { fields?: Record<string, unknown> } | null
     return Object.entries(command?.fields ?? {}).map(([name, value]) => [name, String(value)] as const)
+  }
+
+  /** 명령서가 아직 없을 수 있다. 미리보기 전에는 `null`이다. */
+  function menuCommand(job: NaturalCmsJob): MenuCommand | null {
+    const command = job.structuredCommand as Partial<MenuCommand> | null
+    if (!command || typeof command.operation !== 'string') return null
+    return { operation: command.operation, fields: command.fields ?? {} }
+  }
+
+  function removes(job: NaturalCmsJob) {
+    return target?.type === 'MENU' && menuCommand(job)?.operation === 'DELETE'
+  }
+
+  /**
+   * 메뉴 미리보기. 위치가 곧 정보라 트리로 보여주고, 삭제만 목록으로 센다.
+   *
+   * 결과 순서는 화면이 계산한다. 파이프라인이 주는 미리보기는 대상 한 행뿐이다.
+   */
+  function menuPreview(job: NaturalCmsJob) {
+    const command = menuCommand(job)
+    if (!command || !target) return <p className="m-0 text-[0.71875rem] text-muted-2">아직 변경 내용을 받지 못했습니다.</p>
+    if (command.operation === 'DELETE') {
+      const removal = menuRemoval(menus, target.id)
+      return removal
+        ? <MenuRemovalNotice target={removal.target} removed={removal.children} />
+        : <p className="m-0 text-[0.71875rem] text-muted-2">삭제할 메뉴를 찾지 못했습니다.</p>
+    }
+    return <MenuTreePreview nodes={menuPreviewTree(menus, command, target.id)} />
   }
 
   if (collapsed) return <aside
@@ -244,7 +376,7 @@ export default function CmsAiAssistant({ route, target, candidates, onTarget, ap
         <small className="block text-[0.65625rem] text-muted-3">변경 대상</small>
         {target
           ? <b className="mt-[0.1875rem] block truncate text-[0.71875rem] font-semibold text-ink" title={target.label}>{target.label}</b>
-          : <span className="mt-[0.1875rem] block text-[0.71875rem] text-muted-2">목록에서 항목을 선택하면 그 대상에 적용합니다.</span>}
+          : <span className="mt-[0.1875rem] block text-[0.71875rem] leading-[1.55] text-muted-2">{profile.empty}</span>}
       </div>
 
       <div className="mt-[0.875rem] flex flex-wrap gap-[0.375rem]">
@@ -297,7 +429,11 @@ export default function CmsAiAssistant({ route, target, candidates, onTarget, ap
             <small className="block text-[0.65625rem] text-muted-3">요청</small>
             <span className="mt-[0.1875rem] block text-[0.71875rem] text-body">{phase.job.requestText}</span>
           </div>
-          <button type="button" className={`${secondaryButton} mt-[0.625rem] w-full justify-center`} onClick={() => setDetail(true)}>변경 내용 자세히 보기</button>
+          <button
+            type="button"
+            className={`${secondaryButton} mt-[0.625rem] w-full justify-center`}
+            onClick={() => setDetail(true)}
+          >{removes(phase.job) ? '삭제 내용 확인하기' : '변경 내용 자세히 보기'}</button>
           <label className="mt-[0.875rem] block text-[0.71875rem] font-semibold text-body" htmlFor={feedbackId}>반려 사유</label>
           <input
             id={feedbackId}
@@ -328,9 +464,12 @@ export default function CmsAiAssistant({ route, target, candidates, onTarget, ap
           <button type="button" className={`${secondaryButton} mt-[0.625rem] w-full justify-center`} onClick={reset}>새 요청</button>
         </>}
 
+        {/* 같은 REJECTED라도 내가 반려한 것과 화면 범위 밖이라 막힌 것은 다른 안내다. */}
         {phase.kind === 'rejected' && <>
-          <Badge tone="wait">반려됨</Badge>
-          <p className="mt-[0.625rem] text-[0.71875rem] text-muted">반영하지 않았습니다. 요청을 고쳐 다시 시도해 주세요.</p>
+          <Badge tone="wait">{phase.job.approvalDecision === 'REJECTED' ? '반려됨' : '지원하지 않는 요청'}</Badge>
+          <p className="mt-[0.625rem] text-[0.71875rem] leading-[1.55] text-muted">{phase.job.approvalDecision === 'REJECTED'
+            ? '반영하지 않았습니다. 요청을 고쳐 다시 시도해 주세요.'
+            : refusalGuide(phase.job.requestText, profile.section)}</p>
           <button type="button" className={`${secondaryButton} mt-[0.625rem] w-full justify-center`} onClick={reset}>새 요청</button>
         </>}
 
@@ -355,9 +494,13 @@ export default function CmsAiAssistant({ route, target, candidates, onTarget, ap
     </form>
 
     {detail && (phase.kind === 'waiting' || phase.kind === 'deciding') && <AssistantPreviewModal
-      title={`${profile.section} 변경 미리보기`}
-      subtitle="승인하면 기존 CMS 저장 경로로 반영됩니다."
+      title={removes(phase.job) ? `${profile.section} 삭제 확인` : `${profile.section} 변경 미리보기`}
+      subtitle={removes(phase.job)
+        ? '삭제한 메뉴는 되돌릴 수 없습니다.'
+        : '승인하면 기존 CMS 저장 경로로 반영됩니다.'}
       busy={phase.kind === 'deciding'}
+      approveLabel={removes(phase.job) ? '삭제하고 반영' : undefined}
+      danger={removes(phase.job)}
       onApprove={() => { setDetail(false); void decide(phase.job, 'APPROVED') }}
       onClose={() => setDetail(false)}
     >
@@ -365,13 +508,15 @@ export default function CmsAiAssistant({ route, target, candidates, onTarget, ap
         <small className="block text-[0.65625rem] text-muted-3">요청</small>
         <span className="mt-[0.1875rem] block text-[0.8125rem] text-body">{phase.job.requestText}</span>
       </div>
-      <div className="mt-3 grid gap-3">
-        {commandFields(phase.job).map(([name, value]) => <section key={name}>
-          <small className="block text-[0.65625rem] font-semibold text-muted-2">{name}</small>
-          <FieldDiff before={target?.fields[name] ?? ''} after={value} />
-        </section>)}
-        {commandFields(phase.job).length === 0 && <p className="m-0 text-[0.71875rem] text-muted-2">아직 변경 내용을 받지 못했습니다.</p>}
-      </div>
+      {target?.type === 'MENU'
+        ? <div className="mt-3">{menuPreview(phase.job)}</div>
+        : <div className="mt-3 grid gap-3">
+          {commandFields(phase.job).map(([name, value]) => <section key={name}>
+            <small className="block text-[0.65625rem] font-semibold text-muted-2">{name}</small>
+            <FieldDiff before={target?.fields[name] ?? ''} after={value} />
+          </section>)}
+          {commandFields(phase.job).length === 0 && <p className="m-0 text-[0.71875rem] text-muted-2">아직 변경 내용을 받지 못했습니다.</p>}
+        </div>}
     </AssistantPreviewModal>}
   </aside>
 }
