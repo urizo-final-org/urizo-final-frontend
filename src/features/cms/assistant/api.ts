@@ -89,6 +89,10 @@ export class NaturalCmsApi {
       body: JSON.stringify({ schemaVersion: SCHEMA_VERSION, ...value }),
     })
 
+  /** 진행 상태와 미리보기를 다시 읽는다. Job은 요청 직후 비어 있고 파이프라인이 채운다. */
+  job = (jobId: string) =>
+    this.request<NaturalCmsJob>(`/api/natural-cms/jobs/${encodeURIComponent(jobId)}`)
+
   decide = (jobId: string, value: {
     previewId: string
     previewHash: string

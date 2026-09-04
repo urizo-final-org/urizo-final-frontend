@@ -1,4 +1,4 @@
-import { type CSSProperties, type FormEvent, type ReactNode, useEffect, useState } from 'react'
+import { type CSSProperties, type FormEvent, type ReactNode, useEffect, useRef, useState } from 'react'
 import type { CmsRouteId } from '../../app/routes'
 import { describeFailure } from '../../shared/api/error'
 import { Icon } from '../../shared/ui/icons'
@@ -6,9 +6,10 @@ import {
   Badge, EmptyState, PageHead, PanelTitle,
   control, fieldLabel, panel, primaryButton, secondaryButton, smallButton, textarea, type Tone,
 } from '../../shared/ui/primitives'
-import { CmsApi, notifySiteUpdated, type Article, type Board, type Member, type Menu, type MenuTargetType, type Post, type SiteTemplate } from './api'
-import CmsAiAssistant, { type CmsAssistantTarget } from './assistant/CmsAiAssistant'
+import { CmsApi, CMS_CHANGED_EVENT, notifySiteUpdated, type Article, type Board, type Member, type Menu, type MenuTargetType, type Post, type SiteTemplate } from './api'
+import CmsAiAssistant, { NEW_MENU_TARGET, type CmsAssistantTarget } from './assistant/CmsAiAssistant'
 import type { NaturalCmsApi } from './assistant/api'
+import type { AssistantMenu } from './assistant/menuTree'
 
 const dangerButton = 'inline-flex h-8 items-center gap-[0.375rem] rounded-[0.3125rem] border border-[#f0d5d1] bg-fail-bg px-[0.6875rem] text-xs font-semibold text-fail-fg enabled:hover:bg-[#f8e0dc]'
 const recordRow = 'flex w-full items-center gap-[0.625rem] border-b border-row-line px-4 py-[0.625rem] text-left text-body hover:bg-sub'
@@ -20,6 +21,8 @@ export default function CmsWorkspace({ route, api, assistantApi }: { route: CmsR
   const [assistantCollapsed, setAssistantCollapsed] = useState(false)
   const [assistantTarget, setAssistantTarget] = useState<CmsAssistantTarget | null>(null)
   const [assistantCandidates, setAssistantCandidates] = useState<CmsAssistantTarget[]>([])
+  /** 메뉴 미리보기 트리는 화면이 가진 전체 목록으로 결과 순서를 계산한다. */
+  const [assistantMenus, setAssistantMenus] = useState<AssistantMenu[]>([])
   useEffect(() => {
     const showSuccess = (event: Event) => setSuccess({ id: `${Date.now()}-${Math.random()}`, message: (event as CustomEvent<string>).detail })
     window.addEventListener(CMS_SUCCESS_EVENT, showSuccess)
@@ -30,9 +33,9 @@ export default function CmsWorkspace({ route, api, assistantApi }: { route: CmsR
     const timer = window.setTimeout(() => setSuccess(null), 2600)
     return () => window.clearTimeout(timer)
   }, [success])
-  useEffect(() => { setSuccess(null); setAssistantTarget(null); setAssistantCandidates([]) }, [route])
+  useEffect(() => { setSuccess(null); setAssistantTarget(null); setAssistantCandidates([]); setAssistantMenus([]) }, [route])
   const workspace = route === 'members' ? <Members api={api} />
-    : route === 'menus' ? <Menus api={api} />
+    : route === 'menus' ? <Menus api={api} onSelect={setAssistantTarget} onCandidates={setAssistantCandidates} onMenus={setAssistantMenus} />
       : route === 'contents' ? <Contents api={api} onSelect={setAssistantTarget} onCandidates={setAssistantCandidates} />
         : route === 'boards' ? <Boards api={api} />
           : <Templates api={api} />
@@ -42,7 +45,7 @@ export default function CmsWorkspace({ route, api, assistantApi }: { route: CmsR
     {assistantRoute
       ? <div className={`grid items-start gap-[0.875rem] ${assistantCollapsed ? 'min-[1240px]:grid-cols-[minmax(0,1fr)_4rem]' : 'min-[1240px]:grid-cols-[minmax(0,1fr)_22rem]'}`}>
         <div className="min-w-0">{workspace}</div>
-        <CmsAiAssistant key={assistantRoute} route={assistantRoute} target={assistantTarget} candidates={assistantCandidates} onTarget={setAssistantTarget} api={assistantApi} collapsed={assistantCollapsed} onToggle={() => setAssistantCollapsed((value) => !value)} />
+        <CmsAiAssistant key={assistantRoute} route={assistantRoute} target={assistantTarget} candidates={assistantCandidates} menus={assistantMenus} onTarget={setAssistantTarget} api={assistantApi} collapsed={assistantCollapsed} onToggle={() => setAssistantCollapsed((value) => !value)} />
       </div>
       : workspace}
   </>
@@ -62,6 +65,23 @@ function Feedback({ failure }: { failure: string | null }) {
 function Failure({ value }: { value: string | null }) { return <Feedback failure={value} /> }
 
 function notifyCmsSuccess(message: string) { window.dispatchEvent(new CustomEvent(CMS_SUCCESS_EVENT, { detail: message })) }
+
+/**
+ * 목록을 처음 읽고, 폼 밖에서 CMS가 바뀌면 다시 읽는다.
+ *
+ * <p>자연어 패널의 승인은 서버가 반영하므로 화면이 알 방법이 없었다. 새로고침해야 보였다.
+ * 최신 load를 ref로 들고 있어 의존성 때문에 구독을 다시 걸지 않는다.
+ */
+function useCmsList(api: CmsApi, load: () => unknown) {
+  const latest = useRef(load)
+  latest.current = load
+  useEffect(() => {
+    void latest.current()
+    const reload = () => { void latest.current() }
+    window.addEventListener(CMS_CHANGED_EVENT, reload)
+    return () => window.removeEventListener(CMS_CHANGED_EVENT, reload)
+  }, [api])
+}
 
 function Members({ api }: { api: CmsApi }) {
   const [items, setItems] = useState<Member[]>([])
@@ -107,7 +127,12 @@ function Members({ api }: { api: CmsApi }) {
   </>
 }
 
-function Menus({ api }: { api: CmsApi }) {
+function Menus({ api, onSelect, onCandidates, onMenus }: {
+  api: CmsApi
+  onSelect: (target: CmsAssistantTarget | null) => void
+  onCandidates: (candidates: CmsAssistantTarget[]) => void
+  onMenus: (menus: AssistantMenu[]) => void
+}) {
   const [items, setItems] = useState<Menu[]>([])
   const [contents, setContents] = useState<Article[]>([])
   const [boards, setBoards] = useState<Board[]>([])
@@ -120,10 +145,22 @@ function Menus({ api }: { api: CmsApi }) {
   const [targetId, setTargetId] = useState('')
   const [failure, setFailure] = useState<string | null>(null)
   const load = () => Promise.all([api.menus(), api.contents(), api.boards()]).then(([m, c, b]) => { setItems(m); setContents(c); setBoards(b) }).catch((e) => setFailure(`불러오지 못했습니다. ${describeFailure(e)}`))
-  useEffect(() => { void load() }, [api])
+  useCmsList(api, load)
+  /** 되묻기 후보와 미리보기 트리는 화면이 이미 가진 목록에서 나온다. 등록은 고정 표식으로 고른다. */
+  useEffect(() => {
+    onCandidates([NEW_MENU_TARGET, ...items.map(menuTarget)])
+    onMenus(items.map((item) => ({
+      id: item.id,
+      name: item.name,
+      path: item.path,
+      parentId: item.parentId,
+      link: targetLabel(item, contents, boards),
+    })))
+  }, [items, contents, boards, onCandidates, onMenus])
   function select(item: Menu | null) {
     setEditing(item); setName(item?.name ?? ''); setPath(item?.path ?? '/'); setParentId(item?.parentId?.toString() ?? '')
     setOrder(item?.displayOrder ?? 0); setTargetType(item?.targetType ?? 'NONE'); setTargetId(item?.targetId?.toString() ?? '')
+    onSelect(item ? menuTarget(item) : null)
   }
   async function submit(event: FormEvent) {
     event.preventDefault(); setFailure(null)
@@ -138,8 +175,28 @@ function Menus({ api }: { api: CmsApi }) {
       {editing && <button type="button" className={secondaryButton} onClick={() => select(null)}><Icon name="plus" />새 메뉴</button>}
     </Heading>
     <Failure value={failure} />
-    <div className="grid gap-[0.875rem] 2xl:grid-cols-[24.375rem_minmax(0,1fr)]">
-      <form className={panel} onSubmit={submit}>
+    {/* 목록에서 고르고 폼으로 넘어가는 순서. 컨텐츠·게시판 화면과 같은 배치다. */}
+    <div className="grid gap-[0.875rem] 2xl:grid-cols-[minmax(0,1fr)_24.375rem]">
+      <section className={panel}>
+        <PanelTitle title="메뉴 목록" sub={`총 ${items.length}건`} />
+        {items.length === 0
+          ? <EmptyState icon="menu" title="등록된 메뉴가 없습니다" description="오른쪽 폼에서 첫 메뉴를 추가해 보세요." />
+          : items.map((item) => <button
+            type="button"
+            key={item.id}
+            className={`${recordRow} ${item.parentId ? 'pl-9' : ''} ${editing?.id === item.id ? 'bg-sub' : ''}`}
+            onClick={() => select(item)}
+          >
+            <span className="grid h-6 w-6 shrink-0 place-items-center rounded bg-run-bg text-[0.65625rem] font-bold text-run-fg">{item.displayOrder}</span>
+            <span className="min-w-0 flex-1">
+              <b className="block text-[0.78125rem] font-semibold text-ink">{item.parentId ? '└ ' : ''}{item.name}</b>
+              <small className="block font-mono text-[0.6875rem] text-muted-3">{item.path}</small>
+            </span>
+            <MenuLink menu={item} contents={contents} boards={boards} />
+            <Icon name="chevron-right" className="text-muted-4" />
+          </button>)}
+      </section>
+      <form className={`${panel} self-start`} onSubmit={submit}>
         <PanelTitle title={editing ? '메뉴 수정' : '메뉴 등록'} sub={editing ? '선택한 메뉴를 수정합니다.' : '새 메뉴를 추가합니다.'} />
         <div className="p-4">
           <label className={fieldLabel}>메뉴명<input className={control} value={name} onChange={(e) => setName(e.target.value)} required /></label>
@@ -154,19 +211,6 @@ function Menus({ api }: { api: CmsApi }) {
           </div>
         </div>
       </form>
-      <section className={panel}>
-        <PanelTitle title="메뉴 목록" sub={`총 ${items.length}건`}><Icon name="search" size={15} className="text-muted-3" /></PanelTitle>
-        {items.length === 0
-          ? <EmptyState icon="menu" title="등록된 메뉴가 없습니다" description="왼쪽 폼에서 첫 메뉴를 추가해 보세요." />
-          : items.map((item) => <button type="button" key={item.id} className={recordRow} onClick={() => select(item)}>
-            <span className="grid h-6 w-6 shrink-0 place-items-center rounded bg-run-bg text-[0.65625rem] font-bold text-run-fg">{item.displayOrder}</span>
-            <span className="min-w-0 flex-1">
-              <b className="block text-[0.78125rem] font-semibold text-ink">{item.parentId ? '└ ' : ''}{item.name}</b>
-              <small className="block font-mono text-[0.6875rem] text-muted-3">{item.path} · {targetLabel(item, contents, boards)}</small>
-            </span>
-            <Icon name="chevron-right" className="text-muted-4" />
-          </button>)}
-      </section>
     </div>
   </>
 }
@@ -189,7 +233,7 @@ function Contents({ api, onSelect, onCandidates }: {
   const [body, setBody] = useState('')
   const [failure, setFailure] = useState<string | null>(null)
   const load = () => api.contents().then(setItems).catch((e) => setFailure(`불러오지 못했습니다. ${describeFailure(e)}`))
-  useEffect(() => { void load() }, [api])
+  useCmsList(api, load)
   useEffect(() => {
     onCandidates(items.map(contentTarget))
   }, [items, onCandidates])
@@ -256,7 +300,7 @@ function Boards({ api }: { api: CmsApi }) {
   const [body, setBody] = useState('')
   const [failure, setFailure] = useState<string | null>(null)
   const loadBoards = () => api.boards().then(setBoards).catch((e) => setFailure(`불러오지 못했습니다. ${describeFailure(e)}`))
-  useEffect(() => { void loadBoards() }, [api])
+  useCmsList(api, loadBoards)
   async function chooseBoard(board: Board) { setSelectedBoard(board); setBoardName(board.name); setDescription(board.description); setSelectedPost(null); setTitle(''); setBody(''); try { setPosts(await api.posts(board.id)) } catch (e) { setFailure(describeFailure(e)) } }
   function newBoard() { setSelectedBoard(null); setBoardName(''); setDescription(''); setPosts([]); setSelectedPost(null); setTitle(''); setBody('') }
   async function saveBoard(event: FormEvent) { event.preventDefault(); setFailure(null); const action = selectedBoard ? '수정' : '등록'; try { const saved = selectedBoard ? await api.updateBoard(selectedBoard.id, { name: boardName, description }) : await api.createBoard({ name: boardName, description }); await loadBoards(); await chooseBoard(saved); notifySiteUpdated(); notifyCmsSuccess(`게시판을 ${action}했습니다.`) } catch (e) { setFailure(`게시판을 저장하지 못했습니다. ${describeFailure(e)}`) } }
@@ -333,7 +377,7 @@ function Templates({ api }: { api: CmsApi }) {
   const [preview, setPreview] = useState<SiteTemplate | null>(null)
   const [failure, setFailure] = useState<string | null>(null)
   const load = () => api.templates().then((next) => { setItems(next); setValue((current) => current ? next.find((item) => item.key === current.key) ?? current : next[0]) }).catch((e) => setFailure(`불러오지 못했습니다. ${describeFailure(e)}`))
-  useEffect(() => { void load() }, [api])
+  useCmsList(api, load)
   async function submit(event: FormEvent) {
     event.preventDefault()
     if (!value) return
@@ -429,6 +473,42 @@ export function TemplatePreview({ value, onClose }: { value: SiteTemplate; onClo
   </div>
 }
 
+/**
+ * 목록 오른쪽의 연결 표시.
+ *
+ * 경로는 주소이고 연결은 상태다. 한 줄에 점으로 이어 붙이면 성격이 다른 셋이 나열로 읽혀
+ * 유형만 작은 표로 띄우고 대상 이름은 한 톤 옅게 붙인다. 문구는 폼의 드롭다운과 같은 말을 쓴다.
+ */
+function MenuLink({ menu, contents, boards }: { menu: Menu; contents: Article[]; boards: Board[] }) {
+  if (menu.targetType === 'NONE') {
+    return <span className="shrink-0 text-[0.6875rem] text-muted-3">연결 없음</span>
+  }
+  const name = menu.targetType === 'CONTENT'
+    ? contents.find((item) => item.id === menu.targetId)?.title
+    : boards.find((item) => item.id === menu.targetId)?.name
+  return <span className="flex shrink-0 items-center gap-[0.375rem] text-[0.6875rem] text-muted">
+    <em className="not-italic rounded border border-[#d6e2e6] bg-[#f7fbfb] px-[0.3125rem] py-[0.0625rem] text-[0.625rem] font-semibold text-[#3f7f86]">
+      {menu.targetType === 'CONTENT' ? '컨텐츠' : '게시판'}
+    </em>
+    {name ?? '미지정'}
+  </span>
+}
+
+/** 미리보기가 변경 전으로 쓸 수 있도록 현재 값을 함께 넘긴다. */
+function menuTarget(item: Menu): CmsAssistantTarget {
+  return {
+    type: 'MENU',
+    id: String(item.id),
+    label: item.name,
+    fields: {
+      name: item.name,
+      path: item.path,
+      parentId: item.parentId === null ? '' : String(item.parentId),
+      targetType: item.targetType,
+      targetId: item.targetId === null ? '' : String(item.targetId),
+    },
+  }
+}
 function targetLabel(menu: Menu, contents: Article[], boards: Board[]) {
   if (menu.targetType === 'CONTENT') return `컨텐츠 · ${contents.find((item) => item.id === menu.targetId)?.title ?? '미지정'}`
   if (menu.targetType === 'BOARD') return `게시판 · ${boards.find((item) => item.id === menu.targetId)?.name ?? '미지정'}`
