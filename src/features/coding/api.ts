@@ -320,6 +320,7 @@ export interface CodingConsoleApiClient {
     decision: ApprovalDecision,
     feedback?: string,
   ): Promise<ApprovalDecisionResult>
+  cancelJob(jobId: string): Promise<JobDetail>
   guardrailSelections(repository: GuardrailRepository): Promise<GuardrailSelectionList>
   saveGuardrailSelections(
     repository: GuardrailRepository,

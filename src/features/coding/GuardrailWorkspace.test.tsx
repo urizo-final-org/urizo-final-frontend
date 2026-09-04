@@ -32,6 +32,7 @@ function guardrailApi(overrides: Partial<CodingConsoleApiClient> = {}): CodingCo
     listJobs: vi.fn().mockResolvedValue({ schemaVersion: '1.0', items: [] }),
     getJob: vi.fn(),
     decideApproval: vi.fn(),
+    cancelJob: vi.fn(),
     guardrailSelections: vi.fn().mockImplementation(
       (repository: GuardrailRepository) => Promise.resolve({ repository, selections: [] })),
     saveGuardrailSelections: vi.fn().mockImplementation(

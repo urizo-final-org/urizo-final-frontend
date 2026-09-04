@@ -39,6 +39,7 @@ function bellApi(
     runnerStatus: vi.fn(),
     notifications: vi.fn().mockResolvedValue({ schemaVersion: '1.0', items }),
     decideApproval: vi.fn(),
+    cancelJob: vi.fn(),
     guardrailSelections: vi.fn(),
     saveGuardrailSelections: vi.fn(),
     startGuardrailScan: vi.fn(),
