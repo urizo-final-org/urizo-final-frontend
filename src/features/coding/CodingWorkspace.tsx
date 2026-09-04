@@ -214,7 +214,14 @@ const failureReasons: Record<string, string> = {
    * AI wandered through, not big ones. Blaming the writer's request teaches the wrong lesson. */
   MODEL_RESPONSE_INVALID:
     'AI가 정해진 횟수 안에 작업을 마치지 못해 중단됐습니다. 요청이 잘못된 것은 아니니 같은 내용으로 다시 시도해 주세요. 반복해서 실패하면 시스템 운영 담당자에게 알려 주세요.',
+  /* Not a failure of the request: the AI looked and the change was already there. Calling
+   * that "실패" sends the writer off to fix a request that was fine. */
+  CODING_DIFF_EMPTY:
+    '요청하신 내용이 이미 되어 있어서 바꿀 것이 없었습니다. AI가 관련 파일을 확인했고 고칠 부분을 찾지 못했습니다.',
 }
+
+/** "할 일이 없었다"는 실패가 아니다. 뒤따르는 작업은 계속 진행한다. */
+const NOTHING_TO_CHANGE = 'CODING_DIFF_EMPTY'
 
 function failureReason(code?: string): string {
   if (code && failureReasons[code]) return failureReasons[code]
@@ -340,7 +347,12 @@ export default function CodingWorkspace({ api, role }: { api: CodingConsoleApiCl
         if (first && !openStatuses.includes(first.status)) {
           writePendingSecond(null)
           if (active) setPendingSecond(null)
-          if (first.status === 'COMPLETED' && !first.refused && !first.handedOver) {
+          // A first leg that changed nothing still cleared the way for the second: the data
+          // the screen needs was already there. Measured on Job b4c9a477, where the server
+          // half ended CODING_DIFF_EMPTY and the screen half was dropped without a word.
+          const firstLegCleared = first.status === 'COMPLETED'
+            || first.failureCode === NOTHING_TO_CHANGE
+          if (firstLegCleared && !first.refused && !first.handedOver) {
             try {
               // The classifier decided the order: data first, screen second. This leg's side
               // is therefore already known, and the server is told rather than asked again.
@@ -489,7 +501,11 @@ export default function CodingWorkspace({ api, role }: { api: CodingConsoleApiCl
           <PanelTitle
             title={lastFailed.handedOver
               ? '이 요청은 사람이 이어받아야 합니다'
-              : lastFailed.refused ? '이 요청은 진행할 수 없습니다' : '직전 요청이 중단됐습니다'}
+              : lastFailed.refused ? '이 요청은 진행할 수 없습니다'
+                // Nothing broke, so the heading does not say something did.
+                : lastFailed.failureCode === NOTHING_TO_CHANGE
+                  ? '이미 되어 있어 바꿀 것이 없었습니다'
+                  : '직전 요청이 중단됐습니다'}
             sub={lastFailed.requestText}
           />
           <div className="px-4 pb-4 pt-[0.375rem]">

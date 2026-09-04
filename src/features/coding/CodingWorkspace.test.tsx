@@ -324,6 +324,57 @@ test('a first half that stopped drops the second half instead of building on it'
   expect(window.localStorage.getItem('axms-coding-split-second')).toBeNull()
 })
 
+/*
+ * Measured on Job b4c9a477: the server half of a split found the data was already there and
+ * ended CODING_DIFF_EMPTY, so the screen half was dropped without a word and the person's
+ * actual request - a column on a screen - never ran. Nothing broke; the way was cleared.
+ */
+test('a first half that found nothing to change still sends the second half', async () => {
+  window.localStorage.setItem('axms-coding-split-second', JSON.stringify(splitPending))
+  const api = consoleApi({
+    listJobs: vi.fn().mockResolvedValue({
+      schemaVersion: '1.0',
+      items: [{
+        jobId: splitPending.firstJobId,
+        repository: 'backend',
+        requestText: splitPending.firstText,
+        status: 'FAILED' as const,
+        createdAt: '2026-09-03T02:00:00Z',
+        finishedAt: '2026-09-03T02:05:00Z',
+        failureCode: 'CODING_DIFF_EMPTY',
+      }],
+    }),
+  })
+  render(<CodingWorkspace role="GENERAL_ADMIN" api={api} />)
+
+  await waitFor(() => expect(api.createJob)
+    .toHaveBeenCalledWith('frontend', splitPending.secondText))
+})
+
+test('a request that was already done does not read as something breaking', async () => {
+  const api = consoleApi({
+    listJobs: vi.fn().mockResolvedValue({
+      schemaVersion: '1.0',
+      items: [{
+        jobId: '11111111-1111-4111-8111-111111111111',
+        repository: 'backend',
+        requestText: '공지사항 목록에 변경일 값을 제공해 주세요',
+        status: 'FAILED' as const,
+        createdAt: '2026-09-03T02:00:00Z',
+        finishedAt: '2026-09-03T02:05:00Z',
+        failureCode: 'CODING_DIFF_EMPTY',
+      }],
+    }),
+  })
+  render(<CodingWorkspace role="GENERAL_ADMIN" api={api} />)
+
+  expect(await screen.findByText('이미 되어 있어 바꿀 것이 없었습니다')).toBeInTheDocument()
+  expect(await screen.findByText(/이미 되어 있어서 바꿀 것이 없었습니다/)).toBeInTheDocument()
+  // The raw code is for the log, not for the person who wrote the request.
+  expect(screen.queryByText(/CODING_DIFF_EMPTY/)).not.toBeInTheDocument()
+  expect(screen.queryByText('직전 요청이 중단됐습니다')).not.toBeInTheDocument()
+})
+
 /**
  * An abandoned Job from a previous day sat in WAITING_APPROVAL and, while the form was hidden
  * behind "nothing is in flight", no new request could be typed at all. The server never refused
