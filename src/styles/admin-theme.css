@@ -163,11 +163,57 @@
   background-image: repeating-linear-gradient(135deg, rgb(75 69 63 / 0.06) 0 4px, transparent 4px 9px);
 }
 .workflow-node-card[data-locked='true'][data-node-selected='true'] { border-color: #70b9e8; }
-.workflow-role-badge[data-role='handler'] { color: #6654a1; background: #eeeafb; }
+.workflow-role-badge[data-role='agent'] { color: #6654a1; background: #eeeafb; }
 .workflow-role-badge[data-role='runner'] { color: #2d6c55; background: #e1f1e8; }
-.workflow-tool-satellite { background: #1d3547; border-color: #628096; color: #e3f0f6; }
-.workflow-tool-dock { background: #eef7fa; border-color: #b7d7e4; color: #315b70; }
+.workflow-role-badge[data-role='action'] { color: #8a561e; background: #fff0da; }
+.workflow-role-badge[data-role='approval'] { color: #765a91; background: #f2ecf8; }
+.workflow-role-badge[data-role='guardrail'] { color: #7a6452; background: #eee9e2; }
+.workflow-role-badge[data-role='check'] { color: #315f72; background: #e4f1f6; }
+.workflow-role-badge[data-role='flow'] { color: #526477; background: #e9eef3; }
+.workflow-tool-layout-button {
+  border: 1px solid var(--btn-line);
+  color: var(--body);
+  background: var(--sub);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--field) 75%, transparent);
+}
+.workflow-tool-layout-button:hover { border-color: var(--primary); background: var(--field); }
+.workflow-tool-layout-button:focus-visible { outline: 2px solid #60a5fa; outline-offset: 2px; }
+.workflow-tool-layout-button[data-active='true'] { border-color: #164f75; color: #fff; background: #164f75; box-shadow: 0 2px 8px rgb(22 79 117 / 0.24); }
+.workflow-tool-satellite {
+  --tool-bg: #18384d;
+  --tool-line: #5da7cf;
+  --tool-fg: #d9f1ff;
+  cursor: grab;
+  border-color: var(--tool-line);
+  color: var(--tool-fg);
+  background: var(--tool-bg);
+  transition: transform 150ms ease, box-shadow 150ms ease, border-color 150ms ease;
+}
+.workflow-tool-satellite:active { cursor: grabbing; }
+.workflow-tool-satellite:hover { transform: translateY(-2px); box-shadow: 0 0 0 3px rgb(125 211 252 / 0.16), 0 10px 24px rgb(7 10 14 / 0.42); }
+.workflow-tool-satellite[data-tool-selected='true'] { z-index: 30; border-width: 2px; border-color: #e0f2fe; box-shadow: 0 0 0 4px rgb(56 189 248 / 0.34), 0 12px 28px rgb(7 10 14 / 0.54); }
+.workflow-tool-satellite__label { color: #d8e7ef; text-shadow: 0 1px 2px #07101a, 0 0 8px #07101a; }
+.workflow-tool-satellite[data-tool-tone='violet'], .workflow-tool-detail-icon[data-tool-tone='violet'] { --tool-bg: #332a52; --tool-line: #9384d8; --tool-fg: #e4deff; }
+.workflow-tool-satellite[data-tool-tone='indigo'], .workflow-tool-detail-icon[data-tool-tone='indigo'] { --tool-bg: #24345f; --tool-line: #728bd5; --tool-fg: #dde6ff; }
+.workflow-tool-satellite[data-tool-tone='orange'], .workflow-tool-detail-icon[data-tool-tone='orange'] { --tool-bg: #4b3326; --tool-line: #d29568; --tool-fg: #ffe6d1; }
+.workflow-tool-satellite[data-tool-tone='green'], .workflow-tool-detail-icon[data-tool-tone='green'] { --tool-bg: #203e34; --tool-line: #66aa8a; --tool-fg: #d9f7e9; }
+.workflow-tool-satellite[data-tool-tone='teal'], .workflow-tool-detail-icon[data-tool-tone='teal'] { --tool-bg: #193e42; --tool-line: #5ca7aa; --tool-fg: #d5f3f3; }
+.workflow-tool-satellite[data-tool-tone='rose'], .workflow-tool-detail-icon[data-tool-tone='rose'] { --tool-bg: #4a2934; --tool-line: #cc738d; --tool-fg: #ffe0e9; }
+.workflow-tool-detail-icon { color: var(--tool-fg, #d9f1ff); background: var(--tool-bg, #18384d); border: 1px solid var(--tool-line, #5da7cf); }
+.workflow-tool-lane { color: var(--body); background: #eef4f7; border-color: #aebfca; box-shadow: 0 -8px 24px rgb(15 23 42 / 0.18); }
+.workflow-tool-lane__item { color: var(--body); background: var(--field); border-color: var(--line-soft); box-shadow: 0 3px 10px rgb(15 23 42 / 0.08); }
+.workflow-tool-lane__item:hover { border-color: #70b9e8; background: #f4faff; }
+.workflow-tool-lane__item:focus-visible { outline: 2px solid #60a5fa; outline-offset: 2px; }
+.workflow-tool-lane__item[data-tool-selected='true'] { border-color: #2f8de4; color: #1f6fab; background: #eaf5ff; box-shadow: 0 0 0 2px rgb(96 165 250 / 0.2), 0 4px 12px rgb(15 23 42 / 0.12); }
 .admin-app[data-admin-theme='dark'] .workflow-node-card[data-locked='true'] { color: #c8c2ba; background-color: #35393d; }
-.admin-app[data-admin-theme='dark'] .workflow-role-badge[data-role='handler'] { color: #d5cbff; background: #3a315c; }
+.admin-app[data-admin-theme='dark'] .workflow-role-badge[data-role='agent'] { color: #d5cbff; background: #3a315c; }
 .admin-app[data-admin-theme='dark'] .workflow-role-badge[data-role='runner'] { color: #bde6d2; background: #214638; }
-.admin-app[data-admin-theme='dark'] .workflow-tool-dock { color: #b9ddea; background: #1b3444; border-color: #46677c; }
+.admin-app[data-admin-theme='dark'] .workflow-role-badge[data-role='action'] { color: #f3c58c; background: #4a3725; }
+.admin-app[data-admin-theme='dark'] .workflow-role-badge[data-role='approval'] { color: #d9c7eb; background: #3e3150; }
+.admin-app[data-admin-theme='dark'] .workflow-role-badge[data-role='guardrail'] { color: #d2c3b5; background: #3d3731; }
+.admin-app[data-admin-theme='dark'] .workflow-role-badge[data-role='check'] { color: #b9ddea; background: #1b3444; }
+.admin-app[data-admin-theme='dark'] .workflow-role-badge[data-role='flow'] { color: #c8d4df; background: #293746; }
+.admin-app[data-admin-theme='dark'] .workflow-tool-lane { color: #d8e7ef; background: #152631; border-color: #46677c; }
+.admin-app[data-admin-theme='dark'] .workflow-tool-lane__item { color: #d8e7ef; background: #1d303c; border-color: #3f5868; }
+.admin-app[data-admin-theme='dark'] .workflow-tool-lane__item:hover { background: #243b49; border-color: #70b9e8; }
+.admin-app[data-admin-theme='dark'] .workflow-tool-lane__item[data-tool-selected='true'] { color: #d9f1ff; background: #1b4560; border-color: #70b9e8; }
