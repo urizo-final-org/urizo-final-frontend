@@ -354,6 +354,32 @@ test('a first half that found nothing to change still sends the second half', as
   expect(await screen.findByText(/이어서 화면 작업을 시작했습니다/)).toBeInTheDocument()
 })
 
+/*
+ * The other empty ending. Job a15a51b1 tried eight patches against a 1,387-character line,
+ * landed none, and the screen said the change was already there - the opposite of the truth.
+ */
+test('an edit the AI could not land is not reported as already done', async () => {
+  const api = consoleApi({
+    listJobs: vi.fn().mockResolvedValue({
+      schemaVersion: '1.0',
+      items: [{
+        jobId: '22222222-2222-4222-8222-222222222222',
+        repository: 'frontend',
+        requestText: '일반 사용자 페이지 새로운 소식 설명 문구를 바꿔줘',
+        status: 'FAILED' as const,
+        createdAt: '2026-09-04T05:08:00Z',
+        finishedAt: '2026-09-04T05:09:00Z',
+        failureCode: 'CODING_PATCH_NOT_APPLIED',
+      }],
+    }),
+  })
+  render(<CodingWorkspace role="GENERAL_ADMIN" api={api} />)
+
+  expect(await screen.findByText(/수정을 반영하지 못했습니다/)).toBeInTheDocument()
+  expect(screen.queryByText(/이미 되어 있어/)).not.toBeInTheDocument()
+  expect(screen.queryByText(/CODING_PATCH_NOT_APPLIED/)).not.toBeInTheDocument()
+})
+
 test('a request that was already done does not read as something breaking', async () => {
   const api = consoleApi({
     listJobs: vi.fn().mockResolvedValue({

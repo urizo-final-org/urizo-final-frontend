@@ -218,6 +218,10 @@ const failureReasons: Record<string, string> = {
    * that "실패" sends the writer off to fix a request that was fine. */
   CODING_DIFF_EMPTY:
     '요청하신 내용이 이미 되어 있어서 바꿀 것이 없었습니다. AI가 관련 파일을 확인했고 고칠 부분을 찾지 못했습니다.',
+  /* The other empty ending, and the opposite news: the AI knew what to change and could not
+   * land it. Saying "이미 되어 있다" here would be a lie the person acts on. */
+  CODING_PATCH_NOT_APPLIED:
+    'AI가 고칠 곳은 찾았지만 수정을 반영하지 못했습니다. 요청이 잘못된 것은 아닙니다. 같은 내용으로 다시 시도해 보시고, 반복해서 실패하면 시스템 운영 담당자에게 알려 주세요.',
 }
 
 /** "할 일이 없었다"는 실패가 아니다. 뒤따르는 작업은 계속 진행한다. */
