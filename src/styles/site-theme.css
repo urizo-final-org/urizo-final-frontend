@@ -1,0 +1,19 @@
+.site-app {
+  min-height: 100vh;
+  color: #263e48;
+  background: #ffffff;
+  font-family: 'Pretendard Variable', Pretendard, -apple-system, 'Helvetica Neue', ui-sans-serif, system-ui, sans-serif;
+  font-size: 0.8125rem;
+  line-height: 1.55;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+.site-app :is(button, input, select, textarea) { font: inherit; }
+.site-app button { cursor: pointer; }
+.site-app button:disabled { cursor: not-allowed; }
+.site-app :is(button, input, select, textarea, a):focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--brand, #2a5f61) 52%, transparent);
+  outline-offset: 2px;
+}

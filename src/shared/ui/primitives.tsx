@@ -5,12 +5,12 @@ import { Icon, type IconName } from './icons'
 export const panel = 'rounded-md border border-line bg-panel shadow-[0_1px_2px_#10203405]'
 export const panelHead = 'flex items-center justify-between gap-3 border-b border-line-soft px-4 py-[0.875rem]'
 export const primaryButton = 'inline-flex h-8 items-center gap-[0.375rem] rounded-[0.3125rem] bg-primary px-3 text-xs font-semibold text-white enabled:hover:bg-[#12314c]'
-export const secondaryButton = 'inline-flex h-8 items-center gap-[0.375rem] rounded-[0.3125rem] border border-btn-line bg-white px-[0.6875rem] text-xs font-semibold text-strong enabled:hover:bg-sub'
-export const smallButton = 'inline-flex h-7 items-center gap-[0.375rem] rounded-[0.3125rem] border border-btn-line bg-white px-[0.625rem] text-[0.71875rem] font-semibold text-strong enabled:hover:bg-sub'
+export const secondaryButton = 'inline-flex h-8 items-center gap-[0.375rem] rounded-[0.3125rem] border border-btn-line bg-field px-[0.6875rem] text-xs font-semibold text-strong enabled:hover:bg-sub'
+export const smallButton = 'inline-flex h-7 items-center gap-[0.375rem] rounded-[0.3125rem] border border-btn-line bg-field px-[0.625rem] text-[0.71875rem] font-semibold text-strong enabled:hover:bg-sub'
 export const dangerButton = 'inline-flex h-8 items-center gap-[0.375rem] rounded-[0.3125rem] border border-[#f0d5d1] bg-fail-bg px-[0.6875rem] text-xs font-semibold text-fail-fg enabled:hover:bg-[#f8e0dc]'
 export const fieldLabel = 'block text-[0.71875rem] font-semibold text-body'
-export const control = 'mt-[0.375rem] block h-8 w-full rounded-[0.3125rem] border border-field-line bg-white px-[0.625rem] text-[0.78125rem] font-normal text-ink outline-0'
-export const textarea = 'mt-[0.375rem] block w-full resize-y rounded-[0.3125rem] border border-field-line bg-white px-[0.625rem] py-[0.5625rem] text-[0.78125rem] font-normal text-ink outline-0'
+export const control = 'mt-[0.375rem] block h-8 w-full rounded-[0.3125rem] border border-field-line bg-field px-[0.625rem] text-[0.78125rem] font-normal text-ink outline-0'
+export const textarea = 'mt-[0.375rem] block w-full resize-y rounded-[0.3125rem] border border-field-line bg-field px-[0.625rem] py-[0.5625rem] text-[0.78125rem] font-normal text-ink outline-0'
 export const tableHead = 'bg-sub px-4 py-2 text-[0.6875rem] font-semibold text-muted-2 border-b border-line-soft'
 export const row = 'items-center border-b border-row-line px-4 py-[0.625rem] text-xs text-body'
 export const mono = 'font-mono'
@@ -108,10 +108,29 @@ export function Pagination({ summary }: { summary: string }) {
 /** Banner used for the canvas's advisory and success callouts. */
 export function Callout({ tone, icon, children }: { tone: 'warn' | 'ok'; icon: IconName; children: ReactNode }) {
   const skin = tone === 'warn'
-    ? 'border-[#efe4cd] bg-[#fdfaf3] text-[#8a6a2f]'
-    : 'border-[#dceae2] bg-[#f5faf7] text-[#37725a]'
+    ? 'border-wait-dot/45 bg-wait-bg text-wait-fg'
+    : 'border-ok-dot/45 bg-ok-bg text-ok-fg'
   return <div className={`flex items-start gap-[0.5625rem] rounded-[0.3125rem] border p-[0.6875rem] text-[0.71875rem] leading-[1.6] ${skin}`}>
     <Icon name={icon} size={15} className="mt-[0.0625rem]" />
     <span>{children}</span>
+  </div>
+}
+
+export type NoticeTone = 'info' | 'success' | 'warning' | 'danger'
+
+export function NoticePanel({ tone = 'info', icon = 'circle-help', title, children, className = '', role }: {
+  tone?: NoticeTone
+  icon?: IconName
+  title: string
+  children: ReactNode
+  className?: string
+  role?: 'status' | 'alert'
+}) {
+  return <div className={`admin-notice ${className}`} data-tone={tone} role={role}>
+    <span className="admin-notice__icon"><Icon name={icon} size={16} /></span>
+    <span>
+      <strong className="admin-notice__title">{title}</strong>
+      <span className="admin-notice__body block">{children}</span>
+    </span>
   </div>
 }

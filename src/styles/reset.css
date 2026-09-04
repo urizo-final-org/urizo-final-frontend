@@ -1,0 +1,17 @@
+/* Shared structure only. Product colors and component defaults belong to a scoped entrypoint. */
+* { box-sizing: border-box; }
+
+html,
+body,
+#root { min-width: 20rem; min-height: 100%; }
+
+body { margin: 0; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

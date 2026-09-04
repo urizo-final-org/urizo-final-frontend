@@ -13,12 +13,15 @@ beforeEach(() => {
 })
 
 test('the public URL renders a complete user-facing home page without login', async () => {
+  window.localStorage.setItem('axms-admin-theme', 'dark')
   vi.stubGlobal('fetch', publicFetch())
   render(<AppShell />)
   expect(await screen.findByRole('heading', { name: 'Technology for a Better Tomorrow' })).toBeInTheDocument()
   expect(screen.getByRole('link', { name: 'CMS 관리자' })).toHaveAttribute('href', '/admin')
   expect(screen.getAllByRole('link', { name: '소개' }).length).toBeGreaterThan(0)
   expect(screen.getByRole('contentinfo')).toHaveTextContent('AX Bio Studio')
+  expect(document.querySelector('.site-app')).toBeInTheDocument()
+  expect(document.querySelector('.admin-app')).not.toBeInTheDocument()
 })
 
 test.each(['MINIMAL', 'BOLD', 'CLASSIC'])('the public home renders the %s template layout', async (layout) => {
@@ -159,6 +162,13 @@ test('an administrator reaches all five CMS sections', async () => {
   }
   expect(screen.getByRole('link', { name: /사용자 사이트 열기/ })).toHaveAttribute('href', '/')
   expect(screen.queryByRole('complementary', { name: /자연어 도우미/ })).not.toBeInTheDocument()
+  const adminRoot = document.querySelector('.admin-app')
+  expect(adminRoot).toHaveAttribute('data-admin-theme', 'light')
+  expect(document.querySelector('.site-app')).not.toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: '다크 테마 사용' }))
+  expect(adminRoot).toHaveAttribute('data-admin-theme', 'dark')
+  expect(window.localStorage.getItem('axms-admin-theme')).toBe('dark')
+  expect(screen.getByRole('button', { name: '라이트 테마 사용' })).toHaveAttribute('aria-pressed', 'true')
 })
 
 test('the sidebar consolidates AI model assignment under Agent settings', async () => {

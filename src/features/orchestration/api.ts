@@ -6,6 +6,8 @@ export type ProfileStatus = 'DRAFT' | 'ACTIVE' | 'INACTIVE'
 export type ModelProvider = 'OPENAI' | 'ANTHROPIC' | 'GOOGLE_GENAI'
 export type ProviderCredentialState = 'STORED' | 'VERIFIED' | 'BILLING_BLOCKED' | 'INVALID_CREDENTIAL' | 'PROVIDER_UNAVAILABLE'
 export type ProfileNodeType = 'start' | 'agent' | 'tool' | 'approval' | 'check' | 'guardrail' | 'end'
+export type ToolBindingMode = 'MODEL_OPTIONAL' | 'MODEL_REQUIRED' | 'SYSTEM_REQUIRED'
+export type ProfileToolBindings = Record<string, Record<string, ToolBindingMode>>
 
 export interface ProviderCredentialStatus {
   provider: ModelProvider
@@ -61,6 +63,35 @@ export interface ProfileSnapshotConfig {
 export interface ProfileModelBinding {
   primary: string
   fallback: string[]
+  selections?: Record<string, ProfileModelSelection>
+}
+
+export interface ProfileModelSelection {
+  provider: ModelProvider
+  model: string
+  inference: {
+    reasoningIntensity: string
+    reasoningBudgetTokens?: number
+  }
+  [key: string]: unknown
+}
+
+export interface ModelCatalogModel {
+  selectionId: string
+  provider: ModelProvider
+  model: string
+  capabilities: string[]
+  inference: {
+    default: { reasoningIntensity: string; reasoningBudgetTokens: number | null }
+    reasoningIntensity: string[]
+    reasoningBudgetTokens: { min: number; max: number; multipleOf: number } | null
+  }
+}
+
+export interface ModelCatalog {
+  schemaVersion: '1.0'
+  profileKey: ProfileKey
+  models: ModelCatalogModel[]
 }
 
 export interface ProfileAuthoringSnapshot {
@@ -68,6 +99,8 @@ export interface ProfileAuthoringSnapshot {
   edges: ProfileSnapshotEdge[]
   config: ProfileSnapshotConfig
   modelBindings: Record<string, ProfileModelBinding>
+  /** Omitted only by legacy API snapshots; all newly authored payloads include it. */
+  toolBindings?: ProfileToolBindings
   toolPolicy: { allowedTools: string[] }
   guardrailProfileKey: string
 }
@@ -100,6 +133,12 @@ export interface ProfileEditorLayout {
   nodes: ProfileEditorLayoutNode[]
 }
 
+export interface ProfileDefaultTemplate {
+  profileKey: ProfileKey
+  updatedAt: string
+  snapshot: ProfileAuthoringSnapshot
+}
+
 export interface ProfileVersionApiClient {
   list(profileKey?: ProfileKey): Promise<ProfileVersion[]>
   create(profileKey: ProfileKey, snapshot: ProfileAuthoringSnapshot): Promise<ProfileVersion>
@@ -111,7 +150,16 @@ export interface ProfileEditorLayoutApiClient {
   saveEditorLayout(profileVersionId: string, nodes: ProfileEditorLayoutNode[]): Promise<ProfileEditorLayout>
 }
 
-export interface AgentSettingsApiClient extends ProfileVersionApiClient, ProfileEditorLayoutApiClient {
+export interface ProfileDefaultTemplateApiClient {
+  getDefaultTemplate(profileKey: ProfileKey): Promise<ProfileDefaultTemplate>
+  saveDefaultTemplate(profileKey: ProfileKey, snapshot: ProfileAuthoringSnapshot): Promise<ProfileDefaultTemplate>
+}
+
+export interface ModelCatalogApiClient {
+  listModelCatalog(profileKey: ProfileKey): Promise<ModelCatalog>
+}
+
+export interface AgentSettingsApiClient extends ProfileVersionApiClient, ProfileEditorLayoutApiClient, ProfileDefaultTemplateApiClient, ModelCatalogApiClient {
   listProviderCredentials(): Promise<ProviderCredentialOverview>
   storeProviderCredential(provider: ModelProvider, credential: string, csrfToken: string): Promise<ProviderCredentialStatus>
   testProviderCredential(provider: ModelProvider, csrfToken: string): Promise<ProviderConnectionTestResult>
@@ -176,6 +224,19 @@ export class ProfileVersionApi implements AgentSettingsApiClient {
   saveEditorLayout = (profileVersionId: string, nodes: ProfileEditorLayoutNode[]) => this.request<ProfileEditorLayout>(
     `/api/admin/ai/profile-versions/${encodeURIComponent(profileVersionId)}/editor-layout`,
     { method: 'PUT', body: JSON.stringify({ nodes }) },
+  )
+
+  getDefaultTemplate = (profileKey: ProfileKey) => this.request<ProfileDefaultTemplate>(
+    `/api/admin/ai/profile-templates/${encodeURIComponent(profileKey)}`,
+  )
+
+  saveDefaultTemplate = (profileKey: ProfileKey, snapshot: ProfileAuthoringSnapshot) => this.request<ProfileDefaultTemplate>(
+    `/api/admin/ai/profile-templates/${encodeURIComponent(profileKey)}`,
+    { method: 'PUT', body: JSON.stringify({ snapshot }) },
+  )
+
+  listModelCatalog = (profileKey: ProfileKey) => this.request<ModelCatalog>(
+    `/api/admin/ai/model-catalog?profileKey=${encodeURIComponent(profileKey)}`,
   )
 
   listProviderCredentials = () => this.request<ProviderCredentialOverview>(
