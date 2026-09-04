@@ -12,7 +12,7 @@ export type IconName =
   | 'plus' | 'activity' | 'repeat' | 'network' | 'timer' | 'user-round-check'
   | 'search-check' | 'git-pull-request' | 'ellipsis' | 'sliders-horizontal'
   | 'play' | 'building-2' | 'plug' | 'layers' | 'scroll-text'
-  | 'check' | 'check-check' | 'triangle-alert' | 'inbox' | 'download' | 'loader-circle'
+  | 'check' | 'check-check' | 'triangle-alert' | 'inbox' | 'download' | 'loader-circle' | 'lock'
 
 const paths: Record<IconName, ReactNode> = {
   'sparkles': <><path d="M9.9 2.6 12 8l5.4 2.1L12 12.2 9.9 17.6 7.8 12.2 2.4 10.1 7.8 8Z" /><path d="M18 4v4" /><path d="M20 6h-4" /></>,
@@ -59,6 +59,7 @@ const paths: Record<IconName, ReactNode> = {
   'inbox': <><path d="M22 12h-6l-2 3h-4l-2-3H2" /><path d="M5.5 5.1 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.5-6.9A2 2 0 0 0 16.8 4H7.2a2 2 0 0 0-1.7 1.1Z" /></>,
   'download': <><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><path d="M7 10l5 5 5-5" /><path d="M12 15V3" /></>,
   'loader-circle': <path d="M21 12a9 9 0 1 1-6.2-8.6" />,
+  'lock': <><rect width="18" height="11" x="3" y="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></>,
 }
 
 /**

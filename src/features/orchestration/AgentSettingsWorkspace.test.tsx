@@ -17,7 +17,10 @@ const gemini36Binding = () => ({
   },
 })
 
-afterEach(() => vi.unstubAllGlobals())
+afterEach(() => {
+  vi.unstubAllGlobals()
+  window.localStorage.removeItem('axms-workflow-tool-layout')
+})
 
 // jsdom does not implement native dialog methods or the browser's modal focus trap.
 beforeAll(() => {
@@ -608,16 +611,18 @@ test('the Workflow Canvas loads the latest stored Snapshot with exact edges, bin
   expect(screen.getByRole('status')).toHaveTextContent('analyze Node를 선택했습니다.')
   expect(screen.getByRole('status')).toHaveClass('cms-success-toast')
   expect(screen.getByLabelText('선택 Node ID')).toHaveClass('cursor-not-allowed')
-  expect(screen.getByLabelText('선택 Node ID')).toHaveStyle({ backgroundColor: '#f1f3f5', color: '#3f4a56' })
+  expect(screen.getByLabelText('선택 Node ID')).toHaveClass('bg-sub', 'text-body')
   expect(screen.getByLabelText('선택 Handler')).toHaveClass('cursor-not-allowed')
-  expect(screen.getByLabelText('선택 Handler')).toHaveStyle({ backgroundColor: '#f1f3f5', color: '#3f4a56' })
+  expect(screen.getByLabelText('선택 Handler')).toHaveClass('bg-sub', 'text-body')
   expect(screen.getByLabelText('선택 Handler')).toHaveValue('coding.analyze')
   expect(screen.getByLabelText('선택 주 모델')).toHaveValue('google-genai-gemini-3-6-flash')
   expect(screen.getByRole('option', { name: 'GOOGLE_GENAI · gemini-3.6-flash (google-genai-gemini-3-6-flash)' })).toBeInTheDocument()
   expect(screen.getByText(/등록·검증된 Credential Provider의 Model만 선택/)).toBeInTheDocument()
   expect(screen.queryByRole('button', { name: /Profile 허용 도구/ })).not.toBeInTheDocument()
-  expect(screen.getByText('guardrail.passed → analyze')).toBeInTheDocument()
-  expect(screen.getByText('analyze.feasible → scope_approval')).toBeInTheDocument()
+  expect(screen.getByText('잠금 가드레일 · 통과')).toBeInTheDocument()
+  expect(screen.getAllByText('→ 요청 분석').length).toBeGreaterThan(0)
+  expect(screen.getByText('요청 분석 · 진행 가능')).toBeInTheDocument()
+  expect(screen.getByText('→ SCOPE 승인')).toBeInTheDocument()
   expect(screen.getByRole('button', { name: 'analyze.feasible에서 scope_approval 연결 해제' })).toBeInTheDocument()
 
   const edgeToggle = screen.getByRole('button', { name: /Edge/ })
@@ -746,21 +751,27 @@ test('the Workflow Profile selector loads the saved NATURAL_CMS production contr
   expect(screen.getByLabelText('Tool binding validate_cms_command')).toBeChecked()
 })
 
-test('MCP tools render in a separate Capability Lane with golden business-node associations', async () => {
+test('MCP tools switch between owner satellites and compact owner docks without changing bindings', async () => {
   render(<AgentSettingsWorkspace api={profileApi()} />)
   await screen.findByLabelText('code Node')
 
   const canvas = screen.getByLabelText('Node 편집 Canvas')
-  expect(screen.getByLabelText('MCP Capability Lane')).toHaveTextContent('Snapshot Edge에 저장되지 않습니다')
   expect(canvas.querySelectorAll('[data-business-node="true"]')).toHaveLength(starterSnapshots.LLM_OPS.nodes.length)
-  expect(canvas.querySelectorAll('[data-capability-tool-node]')).toHaveLength(7)
+  expect(canvas.querySelectorAll('[data-capability-tool-node][data-capability-layout="orbit"]')).toHaveLength(17)
   expect(canvas.querySelectorAll('[data-capability-edge="true"]')).toHaveLength(17)
   expect(canvas.querySelector('[data-capability-edge][data-capability-from="preview"][data-capability-tool="run_check"]')).toHaveAttribute('data-capability-requirement', 'SYSTEM_REQUIRED')
   expect(canvas.querySelector('[data-capability-edge][data-capability-from="code"][data-capability-tool="apply_patch"]')).toHaveAttribute('data-capability-requirement', 'MODEL_OPTIONAL')
-  expect(screen.getByLabelText('code Node')).toHaveTextContent('Business Node')
-  expect(screen.getByLabelText('code Node')).toHaveTextContent('Handler · coding.code')
-  expect(screen.getByLabelText('MCP Tool read_diff')).toHaveAttribute('data-capability-requirement', 'SYSTEM_REQUIRED')
-  expect(screen.getByLabelText('MCP Tool apply_patch')).toHaveAttribute('data-capability-requirement', 'MODEL_OPTIONAL')
+  expect(screen.getByLabelText('code Node')).toHaveTextContent('Handler')
+  expect(screen.getByLabelText('preview Node')).toHaveTextContent('Runner')
+  expect(canvas.querySelector('[data-capability-tool-node="read_diff"][data-capability-owner="preview"]')).toHaveAttribute('data-capability-requirement', 'SYSTEM_REQUIRED')
+  expect(canvas.querySelector('[data-capability-tool-node="apply_patch"][data-capability-owner="code"]')).toHaveAttribute('data-capability-requirement', 'MODEL_OPTIONAL')
+
+  fireEvent.click(screen.getByRole('button', { name: '도킹형' }))
+  expect(window.localStorage.getItem('axms-workflow-tool-layout')).toBe('dock')
+  expect(canvas.querySelectorAll('[data-capability-edge="true"]')).toHaveLength(0)
+  expect(canvas.querySelectorAll('[data-capability-tool-node][data-capability-layout="dock"]')).toHaveLength(17)
+  expect(canvas.querySelector('[data-capability-dock-owner="code"]')).not.toBeNull()
+  expect(screen.getByRole('button', { name: '도킹형' })).toHaveAttribute('aria-pressed', 'true')
 
   expect(screen.queryByRole('button', { name: /Profile 허용 도구/ })).not.toBeInTheDocument()
   fireEvent.click(screen.getByLabelText('code Node'))
@@ -789,8 +800,7 @@ test('NATURAL_CMS locks its confirmed MCP tools without turning business handler
   expect(canvas.querySelectorAll('[data-capability-edge="true"]')).toHaveLength(6)
   expect(canvas.querySelector('[data-capability-edge][data-capability-from="preview"][data-capability-tool="validate_cms_command"]')).toHaveAttribute('data-capability-requirement', 'MODEL_REQUIRED')
   expect(canvas.querySelector('[data-capability-edge][data-capability-from="apply"][data-capability-tool="apply_cms_preview"]')).toHaveAttribute('data-capability-requirement', 'SYSTEM_REQUIRED')
-  expect(screen.getByLabelText('apply Node')).toHaveTextContent('Business Node')
-  expect(screen.getByLabelText('apply Node')).toHaveTextContent('Handler · cms.apply')
+  expect(screen.getByLabelText('apply Node')).toHaveTextContent('Runner')
   expect(screen.queryByLabelText('MCP Tool cms.apply')).not.toBeInTheDocument()
 
   expect(screen.queryByRole('button', { name: /Profile 허용 도구/ })).not.toBeInTheDocument()
@@ -1093,7 +1103,9 @@ test('the Canvas exposes only registered handlers and result-port edges while lo
 
   fireEvent.click(screen.getByLabelText('guardrail Node'))
   expect(screen.getByRole('button', { name: 'Node 삭제' })).toBeDisabled()
-  expect(screen.getByText('Guardrail은 삭제하거나 비활성화할 수 없습니다.')).toBeInTheDocument()
+  expect(screen.getByText('이 Node는 수정하거나 삭제할 수 없습니다.')).toBeInTheDocument()
+  expect(screen.getByLabelText('guardrail Node')).toHaveAttribute('data-locked', 'true')
+  expect(within(screen.getByLabelText('guardrail Node')).getByLabelText('수정·삭제 잠금')).toBeInTheDocument()
   expect(screen.queryByText(/custom handler/i)).not.toBeInTheDocument()
 
   fireEvent.click(screen.getByRole('button', { name: 'guardrail.passed에서 analyze 연결 해제' }))
