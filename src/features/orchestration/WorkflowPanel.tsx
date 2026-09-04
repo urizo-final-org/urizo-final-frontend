@@ -101,6 +101,33 @@ const toolDetails: Record<string, { label: string; description: string }> = {
   apply_cms_preview: { label: 'CMS 반영 준비', description: 'Spring CmsService가 DB에 반영할 수 있는 검증된 명령을 반환합니다.' },
 }
 
+const defaultModel = {
+  selectionId: 'google-genai-gemini-3-6-flash',
+  selection: {
+    provider: 'GOOGLE_GENAI' as const,
+    model: 'gemini-3.6-flash',
+    inference: { reasoningIntensity: 'MEDIUM' },
+  },
+}
+
+const legacyModelSelections: Record<string, ProfileModelSelection> = {
+  'llm-ops-analyze': { provider: 'OPENAI', model: 'gpt-5.4-nano', inference: { reasoningIntensity: 'NONE' } },
+  'llm-ops-code': { provider: 'OPENAI', model: 'gpt-5.4-nano', inference: { reasoningIntensity: 'NONE' } },
+  'llm-ops-review': { provider: 'GOOGLE_GENAI', model: 'gemini-3.5-flash-lite', inference: { reasoningIntensity: 'MINIMAL' } },
+  'llm-ops-claude': { provider: 'ANTHROPIC', model: 'claude-haiku-4-5-20251001', inference: { reasoningIntensity: 'NONE' } },
+  'natural-cms-analyze': { provider: 'OPENAI', model: 'gpt-5.4-nano', inference: { reasoningIntensity: 'NONE' } },
+  'natural-cms-command': { provider: 'GOOGLE_GENAI', model: 'gemini-3.5-flash-lite', inference: { reasoningIntensity: 'MINIMAL' } },
+  'natural-cms-claude': { provider: 'ANTHROPIC', model: 'claude-haiku-4-5-20251001', inference: { reasoningIntensity: 'NONE' } },
+}
+
+function defaultModelBinding(): ProfileModelBinding {
+  return {
+    primary: defaultModel.selectionId,
+    fallback: [],
+    selections: { [defaultModel.selectionId]: { ...defaultModel.selection, inference: { ...defaultModel.selection.inference } } },
+  }
+}
+
 // Legacy snapshots have only profile-wide allowedTools. These Backend fixture defaults
 // hydrate the new per-node contract without changing nodes, edges, or model bindings.
 const defaultToolBindingsByHandler: Record<ProfileKey, Record<string, Record<string, ToolBindingMode>>> = {
@@ -441,9 +468,9 @@ export const starterSnapshots: Record<ProfileKey, ProfileAuthoringSnapshot> = {
       ],
     },
     modelBindings: {
-      analyze: { primary: 'llm-ops-analyze', fallback: [] },
-      code: { primary: 'llm-ops-code', fallback: [] },
-      review: { primary: 'llm-ops-review', fallback: [] },
+      analyze: defaultModelBinding(),
+      code: defaultModelBinding(),
+      review: defaultModelBinding(),
     },
     toolBindings: {
       code: { ...defaultToolBindingsByHandler.LLM_OPS['coding.code'] },
@@ -483,8 +510,8 @@ export const starterSnapshots: Record<ProfileKey, ProfileAuthoringSnapshot> = {
       loopLimits: [{ from: 'discard', resultPort: 'retry', to: 'analyze', maxIterations: 2 }],
     },
     modelBindings: {
-      analyze: { primary: 'natural-cms-analyze', fallback: [] },
-      preview: { primary: 'natural-cms-command', fallback: [] },
+      analyze: defaultModelBinding(),
+      preview: defaultModelBinding(),
     },
     toolBindings: {
       preview: { ...defaultToolBindingsByHandler.NATURAL_CMS['cms.preview'] },
@@ -518,7 +545,6 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient & 
   const [notice, setNotice] = useState<string | null>(null)
   const [confirmationAction, setConfirmationAction] = useState<'load' | 'save' | 'restore' | 'draft' | null>(null)
   const [handlerPaletteOpen, setHandlerPaletteOpen] = useState(false)
-  const [toolPolicyOpen, setToolPolicyOpen] = useState(false)
   const [edgeListOpen, setEdgeListOpen] = useState(true)
   const [canvasZoom, setCanvasZoom] = useState(1)
   const versionRequest = useRef(0)
@@ -538,15 +564,11 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient & 
   const saveViolations = profileToolPolicyViolations(profileKey, nodes, edges, toolBindings, allowedTools)
   const canvas = canvasDimensions(nodes, edges, capabilityLaneTools.length)
   const catalogModels = modelCatalog?.models ?? []
+  const normalizedModelBindings = normalizeModelBindings(nodes, modelBindings, catalogModels)
   const supported = nodes.every((node) => matchesDefinition(profileKey, node))
     && allowedTools.every((tool) => toolCatalog[profileKey].includes(tool))
     && capabilityLaneBindings.every((binding) => toolCatalog[profileKey].includes(binding.tool))
-    && nodes.filter((node) => node.type === 'agent').every((node) => {
-      const binding = modelBindings[node.id]
-      return binding !== undefined
-        && typeof binding.primary === 'string'
-        && binding.fallback.every((item) => typeof item === 'string')
-    })
+    && normalizedModelBindings !== null
 
   useEffect(() => {
     void loadVersions(profileKey)
@@ -663,10 +685,8 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient & 
 
   function authoringSnapshot(): ProfileAuthoringSnapshot {
     const routes = new Set(edges.map((edge) => `${edge.from}:${edge.resultPort}:${edge.to}`))
-    const agentBindings = Object.fromEntries(nodes.filter((node) => node.type === 'agent').map((node) => {
-      const binding = modelBindings[node.id] ?? { primary: defaultBinding(profileKey, node.handlerKey), fallback: [] }
-      return [node.id, cloneBinding(binding)]
-    }))
+    const agentBindings = normalizeModelBindings(nodes, modelBindings, catalogModels)
+    if (agentBindings === null) throw new Error('Agent model selection metadata is incomplete.')
     return {
       nodes: nodes.map(({ x: _x, y: _y, ...node }) => ({
         ...node,
@@ -803,7 +823,8 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient & 
     }
     setNodes((current) => [...current, node])
     if (node.type === 'agent') {
-      const initialModel = catalogModels[0]
+      const initialModel = catalogModels.find((model) => model.selectionId === defaultModel.selectionId)
+        ?? catalogModels[0]
       setModelBindings((current) => ({
         ...current,
         [node.id]: withSelection({ primary: initialModel.selectionId, fallback: [] }, initialModel),
@@ -1344,10 +1365,10 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient & 
                 const model = catalogModels.find((item) => item.selectionId === event.target.value)
                 if (model) updatePrimaryBinding(model)
               }}>
-                {!catalogModels.some((model) => model.selectionId === selectedBinding.primary) && <option value={selectedBinding.primary}>{modelBindingLabel(selectedBinding.primary, catalogModels)}</option>}
-                {catalogModels.map((model) => <option key={model.selectionId} value={model.selectionId} disabled={selectedBinding.fallback.some((fallback) => sameTarget(targetFor(selectedBinding, fallback), model))}>{modelBindingLabel(model.selectionId, catalogModels)}</option>)}
+                {!catalogModels.some((model) => model.selectionId === selectedBinding.primary) && <option value={selectedBinding.primary}>{modelBindingLabel(selectedBinding.primary, catalogModels, selectedBinding.selections)}</option>}
+                {catalogModels.map((model) => <option key={model.selectionId} value={model.selectionId} disabled={selectedBinding.fallback.some((fallback) => sameTarget(targetFor(selectedBinding, fallback), model))}>{modelBindingLabel(model.selectionId, catalogModels, selectedBinding.selections)}</option>)}
               </select>
-              <small className="mt-1 block text-[0.625rem] font-normal leading-4 text-muted-2">등록·검증된 Credential Provider의 Model만 선택할 수 있습니다. 저장된 Legacy binding은 자동으로 바꾸지 않습니다.</small>
+              <small className="mt-1 block text-[0.625rem] font-normal leading-4 text-muted-2">등록·검증된 Credential Provider의 Model만 선택할 수 있습니다. 기존 binding은 실제 Provider·Model을 확인할 수 있을 때 표시하며 새 저장값은 catalog selectionId로 정규화합니다.</small>
             </label>
             {catalogModels.find((model) => model.selectionId === selectedBinding.primary) && <InferenceSettingsControls
               selectionId={selectedBinding.primary}
@@ -1359,7 +1380,7 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient & 
               <legend className="text-[0.71875rem] font-semibold text-body">대체 모델 (Fallback Model)</legend>
               <p className="mt-1 text-[0.625rem] leading-4 text-muted-2">주 모델의 미설정·사용량 제한·시간 초과·Provider 장애 등 일시적 오류에 사용할 후보입니다.</p>
               <div className="mt-2 space-y-2">
-                {selectedBinding.fallback.filter((binding) => !catalogModels.some((model) => model.selectionId === binding)).map((binding) => <p key={binding} className="text-[0.65625rem] text-muted-2">{modelBindingLabel(binding, catalogModels)}</p>)}
+                {selectedBinding.fallback.filter((binding) => !catalogModels.some((model) => model.selectionId === binding)).map((binding) => <p key={binding} className="text-[0.65625rem] text-muted-2">{modelBindingLabel(binding, catalogModels, selectedBinding.selections)}</p>)}
                 {catalogModels.filter((model) => model.selectionId !== selectedBinding.primary).map((model) => {
                   const checked = selectedBinding.fallback.includes(model.selectionId)
                   const duplicate = !checked && (sameTarget(targetFor(selectedBinding, selectedBinding.primary), model)
@@ -1367,7 +1388,7 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient & 
                   return <div key={model.selectionId}>
                     <label className="flex items-start gap-2 text-[0.65625rem] text-body">
                       <input type="checkbox" aria-label={`Fallback ${model.selectionId}`} checked={checked} disabled={saving || duplicate} onChange={() => toggleFallback(model)} />
-                      <span className="break-all">{modelBindingLabel(model.selectionId, catalogModels)}</span>
+                      <span className="break-all">{modelBindingLabel(model.selectionId, catalogModels, selectedBinding.selections)}</span>
                     </label>
                     {checked && <InferenceSettingsControls selectionId={model.selectionId} model={model} selection={selectedBinding.selections?.[model.selectionId]} onChange={(patch) => updateInference(model.selectionId, model, patch)} />}
                   </div>
@@ -1496,35 +1517,6 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient & 
           </div>
         </section>
 
-        <section className="mt-4 border-t border-row-line pt-4">
-          <button
-            type="button"
-            className="flex w-full items-center justify-between gap-3 text-left"
-            aria-expanded={toolPolicyOpen}
-            aria-controls="profile-tool-policy-panel"
-            onClick={() => setToolPolicyOpen((current) => !current)}
-          >
-            <span className="text-[0.71875rem] font-semibold text-body">Profile 허용 도구 (Tool)</span>
-            <span className="text-[0.6875rem] font-semibold text-muted">{toolPolicyOpen ? '접기' : '펼치기'}</span>
-          </button>
-          <fieldset id="profile-tool-policy-panel" className={toolPolicyOpen ? 'mt-2 space-y-2' : 'hidden'} disabled={loading || saving || !supported}>
-            <legend className="sr-only">Profile 허용 도구 (Tool)</legend>
-            <p className="text-[0.625rem] leading-4 text-muted-2">Capability Lane의 실제 MCP Tool을 표시합니다. SYSTEM_REQUIRED·MODEL_REQUIRED는 잠금 상태이며, MODEL_OPTIONAL만 선택을 바꿀 수 있습니다.</p>
-            {toolCatalog[profileKey].map((tool) => {
-              const detail = toolDetails[tool]
-              const requirement = requirementFor(toolBindings, tool)
-              const locked = capabilityLockedTools.has(tool)
-              const checked = allowedTools.includes(tool)
-              return <label key={tool} className="flex items-start gap-2 text-[0.65625rem] text-body">
-                <input className="mt-0.5" type="checkbox" aria-label={`허용 Tool ${tool}`} checked={checked} disabled />
-                <span className="min-w-0">
-                  <span className="block font-semibold">{detail?.label ?? tool} <code className="font-normal">({tool})</code> <span className="rounded bg-sub px-1 py-0.5 text-[0.5625rem] text-muted-2">{requirement}{locked ? ' · locked' : ''}</span></span>
-                  <small className="mt-0.5 block text-[0.625rem] leading-4 text-muted-2">{detail?.description ?? '이 Profile에서 사용할 수 있는 등록 Tool입니다.'}</small>
-                </span>
-              </label>
-            })}
-          </fieldset>
-        </section>
       </aside>
     </div>
     </section>
@@ -1639,6 +1631,51 @@ function cloneBinding(binding: ProfileModelBinding): ProfileModelBinding {
   }
 }
 
+function selectionIdFor(selection: Pick<ProfileModelSelection, 'provider' | 'model'>) {
+  return `${selection.provider.toLowerCase().replaceAll('_', '-')}-${selection.model.replaceAll('.', '-')}`
+}
+
+function normalizeModelBindings(
+  nodes: ProfileSnapshotNode[],
+  bindings: Record<string, ProfileModelBinding>,
+  catalog: ModelCatalogModel[],
+): Record<string, ProfileModelBinding> | null {
+  const normalized: Record<string, ProfileModelBinding> = {}
+  for (const node of nodes.filter((candidate) => candidate.type === 'agent')) {
+    const binding = bindings[node.id] ?? defaultModelBinding()
+    if (typeof binding.primary !== 'string' || !Array.isArray(binding.fallback)) return null
+    const used = [binding.primary, ...binding.fallback]
+    const ids: string[] = []
+    const selections: Record<string, ProfileModelSelection> = {}
+    const targets = new Set<string>()
+    for (const bindingKey of used) {
+      if (typeof bindingKey !== 'string') return null
+      const catalogModel = catalog.find((model) => model.selectionId === bindingKey)
+        ?? catalog.find((model) => sameTarget(model, binding.selections?.[bindingKey] ?? legacyModelSelections[bindingKey]))
+      const current = binding.selections?.[bindingKey] ?? legacyModelSelections[bindingKey]
+      const selection = catalogModel === undefined
+        ? current
+        : { provider: catalogModel.provider, model: catalogModel.model, inference: inferenceFor(catalogModel, current?.inference) }
+      if (selection === undefined || typeof selection.inference?.reasoningIntensity !== 'string') return null
+      const normalizedId = catalogModel?.selectionId ?? selectionIdFor(selection)
+      const target = `${selection.provider}:${selection.model}`
+      if (ids.includes(normalizedId) || targets.has(target)) return null
+      ids.push(normalizedId)
+      targets.add(target)
+      selections[normalizedId] = {
+        provider: selection.provider,
+        model: selection.model,
+        inference: {
+          reasoningIntensity: selection.inference.reasoningIntensity,
+          ...(selection.inference.reasoningBudgetTokens === undefined ? {} : { reasoningBudgetTokens: selection.inference.reasoningBudgetTokens }),
+        },
+      }
+    }
+    normalized[node.id] = { primary: ids[0], fallback: ids.slice(1), selections }
+  }
+  return normalized
+}
+
 function inferenceFor(model: ModelCatalogModel, current?: ProfileModelSelection['inference']): ProfileModelSelection['inference'] {
   if (current !== undefined) return { ...current }
   return {
@@ -1667,9 +1704,10 @@ function sameTarget(left: { provider: string; model: string } | undefined, right
   return left !== undefined && right !== undefined && left.provider === right.provider && left.model === right.model
 }
 
-function modelBindingLabel(bindingKey: string, catalog: ModelCatalogModel[]) {
+function modelBindingLabel(bindingKey: string, catalog: ModelCatalogModel[], selections?: Record<string, ProfileModelSelection>) {
   const detail = catalog.find((model) => model.selectionId === bindingKey)
-  return detail ? `${detail.provider} · ${detail.model} (${bindingKey})` : `${bindingKey} (저장된 Legacy binding)`
+  const selection = detail ?? selections?.[bindingKey] ?? legacyModelSelections[bindingKey]
+  return selection ? `${selection.provider} · ${selection.model} (${bindingKey})` : bindingKey
 }
 
 function InferenceSettingsControls({ selectionId, model, selection, onChange }: {
@@ -1680,19 +1718,35 @@ function InferenceSettingsControls({ selectionId, model, selection, onChange }: 
 }) {
   const settings = inferenceFor(model, selection?.inference)
   const budget = model.inference.reasoningBudgetTokens
+  const providerDefaultOnly = model.inference.reasoningIntensity.length === 1
+    && model.inference.reasoningIntensity[0] === 'NONE' && budget === null
   return <div className="mt-2 rounded border border-row-line bg-page p-2 text-[0.65625rem] text-body">
-    <label className="block font-semibold">추론 강도
-      <select aria-label={`추론 강도 ${selectionId}`} className={`${control} mt-1`} value={settings.reasoningIntensity} onChange={(event) => onChange({ reasoningIntensity: event.target.value })}>
-        {model.inference.reasoningIntensity.map((intensity) => <option key={intensity} value={intensity}>{intensity}</option>)}
+    {providerDefaultOnly ? <p><b>추론 설정</b><span className="mt-1 block text-muted-2">Provider 기본 · 별도 옵션을 덮어쓰지 않습니다.</span></p> : <label className="block font-semibold">추론 강도
+      <select aria-label={`추론 강도 ${selectionId}`} className={`${control} mt-1`} value={settings.reasoningIntensity} onChange={(event) => {
+        const reasoningIntensity = event.target.value
+        onChange({
+          reasoningIntensity,
+          ...(budget === null || reasoningIntensity === 'NONE'
+            ? { reasoningBudgetTokens: undefined }
+            : { reasoningBudgetTokens: settings.reasoningBudgetTokens ?? budget.min }),
+        })
+      }}>
+        {model.inference.reasoningIntensity.map((intensity) => <option key={intensity} value={intensity}>{inferenceLabel(model, intensity)}</option>)}
       </select>
-    </label>
-    {budget !== null && <label className="mt-2 block font-semibold">추론 예산 (tokens)
+    </label>}
+    {budget !== null && settings.reasoningIntensity !== 'NONE' && <label className="mt-2 block font-semibold">추론 예산 (tokens)
       <input aria-label={`추론 예산 ${selectionId}`} className={`${control} mt-1`} type="number" min={budget.min} max={budget.max} step={budget.multipleOf} value={settings.reasoningBudgetTokens ?? ''} onChange={(event) => {
         const value = Number.parseInt(event.target.value, 10)
         if (Number.isInteger(value)) onChange({ reasoningBudgetTokens: value })
       }} />
     </label>}
   </div>
+}
+
+function inferenceLabel(model: ModelCatalogModel, intensity: string) {
+  if (intensity === 'NONE') return 'Provider 기본'
+  if (model.provider === 'ANTHROPIC' && model.inference.reasoningBudgetTokens !== null) return '수동 추론'
+  return intensity
 }
 
 function definitionFor(profileKey: ProfileKey, handlerKey: string) {
@@ -1707,12 +1761,22 @@ function matchesDefinition(profileKey: ProfileKey, node: ProfileSnapshotNode) {
     && definition.resultPorts.every((port) => node.resultPorts.includes(port))
 }
 
-function defaultBinding(profileKey: ProfileKey, handlerKey: string) {
-  if (handlerKey === 'coding.code') return 'llm-ops-code'
-  if (handlerKey === 'coding.review') return 'llm-ops-review'
-  if (handlerKey === 'cms.preview') return 'natural-cms-command'
-  return profileKey === 'LLM_OPS' ? 'llm-ops-analyze' : 'natural-cms-analyze'
+export function profileToolRequirement(profileKey: ProfileKey, tool: string): ToolBindingMode {
+  const bindings = Object.values(defaultToolBindingsByHandler[profileKey])
+    .map((tools) => tools[tool])
+    .filter((mode): mode is ToolBindingMode => mode !== undefined)
+  if (bindings.includes('SYSTEM_REQUIRED')) return 'SYSTEM_REQUIRED'
+  if (bindings.includes('MODEL_REQUIRED')) return 'MODEL_REQUIRED'
+  return 'MODEL_OPTIONAL'
 }
+
+export function toolRequirementLabel(mode: ToolBindingMode) {
+  if (mode === 'SYSTEM_REQUIRED') return '필수 · 시스템 실행'
+  if (mode === 'MODEL_REQUIRED') return '필수 · 모델 호출'
+  return '선택 · 모델 호출'
+}
+
+export { hydrateToolBindings, normalizeModelBindings, toolCatalog, toolDetails }
 
 function uniqueNodeId(base: string, nodes: WorkflowNode[]) {
   if (!nodes.some((node) => node.id === base)) return base
