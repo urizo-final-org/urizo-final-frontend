@@ -22,11 +22,14 @@ function Placeholder({ label, className = '', children }: { label: string; class
 /**
  * 정적 표본임을 밝히는 안내. 실재하는 이름을 쓰기 시작하면 오히려 실데이터로 보이므로 화면에
  * 구별 단서를 남긴다.
+ *
+ * <p>`label` 기본값은 검색·큐레이션이 쓰던 문구 그대로다. 챗봇처럼 미배선 대상이 다른 곳만
+ * 문구를 넘기고, 부연이 필요 없으면 children을 생략한다.
  */
-function SampleNotice({ children, className = '' }: { children: ReactNode; className?: string }) {
+function SampleNotice({ label = '샘플 데이터 · 검색 API 미배선', children, className = '' }: { label?: string; children?: ReactNode; className?: string }) {
   return <p className={`m-0 flex flex-wrap items-baseline gap-x-2 gap-y-1 rounded-lg border border-[#efd8aa] bg-wait-bg px-3 py-2 text-[0.78125rem] leading-[1.6] text-wait-fg ${className}`} role="note">
-    <b className="font-bold">샘플 데이터 · 검색 API 미배선</b>
-    <span className="min-w-0 flex-1">{children}</span>
+    <b className="font-bold">{label}</b>
+    {children && <span className="min-w-0 flex-1">{children}</span>}
   </p>
 }
 
@@ -310,6 +313,11 @@ export function ChatWidget() {
       <span className="text-sm font-bold">관광 도우미</span>
       <span className="text-[0.6875rem] font-medium text-sb-muted">AI 여행 안내</span>
       <button type="button" onClick={() => setOpen(false)} aria-label="관광 도우미 닫기" className="ml-auto bg-transparent px-1 py-0.5 text-lg leading-none text-sb-muted hover:text-white">×</button>
+    </div>
+
+    {/* 스크롤 영역 밖에 둬서 대화를 내려도 고지가 사라지지 않는다. */}
+    <div className="flex-none bg-sub px-[0.875rem] pt-[0.875rem]">
+      <SampleNotice label="샘플 대화입니다 · 챗봇 API 미배선" />
     </div>
 
     {/* I6이 공개 챗봇 API 대화로 교체할 정적 예시. 그때까지 입력은 잠가 실동작을 약속하지 않는다. */}

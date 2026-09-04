@@ -108,6 +108,19 @@ test('the tour helper opens as a floating panel and closes back to the launcher'
   expect(screen.getByRole('button', { name: '관광 도우미 열기' })).toBeInTheDocument()
 })
 
+test('the tour helper marks its conversation as a sample', async () => {
+  vi.stubGlobal('fetch', publicFetch())
+  render(<AppShell />)
+  await screen.findByRole('button', { name: '관광 도우미 열기' })
+  // 닫힌 상태에서는 고지가 없다. 홈 큐레이션 고지와 문구가 달라 서로 잡히지 않는다.
+  expect(screen.queryByText('샘플 대화입니다 · 챗봇 API 미배선')).not.toBeInTheDocument()
+
+  fireEvent.click(screen.getByRole('button', { name: '관광 도우미 열기' }))
+  const panel = within(screen.getByRole('complementary', { name: '관광 도우미' }))
+  // 정적 대화가 실동작으로 보이지 않도록 패널 안에 구별 단서를 둔다.
+  expect(panel.getByRole('note')).toHaveTextContent('샘플 대화입니다 · 챗봇 API 미배선')
+})
+
 // 루트 사이트는 관광 포털(I8)이므로 Template Layout은 publicPath가 지정된 부속 사이트에서 확인한다.
 test.each(['MINIMAL', 'BOLD', 'CLASSIC'])('a configured sub-site home renders the %s template layout', async (layout) => {
   window.history.pushState({}, '', '/campaign')
