@@ -5,6 +5,18 @@ import AgentSettingsWorkspace from './AgentSettingsWorkspace'
 import { resolveEdgePorts, starterSnapshots } from './WorkflowPanel'
 import type { AgentSettingsApiClient, ModelCatalog, ProfileVersion, ProviderConnectionTestResult } from './api'
 
+const gemini36Binding = () => ({
+  primary: 'google-genai-gemini-3-6-flash',
+  fallback: [],
+  selections: {
+    'google-genai-gemini-3-6-flash': {
+      provider: 'GOOGLE_GENAI' as const,
+      model: 'gemini-3.6-flash',
+      inference: { reasoningIntensity: 'MEDIUM' },
+    },
+  },
+})
+
 afterEach(() => vi.unstubAllGlobals())
 
 // jsdom does not implement native dialog methods or the browser's modal focus trap.
@@ -67,9 +79,9 @@ test('the LLM_OPS starter uses the v4 PR-to-deploy tail without a CMS approval n
     ],
   })
   expect(snapshot.modelBindings).toEqual({
-    analyze: { primary: 'llm-ops-analyze', fallback: [] },
-    code: { primary: 'llm-ops-code', fallback: [] },
-    review: { primary: 'llm-ops-review', fallback: [] },
+    analyze: gemini36Binding(),
+    code: gemini36Binding(),
+    review: gemini36Binding(),
   })
   expect(snapshot.toolPolicy).toEqual({
     allowedTools: ['read_file', 'search_code', 'read_diff', 'apply_patch', 'run_check', 'check_package_allowlist', 'scan_changed_files'],
@@ -107,19 +119,40 @@ const activeVersion: ProfileVersion = {
 
 const modelCatalog = (profileKey: 'LLM_OPS' | 'NATURAL_CMS'): ModelCatalog => ({
   schemaVersion: '1.0', profileKey,
-  models: (profileKey === 'LLM_OPS'
-    ? [
-        ['llm-ops-analyze', 'OPENAI', 'gpt-5.4-nano'], ['llm-ops-code', 'OPENAI', 'gpt-5.4-nano'],
-        ['llm-ops-review', 'GOOGLE_GENAI', 'gemini-3.5-flash-lite'], ['llm-ops-claude', 'ANTHROPIC', 'claude-haiku-4-5-20251001'],
-      ]
-    : [
-        ['natural-cms-analyze', 'OPENAI', 'gpt-5.4-nano'], ['natural-cms-command', 'GOOGLE_GENAI', 'gemini-3.5-flash-lite'],
-        ['natural-cms-claude', 'ANTHROPIC', 'claude-haiku-4-5-20251001'],
-      ]).map(([selectionId, provider, model]) => ({
-    selectionId, provider: provider as 'OPENAI' | 'ANTHROPIC' | 'GOOGLE_GENAI', model,
-    capabilities: ['CHAT'],
-    inference: { default: { reasoningIntensity: 'NONE', reasoningBudgetTokens: null }, reasoningIntensity: ['NONE'], reasoningBudgetTokens: null },
-  })),
+  models: [
+    {
+      selectionId: 'google-genai-gemini-3-7-flash', provider: 'GOOGLE_GENAI', model: 'gemini-3.7-flash', capabilities: ['CHAT'],
+      inference: { default: { reasoningIntensity: 'MEDIUM', reasoningBudgetTokens: null }, reasoningIntensity: ['LOW', 'MEDIUM', 'HIGH'], reasoningBudgetTokens: null },
+    },
+    {
+      selectionId: 'google-genai-gemini-3-6-flash', provider: 'GOOGLE_GENAI', model: 'gemini-3.6-flash', capabilities: ['CHAT'],
+      inference: { default: { reasoningIntensity: 'MEDIUM', reasoningBudgetTokens: null }, reasoningIntensity: ['MINIMAL', 'LOW', 'MEDIUM', 'HIGH'], reasoningBudgetTokens: null },
+    },
+    {
+      selectionId: 'google-genai-gemini-3-5-flash-lite', provider: 'GOOGLE_GENAI', model: 'gemini-3.5-flash-lite', capabilities: ['CHAT'],
+      inference: { default: { reasoningIntensity: 'MINIMAL', reasoningBudgetTokens: null }, reasoningIntensity: ['MINIMAL', 'LOW', 'MEDIUM', 'HIGH'], reasoningBudgetTokens: null },
+    },
+    {
+      selectionId: 'openai-gpt-5-4-nano', provider: 'OPENAI', model: 'gpt-5.4-nano', capabilities: ['CHAT'],
+      inference: { default: { reasoningIntensity: 'NONE', reasoningBudgetTokens: null }, reasoningIntensity: ['NONE'], reasoningBudgetTokens: null },
+    },
+    {
+      selectionId: 'openai-gpt-5-6-terra', provider: 'OPENAI', model: 'gpt-5.6-terra', capabilities: ['CHAT'],
+      inference: { default: { reasoningIntensity: 'NONE', reasoningBudgetTokens: null }, reasoningIntensity: ['NONE', 'MINIMAL', 'LOW', 'MEDIUM', 'HIGH'], reasoningBudgetTokens: null },
+    },
+    {
+      selectionId: 'anthropic-claude-opus-5', provider: 'ANTHROPIC', model: 'claude-opus-5', capabilities: ['CHAT'],
+      inference: { default: { reasoningIntensity: 'NONE', reasoningBudgetTokens: null }, reasoningIntensity: ['NONE'], reasoningBudgetTokens: null },
+    },
+    {
+      selectionId: 'anthropic-claude-sonnet-5', provider: 'ANTHROPIC', model: 'claude-sonnet-5', capabilities: ['CHAT'],
+      inference: { default: { reasoningIntensity: 'NONE', reasoningBudgetTokens: null }, reasoningIntensity: ['NONE'], reasoningBudgetTokens: null },
+    },
+    {
+      selectionId: 'anthropic-claude-haiku-4-5-20251001', provider: 'ANTHROPIC', model: 'claude-haiku-4-5-20251001', capabilities: ['CHAT'],
+      inference: { default: { reasoningIntensity: 'NONE', reasoningBudgetTokens: null }, reasoningIntensity: ['NONE', 'HIGH'], reasoningBudgetTokens: { min: 1024, max: 8192, multipleOf: 1024 } },
+    },
+  ],
 })
 
 function profileApi(overrides: Partial<AgentSettingsApiClient> = {}): AgentSettingsApiClient {
@@ -168,7 +201,7 @@ test('the five Agent settings tabs expose runtime status without fake controls o
   expect(tabs).toHaveLength(5)
   expect(tabs[2]).toHaveTextContent('자연어 기능 Profile')
   expect(tabs[2]).not.toHaveTextContent('임시')
-  expect(tabs[3]).toHaveTextContent('임시')
+  expect(tabs[3]).not.toHaveTextContent('임시')
   expect(tabs[4]).toHaveTextContent('임시')
   expect(tabs.map((tab) => tab.tabIndex)).toEqual([-1, 0, -1, -1, -1])
   fireEvent.keyDown(tabs[1], { key: 'ArrowRight' })
@@ -176,9 +209,10 @@ test('the five Agent settings tabs expose runtime status without fake controls o
   expect(tabs[2]).toHaveAttribute('aria-selected', 'true')
 
   fireEvent.click(screen.getByRole('tab', { name: /Tool·실행 정책/ }))
-  expect(screen.getByText('Job·Queue·Snapshot')).toBeInTheDocument()
-  expect(screen.getByText('Approval·Check·Guardrail')).toBeInTheDocument()
-  expect(screen.getByText('MCP Tool 실행')).toBeInTheDocument()
+  expect(screen.getByRole('region', { name: '전체 MCP Tool 카탈로그' })).toHaveTextContent('13개 · 고정 등록 · 읽기 전용')
+  expect(screen.getByLabelText('LLM_OPS read_file 정책')).toHaveTextContent('허용 상한')
+  expect(screen.getByLabelText('NATURAL_CMS read_file 정책')).toHaveTextContent('범위 밖')
+  expect(screen.getByLabelText('NATURAL_CMS apply_cms_preview 정책')).toHaveTextContent('필수 · 시스템 실행')
   expect(screen.queryByText('OmniRoute')).not.toBeInTheDocument()
   expect(screen.queryByRole('checkbox')).not.toBeInTheDocument()
 
@@ -385,7 +419,16 @@ test('natural feature profiles query, create, and explicitly activate immutable 
 
   fireEvent.click(screen.getByRole('button', { name: '불변 버전 저장' }))
   await screen.findByText('v3 DRAFT를 저장했습니다.')
-  expect(api.create).toHaveBeenCalledWith('LLM_OPS', expect.objectContaining({ guardrailProfileKey: 'central.default' }))
+  expect(api.create).toHaveBeenCalledWith('LLM_OPS', expect.objectContaining({
+    guardrailProfileKey: 'central.default',
+    modelBindings: expect.objectContaining({
+      analyze: gemini36Binding(), code: gemini36Binding(), review: gemini36Binding(),
+    }),
+    toolBindings: expect.objectContaining({
+      code: expect.objectContaining({ apply_patch: 'MODEL_OPTIONAL' }),
+      preview: expect.objectContaining({ run_check: 'SYSTEM_REQUIRED' }),
+    }),
+  }))
 
   fireEvent.click(screen.getByRole('button', { name: '선택 DRAFT 활성화' }))
   await screen.findByText('v3을 ACTIVE로 전환했습니다.')
@@ -569,10 +612,10 @@ test('the Workflow Canvas loads the latest stored Snapshot with exact edges, bin
   expect(screen.getByLabelText('선택 Handler')).toHaveClass('cursor-not-allowed')
   expect(screen.getByLabelText('선택 Handler')).toHaveStyle({ backgroundColor: '#f1f3f5', color: '#3f4a56' })
   expect(screen.getByLabelText('선택 Handler')).toHaveValue('coding.analyze')
-  expect(screen.getByLabelText('선택 주 모델')).toHaveValue('llm-ops-analyze')
-  expect(screen.getByRole('option', { name: 'OPENAI · gpt-5.4-nano (llm-ops-analyze)' })).toBeInTheDocument()
+  expect(screen.getByLabelText('선택 주 모델')).toHaveValue('google-genai-gemini-3-6-flash')
+  expect(screen.getByRole('option', { name: 'GOOGLE_GENAI · gemini-3.6-flash (google-genai-gemini-3-6-flash)' })).toBeInTheDocument()
   expect(screen.getByText(/등록·검증된 Credential Provider의 Model만 선택/)).toBeInTheDocument()
-  expect(screen.getByLabelText('허용 Tool apply_patch')).toBeChecked()
+  expect(screen.queryByRole('button', { name: /Profile 허용 도구/ })).not.toBeInTheDocument()
   expect(screen.getByText('guardrail.passed → analyze')).toBeInTheDocument()
   expect(screen.getByText('analyze.feasible → scope_approval')).toBeInTheDocument()
   expect(screen.getByRole('button', { name: 'analyze.feasible에서 scope_approval 연결 해제' })).toBeInTheDocument()
@@ -622,19 +665,14 @@ test('the Workflow Canvas uses a left control dock and one scrollable coordinate
   const canvas = screen.getByLabelText('Node 편집 Canvas')
   const dock = screen.getByLabelText('Workflow control dock')
   const paletteToggle = screen.getByRole('button', { name: /노드 추가/ })
-  const toolPolicyToggle = screen.getByRole('button', { name: /Profile 허용 도구/ })
 
   expect(canvas.className).toContain('bg-[#20262e]')
   expect(dock).toHaveTextContent('Node 설정')
   expect(paletteToggle).toHaveAttribute('aria-expanded', 'false')
-  expect(toolPolicyToggle).toHaveAttribute('aria-expanded', 'false')
+  expect(screen.queryByRole('button', { name: /Profile 허용 도구/ })).not.toBeInTheDocument()
   expect(paletteToggle).toHaveAttribute('aria-controls', 'handler-palette-panel')
   fireEvent.click(paletteToggle)
   expect(paletteToggle).toHaveAttribute('aria-expanded', 'true')
-  fireEvent.click(toolPolicyToggle)
-  expect(toolPolicyToggle).toHaveAttribute('aria-expanded', 'true')
-  expect(within(document.getElementById('profile-tool-policy-panel')!).getByText(/파일 읽기/)).toHaveTextContent('파일 읽기 (read_file)')
-  expect(screen.getByText('승인된 Coding 작업공간의 UTF-8 텍스트 파일 하나를 읽습니다.')).toBeInTheDocument()
   expect(canvas.querySelectorAll('[data-node-port="left"]')).toHaveLength(starterSnapshots.LLM_OPS.nodes.length)
   expect(canvas.querySelectorAll('[data-node-port="right"]')).toHaveLength(starterSnapshots.LLM_OPS.nodes.length)
   expect(canvas.querySelector('[data-edge-route="direct"]')).not.toBeNull()
@@ -704,8 +742,8 @@ test('the Workflow Profile selector loads the saved NATURAL_CMS production contr
   expect(api.list).toHaveBeenCalledWith('NATURAL_CMS')
   expect(screen.getByLabelText('저장된 Workflow Version')).toHaveValue('natural-version-4')
   fireEvent.click(screen.getByLabelText('preview Node'))
-  expect(screen.getByLabelText('선택 주 모델')).toHaveValue('natural-cms-command')
-  expect(screen.getByLabelText('허용 Tool apply_cms_preview')).toBeChecked()
+  expect(screen.getByLabelText('선택 주 모델')).toHaveValue('google-genai-gemini-3-6-flash')
+  expect(screen.getByLabelText('Tool binding validate_cms_command')).toBeChecked()
 })
 
 test('MCP tools render in a separate Capability Lane with golden business-node associations', async () => {
@@ -724,9 +762,7 @@ test('MCP tools render in a separate Capability Lane with golden business-node a
   expect(screen.getByLabelText('MCP Tool read_diff')).toHaveAttribute('data-capability-requirement', 'SYSTEM_REQUIRED')
   expect(screen.getByLabelText('MCP Tool apply_patch')).toHaveAttribute('data-capability-requirement', 'MODEL_OPTIONAL')
 
-  fireEvent.click(screen.getByRole('button', { name: /Profile 허용 도구/ }))
-  expect(screen.getByLabelText('허용 Tool run_check')).toBeChecked()
-  expect(screen.getByLabelText('허용 Tool run_check')).toBeDisabled()
+  expect(screen.queryByRole('button', { name: /Profile 허용 도구/ })).not.toBeInTheDocument()
   fireEvent.click(screen.getByLabelText('code Node'))
   expect(screen.getByLabelText('Tool binding apply_patch')).not.toBeDisabled()
 })
@@ -757,14 +793,16 @@ test('NATURAL_CMS locks its confirmed MCP tools without turning business handler
   expect(screen.getByLabelText('apply Node')).toHaveTextContent('Handler · cms.apply')
   expect(screen.queryByLabelText('MCP Tool cms.apply')).not.toBeInTheDocument()
 
-  fireEvent.click(screen.getByRole('button', { name: /Profile 허용 도구/ }))
-  expect(screen.getByLabelText('허용 Tool validate_cms_command')).toBeChecked()
-  expect(screen.getByLabelText('허용 Tool validate_cms_command')).toBeDisabled()
-  expect(screen.getByLabelText('허용 Tool apply_cms_preview')).toBeChecked()
-  expect(screen.getByLabelText('허용 Tool apply_cms_preview')).toBeDisabled()
+  expect(screen.queryByRole('button', { name: /Profile 허용 도구/ })).not.toBeInTheDocument()
+  fireEvent.click(screen.getByLabelText('preview Node'))
+  expect(screen.getByLabelText('Tool binding validate_cms_command')).toBeChecked()
+  expect(screen.getByLabelText('Tool binding validate_cms_command')).toBeDisabled()
+  fireEvent.click(screen.getByLabelText('apply Node'))
+  expect(screen.getByLabelText('Tool binding apply_cms_preview')).toBeChecked()
+  expect(screen.getByLabelText('Tool binding apply_cms_preview')).toBeDisabled()
 })
 
-test('legacy snapshots hydrate fixture toolBindings without rewriting model inference selections', async () => {
+test('legacy snapshots hydrate fixture toolBindings and normalize used model selections', async () => {
   const legacyVersion: ProfileVersion = {
     ...activeVersion,
     snapshot: {
@@ -796,7 +834,7 @@ test('legacy snapshots hydrate fixture toolBindings without rewriting model infe
     code: expect.objectContaining({ run_check: 'MODEL_OPTIONAL' }),
     preview: expect.objectContaining({ run_check: 'SYSTEM_REQUIRED' }),
   })
-  expect(saved.modelBindings.code.selections).toEqual(legacyVersion.snapshot.modelBindings.code.selections)
+  expect(saved.modelBindings.code).toEqual(gemini36Binding())
 })
 
 test('save confirmation lists frontend binding violations and blocks the create request', async () => {
@@ -909,8 +947,9 @@ test('Workflow edits save a new immutable DRAFT, activate it explicitly, and res
   await screen.findByLabelText('analyze Node')
 
   fireEvent.click(screen.getByLabelText('analyze Node'))
-  fireEvent.change(screen.getByLabelText('선택 주 모델'), { target: { value: 'llm-ops-claude' } })
-  fireEvent.click(screen.getByLabelText('Fallback llm-ops-review'))
+  await screen.findByRole('option', { name: 'ANTHROPIC · claude-haiku-4-5-20251001 (anthropic-claude-haiku-4-5-20251001)' })
+  fireEvent.change(screen.getByLabelText('선택 주 모델'), { target: { value: 'anthropic-claude-haiku-4-5-20251001' } })
+  fireEvent.click(screen.getByLabelText('Fallback google-genai-gemini-3-5-flash-lite'))
   fireEvent.click(screen.getByLabelText('code Node'))
   fireEvent.click(screen.getByLabelText('Tool binding apply_patch'))
   const maxNodesInput = screen.getByLabelText('최대 Node 수 (maxNodes)')
@@ -933,7 +972,7 @@ test('Workflow edits save a new immutable DRAFT, activate it explicitly, and res
     nodes: expect.arrayContaining([expect.objectContaining({ id: 'analyze', handlerKey: 'coding.analyze' })]),
     edges: expect.arrayContaining([expect.objectContaining({ from: 'analyze', resultPort: 'feasible', to: 'scope_approval' })]),
     config: expect.objectContaining({ maxNodes: 20 }),
-    modelBindings: expect.objectContaining({ analyze: expect.objectContaining({ primary: 'llm-ops-claude', fallback: ['llm-ops-review'] }) }),
+    modelBindings: expect.objectContaining({ analyze: expect.objectContaining({ primary: 'anthropic-claude-haiku-4-5-20251001', fallback: ['google-genai-gemini-3-5-flash-lite'] }) }),
     toolBindings: expect.objectContaining({ code: expect.not.objectContaining({ apply_patch: expect.anything() }) }),
     toolPolicy: expect.objectContaining({ allowedTools: expect.arrayContaining(['apply_patch']) }),
   }))
@@ -942,8 +981,7 @@ test('Workflow edits save a new immutable DRAFT, activate it explicitly, and res
   expect(savedNodes).toHaveLength(starterSnapshots.LLM_OPS.nodes.length)
   expect(savedNodes.every((node) => Object.keys(node).sort().join(',') === 'id,x,y')).toBe(true)
   fireEvent.click(screen.getByLabelText('analyze Node'))
-  expect(screen.getByLabelText('선택 주 모델')).toHaveValue('llm-ops-claude')
-  expect(screen.getByLabelText('허용 Tool apply_patch')).toBeChecked()
+  expect(screen.getByLabelText('선택 주 모델')).toHaveValue('anthropic-claude-haiku-4-5-20251001')
 
   fireEvent.click(screen.getByRole('button', { name: '선택 DRAFT 활성화' }))
   await screen.findByText('v3을 ACTIVE로 전환하고 다시 조회했습니다.')
@@ -955,9 +993,8 @@ test('Workflow edits save a new immutable DRAFT, activate it explicitly, and res
   await screen.findByLabelText('analyze Node')
   expect(screen.getByLabelText('저장된 Workflow Version')).toHaveValue('version-3')
   fireEvent.click(screen.getByLabelText('analyze Node'))
-  expect(screen.getByLabelText('선택 주 모델')).toHaveValue('llm-ops-claude')
-  expect(screen.getByLabelText('Fallback llm-ops-review')).toBeChecked()
-  expect(screen.getByLabelText('허용 Tool apply_patch')).toBeChecked()
+  expect(screen.getByLabelText('선택 주 모델')).toHaveValue('anthropic-claude-haiku-4-5-20251001')
+  expect(screen.getByLabelText('Fallback google-genai-gemini-3-5-flash-lite')).toBeChecked()
 })
 
 test('catalog selections save only edited inference metadata and reject duplicate Provider Model fallbacks', async () => {
@@ -985,7 +1022,10 @@ test('catalog selections save only edited inference metadata and reject duplicat
         ...activeVersion.snapshot.modelBindings,
         code: {
           ...activeVersion.snapshot.modelBindings.code,
-          selections: { retained: { provider: 'OPENAI', model: 'gpt-5.4-nano', inference: { reasoningIntensity: 'NONE' }, label: 'preserve-me' } },
+          selections: {
+            ...activeVersion.snapshot.modelBindings.code.selections,
+            retained: { provider: 'OPENAI', model: 'gpt-5.4-nano', inference: { reasoningIntensity: 'NONE' }, label: 'strip-me' },
+          },
         },
       },
     },
@@ -1015,7 +1055,19 @@ test('catalog selections save only edited inference metadata and reject duplicat
       'openai-gpt-5-4-nano': { provider: 'OPENAI', model: 'gpt-5.4-nano', inference: { reasoningIntensity: 'NONE' } },
     },
   })
-  expect(saved.modelBindings.code.selections).toEqual(version.snapshot.modelBindings.code.selections)
+  expect(saved.modelBindings.code).toEqual(gemini36Binding())
+})
+
+test('provider-default Anthropic models do not expose a fake manual thinking control', async () => {
+  render(<AgentSettingsWorkspace api={profileApi()} />)
+  await screen.findByLabelText('analyze Node')
+  fireEvent.click(screen.getByLabelText('analyze Node'))
+  await screen.findByRole('option', { name: 'ANTHROPIC · claude-opus-5 (anthropic-claude-opus-5)' })
+  fireEvent.change(screen.getByLabelText('선택 주 모델'), { target: { value: 'anthropic-claude-opus-5' } })
+
+  expect(screen.getByText('Provider 기본 · 별도 옵션을 덮어쓰지 않습니다.')).toBeInTheDocument()
+  expect(screen.queryByLabelText('추론 강도 anthropic-claude-opus-5')).not.toBeInTheDocument()
+  expect(screen.queryByLabelText('추론 예산 anthropic-claude-opus-5')).not.toBeInTheDocument()
 })
 
 test('a DRAFT remains visible when its separate Editor Layout save fails', async () => {

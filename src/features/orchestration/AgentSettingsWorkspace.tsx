@@ -8,7 +8,10 @@ import type {
   AgentSettingsApiClient, ModelProvider, ProfileAuthoringSnapshot, ProfileKey, ProfileVersion,
   ProfileVersionApiClient, ProviderCredentialState, ProviderCredentialStatus,
 } from './api'
-import WorkflowPanel, { starterSnapshots } from './WorkflowPanel'
+import WorkflowPanel, {
+  hydrateToolBindings, normalizeModelBindings, profileToolRequirement, starterSnapshots,
+  toolCatalog, toolDetails, toolRequirementLabel,
+} from './WorkflowPanel'
 
 type TabId = 'provider' | 'workflow' | 'profile' | 'policy' | 'usage'
 
@@ -18,7 +21,7 @@ const tabs: { id: TabId; label: string; temporary?: true }[] = [
   { id: 'provider', label: 'Provider·Model' },
   { id: 'workflow', label: 'Agent·Workflow' },
   { id: 'profile', label: '자연어 기능 Profile' },
-  { id: 'policy', label: 'Tool·실행 정책', temporary: true },
+  { id: 'policy', label: 'Tool·실행 정책' },
   { id: 'usage', label: '사용량·평가', temporary: true },
 ]
 
@@ -81,7 +84,7 @@ export default function AgentSettingsWorkspace({ api }: { api: AgentSettingsApiC
     </PageHead>
     <div className="mb-4 flex flex-wrap items-center gap-2 rounded-md border border-[#d9e6ef] bg-[#f4f9fc] px-3 py-2 text-[0.71875rem] text-run-fg">
       <Badge tone="run">실제 API 연결</Badge>
-      <span>Provider Key와 Agent·Workflow Profile Version은 실제 API를 사용합니다. Tool 정책 상세 화면과 사용량·평가는 별도 범위입니다.</span>
+      <span>Provider Key와 Agent·Workflow Profile Version은 실제 API를 사용합니다. Tool 정책은 등록된 MCP Catalog를 읽기 전용으로 표시합니다.</span>
     </div>
 
     <div className="mb-[1.125rem] flex gap-[1.375rem] overflow-x-auto border-b border-line" role="tablist" aria-label="Agent 설정 영역">
@@ -161,8 +164,15 @@ function NaturalFeatureProfilePanel({ api, selectedKey, onSelect }: {
     let snapshot: ProfileAuthoringSnapshot
     try {
       snapshot = JSON.parse(editor) as ProfileAuthoringSnapshot
+      const normalized = normalizeModelBindings(snapshot.nodes, snapshot.modelBindings, [])
+      if (normalized === null) throw new Error('MODEL_BINDING_INCOMPLETE')
+      snapshot = {
+        ...snapshot,
+        modelBindings: normalized,
+        toolBindings: hydrateToolBindings(selectedKey, snapshot.nodes, snapshot.toolBindings),
+      }
     } catch {
-      setFailure('Snapshot JSON 형식을 확인해 주세요.')
+      setFailure('Snapshot JSON과 Agent별 Provider·Model selection metadata를 확인해 주세요.')
       return
     }
     setSaving(true)
@@ -281,6 +291,7 @@ function toAuthoringSnapshot(snapshot: ProfileVersion['snapshot']): ProfileAutho
     edges: snapshot.edges,
     config: snapshot.config,
     modelBindings: snapshot.modelBindings,
+    toolBindings: snapshot.toolBindings,
     toolPolicy: snapshot.toolPolicy,
     guardrailProfileKey: snapshot.guardrailProfileKey,
   }
@@ -468,30 +479,36 @@ function ProviderModelPanel({ api }: { api: AgentSettingsApiClient }) {
 }
 
 function PolicyPanel() {
+  const tools = Array.from(new Set(Object.values(toolCatalog).flat()))
   return <section id="agent-settings-panel-policy" role="tabpanel" aria-labelledby="agent-settings-tab-policy">
-    <Callout tone="warn" icon="triangle-alert">
-      상세 Tool·보안 정책 편집 화면을 제공하지 않습니다. 현재 production Runtime에서 확인되는 공통 계약과 미연결 범위만 표시합니다.
+    <Callout tone="ok" icon="shield-check">
+      시스템에 등록된 MCP Tool과 Profile별 허용 상한을 읽기 전용으로 표시합니다. Server·Tool 등록·삭제와 실행 의미 변경은 제공하지 않습니다.
     </Callout>
-    <div className="mt-3 grid items-stretch gap-[0.875rem] xl:grid-cols-3">
-      <RuntimeStatusCard
-        title="Job·Queue·Snapshot"
-        tone="ok"
-        state="구현됨"
-        description="Spring Job이 Profile Version을 고정하고 Queue에는 jobId만 전달합니다. Runner는 고정 Snapshot을 조회합니다."
-      />
-      <RuntimeStatusCard
-        title="Approval·Check·Guardrail"
-        tone="ok"
-        state="구현됨"
-        description="등록된 production Handler와 잠금 Guardrail을 Snapshot Runner와 Backend 검증이 함께 강제합니다."
-      />
-      <RuntimeStatusCard
-        title="MCP Tool 실행"
-        tone="wait"
-        state="고정 정책 적용"
-        description="Profile별 승인 Tool allowlist만 Snapshot에 저장합니다. 상세 실행 정책 화면은 이 작업 범위에 포함하지 않습니다."
-      />
-    </div>
+    <section className={`${panel} mt-3`} aria-label="전체 MCP Tool 카탈로그">
+      <PanelTitle title="전체 MCP Tool 카탈로그" sub={`${tools.length}개 · 고정 등록 · 읽기 전용`}>
+        <Badge tone="ok" dot={false}>실행 계약 유지</Badge>
+      </PanelTitle>
+      <div className="divide-y divide-row-line">
+        {tools.map((tool) => <article key={tool} className="grid gap-3 p-4 lg:grid-cols-[minmax(13rem,1.2fr)_minmax(11rem,1fr)_minmax(11rem,1fr)]">
+          <div>
+            <b className="block text-[0.75rem] font-semibold text-body">{toolDetails[tool]?.label ?? tool}</b>
+            <code className="mt-1 block text-[0.625rem] text-muted-2">{tool}</code>
+            <p className="mt-1 text-[0.625rem] leading-4 text-muted-2">{toolDetails[tool]?.description}</p>
+          </div>
+          {(Object.keys(profileCatalog) as ProfileKey[]).map((profileKey) => {
+            const allowed = toolCatalog[profileKey].includes(tool)
+            const requirement = allowed ? profileToolRequirement(profileKey, tool) : null
+            return <div key={profileKey} className="rounded border border-line-soft bg-sub p-3" aria-label={`${profileKey} ${tool} 정책`}>
+              <span className="flex flex-wrap items-center gap-2">
+                <b className="text-[0.6875rem]">{profileKey}</b>
+                <Badge tone={allowed ? 'ok' : 'idle'} dot={false}>{allowed ? '허용 상한' : '범위 밖'}</Badge>
+              </span>
+              <small className="mt-2 block text-[0.625rem] text-muted-2">{requirement === null ? '이 Profile에서는 사용할 수 없음' : toolRequirementLabel(requirement)}</small>
+            </div>
+          })}
+        </article>)}
+      </div>
+    </section>
   </section>
 }
 
