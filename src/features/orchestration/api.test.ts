@@ -6,14 +6,16 @@ afterEach(() => vi.unstubAllGlobals())
 
 const snapshot: ProfileAuthoringSnapshot = {
   nodes: [], edges: [], config: { maxNodes: 1, maxAttempts: 3, loopLimits: [] },
-  modelBindings: {}, toolPolicy: { allowedTools: [] }, guardrailProfileKey: 'central.default',
+  modelBindings: {}, toolBindings: {}, toolPolicy: { allowedTools: [] }, guardrailProfileKey: 'central.default',
 }
 
-test('lists, creates, and activates Profile Versions through the admin contract', async () => {
+test('lists, creates, activates, and reads Editor Layout through the admin contract', async () => {
   const fetcher = vi.fn()
     .mockResolvedValueOnce(new Response('[]'))
     .mockResolvedValueOnce(new Response(JSON.stringify({ profileVersionId: 'version-2' }), { status: 201 }))
     .mockResolvedValueOnce(new Response(JSON.stringify({ profileVersionId: 'version-2', status: 'ACTIVE' })))
+    .mockResolvedValueOnce(new Response(JSON.stringify({ profileVersionId: 'version-2', createdAt: '2026-09-03T00:00:00Z', nodes: [{ id: 'start', x: 48, y: 48 }] })))
+    .mockResolvedValueOnce(new Response(JSON.stringify({ profileVersionId: 'version-2', createdAt: '2026-09-03T00:00:00Z', nodes: [{ id: 'start', x: 48, y: 48 }] }), { status: 201 }))
   vi.stubGlobal('fetch', fetcher)
   vi.stubGlobal('crypto', { randomUUID: () => 'trace-id' })
   const api = new ProfileVersionApi('token', vi.fn(), vi.fn())
@@ -21,11 +23,16 @@ test('lists, creates, and activates Profile Versions through the admin contract'
   await expect(api.list('LLM_OPS')).resolves.toEqual([])
   await expect(api.create('LLM_OPS', snapshot)).resolves.toMatchObject({ profileVersionId: 'version-2' })
   await expect(api.activate('version-2')).resolves.toMatchObject({ status: 'ACTIVE' })
+  await expect(api.getEditorLayout('version-2')).resolves.toMatchObject({ nodes: [{ id: 'start', x: 48, y: 48 }] })
+  await expect(api.saveEditorLayout('version-2', [{ id: 'start', x: 48, y: 48 }])).resolves.toMatchObject({ profileVersionId: 'version-2' })
 
   expect(fetcher.mock.calls[0][0]).toBe('/api/admin/ai/profile-versions?profileKey=LLM_OPS')
   expect(fetcher.mock.calls[1][1]).toMatchObject({ method: 'POST' })
   expect(JSON.parse(fetcher.mock.calls[1][1].body)).toEqual({ profileKey: 'LLM_OPS', snapshot })
   expect(fetcher.mock.calls[2][0]).toBe('/api/admin/ai/profile-versions/version-2/activate')
+  expect(fetcher.mock.calls[3][0]).toBe('/api/admin/ai/profile-versions/version-2/editor-layout')
+  expect(fetcher.mock.calls[4][1]).toMatchObject({ method: 'PUT' })
+  expect(JSON.parse(fetcher.mock.calls[4][1].body)).toEqual({ nodes: [{ id: 'start', x: 48, y: 48 }] })
 })
 
 test('preserves the public error envelope for forbidden and validation failures', async () => {
@@ -47,6 +54,45 @@ test('preserves the public error envelope for forbidden and validation failures'
   const invalid = await api.create('NATURAL_CMS', snapshot).catch((failure: unknown) => failure)
   expect(invalid).toBeInstanceOf(ProductApiError)
   expect(invalid).toMatchObject({ status: 400, code: 'CONTRACT_VALIDATION_FAILED', traceId: 'trace-validation' })
+})
+
+test('loads and saves Profile-scoped default templates', async () => {
+  const template = { profileKey: 'LLM_OPS', updatedAt: '2026-09-04T00:00:00Z', snapshot }
+  const fetcher = vi.fn()
+    .mockResolvedValueOnce(new Response(JSON.stringify(template)))
+    .mockResolvedValueOnce(new Response(JSON.stringify(template)))
+  vi.stubGlobal('fetch', fetcher)
+  vi.stubGlobal('crypto', { randomUUID: () => 'trace-id' })
+  const api = new ProfileVersionApi('token', vi.fn(), vi.fn())
+
+  await expect(api.getDefaultTemplate('LLM_OPS')).resolves.toEqual(template)
+  await expect(api.saveDefaultTemplate('LLM_OPS', snapshot)).resolves.toEqual(template)
+
+  expect(fetcher.mock.calls[0][0]).toBe('/api/admin/ai/profile-templates/LLM_OPS')
+  expect(fetcher.mock.calls[1][0]).toBe('/api/admin/ai/profile-templates/LLM_OPS')
+  expect(fetcher.mock.calls[1][1]).toMatchObject({ method: 'PUT' })
+  expect(JSON.parse(fetcher.mock.calls[1][1].body)).toEqual({ snapshot })
+})
+
+test('loads the Profile-scoped model catalog without credential metadata', async () => {
+  const catalog = {
+    schemaVersion: '1.0', profileKey: 'LLM_OPS', models: [{
+      selectionId: 'openai-gpt-5-6-terra', provider: 'OPENAI', model: 'gpt-5.6-terra',
+      capabilities: ['CHAT', 'TOOL_CALLING'],
+      inference: {
+        default: { reasoningIntensity: 'NONE', reasoningBudgetTokens: null },
+        reasoningIntensity: ['NONE', 'LOW', 'MEDIUM', 'HIGH'], reasoningBudgetTokens: null,
+      },
+    }],
+  }
+  const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify(catalog)))
+  vi.stubGlobal('fetch', fetcher)
+  vi.stubGlobal('crypto', { randomUUID: () => 'trace-id' })
+  const api = new ProfileVersionApi('token', vi.fn(), vi.fn())
+
+  await expect(api.listModelCatalog('LLM_OPS')).resolves.toEqual(catalog)
+  expect(fetcher.mock.calls[0][0]).toBe('/api/admin/ai/model-catalog?profileKey=LLM_OPS')
+  expect(fetcher.mock.calls[0][1].body).toBeUndefined()
 })
 
 test('manages local provider credentials with the one-time CSRF token and never expects a returned secret', async () => {
