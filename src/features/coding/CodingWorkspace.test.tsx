@@ -349,6 +349,9 @@ test('a first half that found nothing to change still sends the second half', as
 
   await waitFor(() => expect(api.createJob)
     .toHaveBeenCalledWith('frontend', splitPending.secondText))
+  // "이미 되어 있다" alone would read as the whole request while a new job starts below it.
+  expect(await screen.findByText('서버 쪽은 이미 되어 있었습니다')).toBeInTheDocument()
+  expect(await screen.findByText(/이어서 화면 작업을 시작했습니다/)).toBeInTheDocument()
 })
 
 test('a request that was already done does not read as something breaking', async () => {

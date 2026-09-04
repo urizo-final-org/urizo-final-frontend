@@ -242,6 +242,7 @@ export default function CodingWorkspace({ api, role }: { api: CodingConsoleApiCl
   const [requestText, setRequestText] = useState('')
   const [pendingSecond, setPendingSecond] = useState<PendingSecond | null>(
     () => readPendingSecond())
+  const [continuedAfterNothing, setContinuedAfterNothing] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [deciding, setDeciding] = useState(false)
   /* silent marks the automatic ticks: they update the data but never blank the screen with
@@ -358,6 +359,11 @@ export default function CodingWorkspace({ api, role }: { api: CodingConsoleApiCl
               // is therefore already known, and the server is told rather than asked again.
               const second = await api.createJob('frontend', pending.secondText)
               if (active) {
+                // Which leg found nothing, so its card can say what happened next. Without
+                // it the person reads "이미 되어 있어 바꿀 것이 없었습니다" and then watches
+                // a new job start, with nothing on screen tying the two together.
+                setContinuedAfterNothing(
+                  first.failureCode === NOTHING_TO_CHANGE ? pending.firstJobId : null)
                 setCurrent({
                   jobId: second.created.job.jobId,
                   repository: 'frontend',
@@ -502,9 +508,14 @@ export default function CodingWorkspace({ api, role }: { api: CodingConsoleApiCl
             title={lastFailed.handedOver
               ? '이 요청은 사람이 이어받아야 합니다'
               : lastFailed.refused ? '이 요청은 진행할 수 없습니다'
-                // Nothing broke, so the heading does not say something did.
+                // Nothing broke, so the heading does not say something did. When this leg
+                // was the data half of a split, the heading names that half - otherwise
+                // "이미 되어 있다" reads as the whole request and the screen job that starts
+                // right after makes no sense.
                 : lastFailed.failureCode === NOTHING_TO_CHANGE
-                  ? '이미 되어 있어 바꿀 것이 없었습니다'
+                  ? (continuedAfterNothing === lastFailed.jobId
+                    ? '서버 쪽은 이미 되어 있었습니다'
+                    : '이미 되어 있어 바꿀 것이 없었습니다')
                   : '직전 요청이 중단됐습니다'}
             sub={lastFailed.requestText}
           />
@@ -515,7 +526,9 @@ export default function CodingWorkspace({ api, role }: { api: CodingConsoleApiCl
                 : lastFailed.refused
                   ? (refusedReason
                     ?? '요청한 내용이 지금 허용된 작업 범위 밖이라 진행하지 않았습니다. 최고관리자에게 울타리 설정을 요청해 주세요.')
-                  : failureReason(lastFailed.failureCode)}
+                  : continuedAfterNothing === lastFailed.jobId
+                    ? '이 요청에 필요한 서버 쪽 준비는 이미 되어 있어서 고칠 것이 없었습니다. 이어서 화면 작업을 시작했습니다. 아래에서 진행 상황을 확인해 주세요.'
+                    : failureReason(lastFailed.failureCode)}
             </Callout>
             {lastFailed.handedOver && handover && <HandoverRecord handover={handover} />}
           </div>
