@@ -249,6 +249,7 @@ export default function CodingWorkspace({ api, role }: { api: CodingConsoleApiCl
   const [continuedAfterNothing, setContinuedAfterNothing] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [deciding, setDeciding] = useState(false)
+  const [cancelling, setCancelling] = useState(false)
   /* silent marks the automatic ticks: they update the data but never blank the screen with
    * "불러오는 중", which every 15 seconds would read as the page breaking. */
   const [reload, setReload] = useState({ token: 0, silent: false })
@@ -440,6 +441,27 @@ export default function CodingWorkspace({ api, role }: { api: CodingConsoleApiCl
   }
 
   /**
+   * Calling the request off entirely, which rejecting does not do: a rejection at the preview
+   * stage opens the next attempt. Someone who has changed their mind had to reject three times
+   * and sit through a model run between each, so this ends it in one step.
+   */
+  async function cancel() {
+    if (!current || cancelling) return
+    setCancelling(true)
+    setFailure(null)
+    try {
+      await api.cancelJob(current.jobId)
+      setReload((prev) => ({ token: prev.token + 1, silent: false }))
+    }
+    catch (error: unknown) {
+      setFailure(describeFailure(error))
+    }
+    finally {
+      setCancelling(false)
+    }
+  }
+
+  /**
    * The server asks the runner for a real base commit before it answers, so this takes a
    * couple of seconds. The button says so rather than appearing to have missed the click.
    */
@@ -579,6 +601,12 @@ export default function CodingWorkspace({ api, role }: { api: CodingConsoleApiCl
             role={role}
             onDecide={decide}
           />}
+          {/*
+            * Placed apart from the approval panels, never beside a reject button. The two read
+            * alike and mean opposite things - rejecting a preview starts another attempt - and
+            * a mis-click there costs a full model run.
+            */}
+          <CancelRequest status={current.status} busy={cancelling} onCancel={cancel} />
         </>}
 
         {/*
@@ -724,6 +752,70 @@ function CurrentRequest({ job }: { job: JobSummary }) {
  * is not the CANDIDATE stage, cancels the Job outright. Only a preview rejection buys another
  * attempt. The screen says so before the click rather than after it.
  */
+/**
+ * Calling the request off for good.
+ *
+ * <p>This is not the reject button and must not read like one. Rejecting a preview is how the
+ * administrator asks for another go; this is how they stop asking. The two sat on the same
+ * panel in every earlier sketch and the wording had to carry the whole difference, so the
+ * panel says what happens after the click rather than naming the action.
+ *
+ * <p>RUNNING has no button at all. The server refuses it - a model mid-run cannot be stopped
+ * cleanly - and offering a control that always fails is worse than offering none, so the panel
+ * explains that waiting is what works.
+ */
+function CancelRequest({ status, busy, onCancel }: {
+  status: string
+  busy: boolean
+  onCancel: () => void
+}) {
+  const [confirming, setConfirming] = useState(false)
+  if (status !== 'PENDING' && status !== 'WAITING_APPROVAL' && status !== 'RUNNING') {
+    return null
+  }
+  if (status === 'RUNNING') {
+    return <p className="mt-[0.875rem] px-1 text-[0.71875rem] leading-5 text-muted-2">
+      AI 가 작업하는 동안에는 요청을 취소할 수 없습니다. 작업이 끝나면 취소할 수 있습니다.
+    </p>
+  }
+  if (!confirming) {
+    return <div className="mt-[0.875rem] px-1">
+      <button
+        type="button"
+        className="text-[0.71875rem] leading-5 text-muted-2 underline underline-offset-2"
+        disabled={busy}
+        onClick={() => setConfirming(true)}
+      >이 요청 그만두기</button>
+    </div>
+  }
+  return <section className={`${panel} mt-[0.875rem]`}>
+    <PanelTitle
+      title="이 요청을 그만둘까요"
+      sub="여기서 끝냅니다. AI 가 다시 만들지 않습니다"
+    />
+    <div className="px-4 pb-4 pt-[0.375rem]">
+      <p className="text-[0.8125rem] leading-[1.6] text-body">
+        지금까지 AI 가 만든 것은 반영되지 않고 버려집니다. 되돌릴 수 없습니다.
+        같은 일이 다시 필요하면 새 요청으로 넣어주세요.
+      </p>
+      <div className="mt-[0.875rem] flex flex-wrap gap-2">
+        <button
+          type="button"
+          className={dangerButton}
+          disabled={busy}
+          onClick={onCancel}
+        >{busy ? '취소하는 중입니다…' : '네, 그만둡니다'}</button>
+        <button
+          type="button"
+          className={secondaryButton}
+          disabled={busy}
+          onClick={() => setConfirming(false)}
+        >되돌아가기</button>
+      </div>
+    </div>
+  </section>
+}
+
 function PlanApproval({ plan, pending, busy, onDecide }: {
   plan?: JobDetail['plan']
   pending: PendingApproval

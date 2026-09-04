@@ -35,6 +35,7 @@ function consoleApi(overrides: Partial<CodingConsoleApiClient> = {}): CodingCons
       { schemaVersion: '1.0', alive: true, lastSeenAt: '2026-09-02T02:00:00Z' }),
     notifications: vi.fn().mockResolvedValue({ schemaVersion: '1.0', items: [] }),
     decideApproval: vi.fn(),
+    cancelJob: vi.fn(),
     guardrailSelections: vi.fn(),
     saveGuardrailSelections: vi.fn(),
     startGuardrailScan: vi.fn(),
@@ -1039,4 +1040,74 @@ test('news already read does not come back on the next visit', async () => {
 
   await screen.findByRole('button', { name: '요청 보내기' })
   expect(screen.queryByText('새 소식')).not.toBeInTheDocument()
+})
+
+/*
+ * Cancelling and rejecting read alike and mean opposite things. A rejection at the preview
+ * stage opens the next attempt - that is what it is for - so an administrator who has changed
+ * their mind entirely had to reject three times, waiting through a full model run between each.
+ * Measured on 2026-09-04, where the only way out was an endpoint no demo can reach.
+ */
+test('cancelling asks once, and says the work is thrown away rather than retried', async () => {
+  const api = waitingApi({ cancelJob: vi.fn().mockResolvedValue({}) })
+  render(<CodingWorkspace role="SUPER_ADMIN" api={api} />)
+
+  fireEvent.click(await screen.findByRole('button', { name: '이 요청 그만두기' }))
+
+  // The panel has to carry the whole difference from the reject button beside it.
+  expect(screen.getByText('여기서 끝냅니다. AI 가 다시 만들지 않습니다')).toBeInTheDocument()
+  expect(screen.getByText(/되돌릴 수 없습니다/)).toBeInTheDocument()
+  expect(api.cancelJob).not.toHaveBeenCalled()
+
+  fireEvent.click(screen.getByRole('button', { name: '네, 그만둡니다' }))
+
+  await waitFor(() => expect(api.cancelJob).toHaveBeenCalledWith(openJob.jobId))
+})
+
+test('backing out of the confirmation cancels nothing', async () => {
+  const api = waitingApi({ cancelJob: vi.fn() })
+  render(<CodingWorkspace role="SUPER_ADMIN" api={api} />)
+
+  fireEvent.click(await screen.findByRole('button', { name: '이 요청 그만두기' }))
+  fireEvent.click(screen.getByRole('button', { name: '되돌아가기' }))
+
+  expect(await screen.findByRole('button', { name: '이 요청 그만두기' })).toBeInTheDocument()
+  expect(api.cancelJob).not.toHaveBeenCalled()
+})
+
+/*
+ * The server refuses this state, because the tool gateway requires the Job to read RUNNING
+ * before it executes anything and flipping it mid-run fails the next tool call instead of
+ * stopping the work. A button that always fails is worse than no button, so the screen
+ * explains that waiting is what works.
+ */
+test('a request the model is working on offers no cancel button, and says why', async () => {
+  const api = consoleApi({
+    listJobs: vi.fn().mockResolvedValue({
+      schemaVersion: '1.0',
+      items: [{ ...openJob, status: 'RUNNING' as const }],
+    }),
+    getJob: vi.fn().mockResolvedValue({ ...scopeDetail, status: 'RUNNING', pendingApproval: null }),
+  })
+  render(<CodingWorkspace role="SUPER_ADMIN" api={api} />)
+
+  expect(await screen.findByText(
+    'AI 가 작업하는 동안에는 요청을 취소할 수 없습니다. 작업이 끝나면 취소할 수 있습니다.',
+  )).toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: '이 요청 그만두기' })).not.toBeInTheDocument()
+})
+
+test('a finished request offers nothing to cancel', async () => {
+  const api = consoleApi({
+    listJobs: vi.fn().mockResolvedValue({
+      schemaVersion: '1.0',
+      items: [{ ...openJob, status: 'COMPLETED' as const }],
+    }),
+    getJob: vi.fn().mockResolvedValue({ ...scopeDetail, status: 'COMPLETED', pendingApproval: null }),
+  })
+  render(<CodingWorkspace role="SUPER_ADMIN" api={api} />)
+
+  await screen.findByRole('button', { name: '요청 보내기' })
+  expect(screen.queryByRole('button', { name: '이 요청 그만두기' })).not.toBeInTheDocument()
+  expect(screen.queryByText(/작업이 끝나면 취소할 수 있습니다/)).not.toBeInTheDocument()
 })

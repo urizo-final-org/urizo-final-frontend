@@ -413,6 +413,16 @@ export class CodingConsoleApi implements CodingConsoleApiClient {
     },
   )
 
+  /**
+   * Calls off a request for good. Deliberately not decideApproval with another value: a
+   * rejection at the preview stage opens the next attempt, which is the opposite outcome,
+   * and the server refuses this while a model is mid-run rather than cutting it off.
+   */
+  cancelJob = (jobId: string) => this.request<JobDetail>(
+    `/api/admin/coding/jobs/${encodeURIComponent(jobId)}/cancel`,
+    { method: 'POST', headers: { 'Idempotency-Key': crypto.randomUUID() } },
+  )
+
   guardrailSelections = (repository: GuardrailRepository) => this.request<GuardrailSelectionList>(
     `/api/admin/coding/guardrail/selections?repository=${encodeURIComponent(repository)}`,
   )
