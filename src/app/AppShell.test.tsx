@@ -12,7 +12,9 @@ beforeEach(() => {
   vi.restoreAllMocks()
 })
 
-test('the public URL renders the tour portal home without login', async () => {
+test('the public URL renders the tour portal home without login, isolated from the admin theme', async () => {
+  // dev가 추가한 테마 격리 검사를 유지한다 — 관리자 다크 테마가 사이트로 새면 안 된다.
+  window.localStorage.setItem('axms-admin-theme', 'dark')
   vi.stubGlobal('fetch', publicFetch())
   render(<AppShell />)
   expect(await screen.findByRole('heading', { name: '어디로 떠나볼까요?' })).toBeInTheDocument()
@@ -26,6 +28,9 @@ test('the public URL renders the tour portal home without login', async () => {
   // 탭은 확정 8종이다. 시안이 6종이어도 이 개수를 따라가지 않는다.
   const tabs = within(screen.getByRole('tablist', { name: '여행 검색 카테고리' })).getAllByRole('tab')
   expect(tabs.map((tab) => tab.textContent)).toEqual(['전체', '관광지', '숙박', '음식', '체험·레저', '추천코스', '쇼핑', '축제·행사'])
+  // dev가 추가한 테마 격리 검사. 포털 색 토큰이 .site-app 스코프에 있으므로 이 래퍼가 곧 전제다.
+  expect(document.querySelector('.site-app')).toBeInTheDocument()
+  expect(document.querySelector('.admin-app')).not.toBeInTheDocument()
 })
 
 test('a home search moves to the results screen with a side filter', async () => {
@@ -262,6 +267,13 @@ test('an administrator reaches all five CMS sections', async () => {
   }
   expect(screen.getByRole('link', { name: /사용자 사이트 열기/ })).toHaveAttribute('href', '/')
   expect(screen.queryByRole('complementary', { name: /자연어 도우미/ })).not.toBeInTheDocument()
+  const adminRoot = document.querySelector('.admin-app')
+  expect(adminRoot).toHaveAttribute('data-admin-theme', 'light')
+  expect(document.querySelector('.site-app')).not.toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: '다크 테마 사용' }))
+  expect(adminRoot).toHaveAttribute('data-admin-theme', 'dark')
+  expect(window.localStorage.getItem('axms-admin-theme')).toBe('dark')
+  expect(screen.getByRole('button', { name: '라이트 테마 사용' })).toHaveAttribute('aria-pressed', 'true')
 })
 
 test('the sidebar consolidates AI model assignment under Agent settings', async () => {
@@ -370,12 +382,13 @@ test('a general administrator is redirected away from site management', async ()
   expect(within(navigation).queryByRole('button', { name: /사이트 관리/ })).not.toBeInTheDocument()
 })
 
+/** 마지막 값은 대상을 고르지 않았을 때의 안내다. 메뉴만 등록 경로가 있어 문구가 다르다. */
 test.each([
-  ['/admin/menus', '메뉴 관리', '메뉴 AI', '컨텐츠 본문, 게시글, 템플릿은 변경하지 않아요.'],
-  ['/admin/contents', '컨텐츠 관리', '컨텐츠 AI', '메뉴 구조, 게시판·게시글, 템플릿은 변경하지 않아요.'],
-  ['/admin/boards', '게시판 관리', '게시판 AI', '메뉴 연결, 정적 컨텐츠, 템플릿은 변경하지 않아요.'],
-  ['/admin/templates', '템플릿 관리', '템플릿 AI', '메뉴, 컨텐츠 본문, 게시판·게시글은 변경하지 않아요.'],
-])('%s shows a page-scoped AI panel', async (path, section, assistant, excluded) => {
+  ['/admin/menus', '메뉴 관리', '메뉴 AI', '컨텐츠 본문, 게시글, 템플릿은 변경하지 않아요.', '목록에서 고르거나, 바로 요청해 새 메뉴를 만들 수 있어요.'],
+  ['/admin/contents', '컨텐츠 관리', '컨텐츠 AI', '메뉴 구조, 게시판·게시글, 템플릿은 변경하지 않아요.', '목록에서 항목을 선택하면 그 대상에 적용합니다.'],
+  ['/admin/boards', '게시판 관리', '게시판 AI', '메뉴 연결, 정적 컨텐츠, 템플릿은 변경하지 않아요.', '목록에서 항목을 선택하면 그 대상에 적용합니다.'],
+  ['/admin/templates', '템플릿 관리', '템플릿 AI', '메뉴, 컨텐츠 본문, 게시판·게시글은 변경하지 않아요.', '목록에서 항목을 선택하면 그 대상에 적용합니다.'],
+])('%s shows a page-scoped AI panel', async (path, section, assistant, excluded, empty) => {
   window.history.pushState({}, '', path)
   vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => {
     if (String(input) === '/api/auth/refresh') return Promise.resolve(json(session()))
@@ -388,7 +401,7 @@ test.each([
   expect(within(panel).getByRole('heading', { name: assistant })).toBeInTheDocument()
   expect(within(panel).getByText('현재 화면 전용')).toBeInTheDocument()
   expect(within(panel).getByText(excluded)).toBeInTheDocument()
-  expect(within(panel).getByText('목록에서 항목을 선택하면 그 대상에 적용합니다.')).toBeInTheDocument()
+  expect(within(panel).getByText(empty)).toBeInTheDocument()
   expect(within(panel).getByRole('button', { name: '요청 분석하기' })).toBeDisabled()
 })
 
@@ -423,17 +436,135 @@ test('the assistant asks which item to change when no target is selected', async
   expect(within(panel).queryByRole('button', { name: '문의하기' })).not.toBeInTheDocument()
 })
 
-test('the assistant only accepts requests on the screen that supports them', async () => {
-  window.history.pushState({}, '', '/admin/menus')
+test('the assistant only accepts requests on the screens that support them', async () => {
+  window.history.pushState({}, '', '/admin/boards')
   vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => {
     if (String(input) === '/api/auth/refresh') return Promise.resolve(json(session()))
     return Promise.resolve(json([]))
   }))
 
   render(<AppShell />)
+  expect(await screen.findByRole('heading', { name: '게시판 관리' })).toBeInTheDocument()
+  const panel = screen.getByRole('complementary', { name: '게시판 관리 자연어 도우미' })
+  expect(within(panel).getByText('게시판 관리 화면은 아직 자연어 변경을 지원하지 않습니다.')).toBeInTheDocument()
+})
+
+test('the menu assistant opens and offers a new menu beside the existing ones', async () => {
+  window.history.pushState({}, '', '/admin/menus')
+  const menus = [
+    { id: 10, name: '소개', path: '/about', parentId: null, displayOrder: 10, targetType: 'NONE', targetId: null },
+    { id: 11, name: '회사 소개', path: '/about/company', parentId: 10, displayOrder: 11, targetType: 'CONTENT', targetId: 3 },
+  ]
+  const contents = [
+    { id: 3, authorId: actorId, authorName: '관리자', title: '회사 소개', body: '본문', createdAt: '2026-09-01T00:00:00Z', updatedAt: '2026-09-01T00:00:00Z' },
+  ]
+  vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => {
+    const url = String(input)
+    if (url === '/api/auth/refresh') return Promise.resolve(json(session()))
+    if (url === '/api/cms/menus') return Promise.resolve(json(menus))
+    if (url === '/api/cms/contents') return Promise.resolve(json(contents))
+    return Promise.resolve(json([]))
+  }))
+
+  render(<AppShell />)
   expect(await screen.findByRole('heading', { name: '메뉴 관리' })).toBeInTheDocument()
   const panel = screen.getByRole('complementary', { name: '메뉴 관리 자연어 도우미' })
-  expect(within(panel).getByText('메뉴 관리 화면은 아직 자연어 변경을 지원하지 않습니다.')).toBeInTheDocument()
+  expect(within(panel).queryByText('메뉴 관리 화면은 아직 자연어 변경을 지원하지 않습니다.')).not.toBeInTheDocument()
+  expect(within(panel).getByText('목록에서 고르거나, 바로 요청해 새 메뉴를 만들 수 있어요.')).toBeInTheDocument()
+
+  /** 경로와 연결은 따로 읽힌다. 유형은 표로, 대상 이름은 그 옆에 둔다. */
+  const linked = await screen.findByRole('button', { name: /\/about\/company/ })
+  expect(within(linked).getByText('/about/company')).toBeInTheDocument()
+  expect(within(linked).getByText('컨텐츠')).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: /연결 없음/ })).toBeInTheDocument()
+
+  fireEvent.change(within(panel).getByPlaceholderText('CMS 변경 요청을 입력하세요'), { target: { value: '자료실 메뉴 만들어 줘' } })
+  fireEvent.click(within(panel).getByRole('button', { name: '요청 분석하기' }))
+
+  expect(await within(panel).findByText('어느 것을 바꿀까요?')).toBeInTheDocument()
+  expect(within(panel).getByRole('button', { name: '새 메뉴 만들기' })).toBeInTheDocument()
+})
+
+test('the menu assistant waits for the preview the pipeline fills in later', async () => {
+  window.history.pushState({}, '', '/admin/menus')
+  const profileVersionId = '99999999-9999-4999-8999-999999999999'
+  const jobId = '88888888-8888-4888-8888-888888888888'
+  const menus = [
+    { id: 10, name: '소개', path: '/about', parentId: null, displayOrder: 10, targetType: 'NONE', targetId: null },
+    { id: 40, name: '고객지원', path: '/support', parentId: null, displayOrder: 40, targetType: 'NONE', targetId: null },
+  ]
+  /** 생성 응답에는 미리보기가 없다. 다시 읽었을 때 채워져 있어야 화면이 넘어간다. */
+  const created = {
+    schemaVersion: '1.0',
+    jobId,
+    traceId: '77777777-7777-4777-8777-777777777777',
+    profileVersionId,
+    pipelineAttempt: 1,
+    stateVersion: 1,
+    status: 'ACTIVE',
+    requestText: '상위 메뉴 없이 "자료실" 메뉴를 새로 만들어 줘',
+    resource: { type: 'MENU', id: 'new' },
+    structuredCommand: null,
+    previewId: null,
+    previewHash: null,
+    previewValid: false,
+    approvalDecision: null,
+    approvalFeedback: null,
+    createdAt: '2026-09-02T09:00:00Z',
+    updatedAt: '2026-09-02T09:00:00Z',
+  }
+  const previewed = {
+    ...created,
+    status: 'WAITING_APPROVAL',
+    previewId: '66666666-6666-4666-8666-666666666666',
+    previewHash: `sha256:${'a'.repeat(64)}`,
+    previewValid: true,
+    structuredCommand: {
+      operation: 'CREATE',
+      fields: { name: '자료실', path: '/support/archive', parentId: 40 },
+    },
+  }
+  // 승인 뒤 서버는 새 메뉴를 포함해 돌려준다. 화면이 다시 읽는지 보려는 것이다.
+  let applied = false
+  const addedMenu = { id: 41, name: '자료실', path: '/support/archive', parentId: 40, displayOrder: 30, targetType: 'NONE', targetId: null }
+  vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => {
+    const url = String(input)
+    if (url === '/api/auth/refresh') return Promise.resolve(json(session('SUPER_ADMIN', '최고 관리자')))
+    if (url === '/api/cms/menus') return Promise.resolve(json(applied ? [...menus, addedMenu] : menus))
+    if (url.startsWith('/api/admin/ai/profile-versions')) {
+      return Promise.resolve(json([{ profileVersionId, profileKey: 'NATURAL_CMS', status: 'ACTIVE' }]))
+    }
+    if (url === '/api/natural-cms/jobs') return Promise.resolve(json(created))
+    // 승인 응답은 Queue에 넣은 것까지다. 반영은 그 다음 조회에서 COMPLETED로 나타난다.
+    if (url === `/api/natural-cms/jobs/${jobId}/decisions`) {
+      applied = true
+      return Promise.resolve(json({ ...previewed, approvalDecision: 'APPROVED' }))
+    }
+    if (url === `/api/natural-cms/jobs/${jobId}`) {
+      return Promise.resolve(json(applied ? { ...previewed, status: 'COMPLETED' } : previewed))
+    }
+    return Promise.resolve(json([]))
+  }))
+
+  render(<AppShell />)
+  expect(await screen.findByRole('heading', { name: '메뉴 관리' })).toBeInTheDocument()
+  const panel = screen.getByRole('complementary', { name: '메뉴 관리 자연어 도우미' })
+
+  fireEvent.change(within(panel).getByPlaceholderText('CMS 변경 요청을 입력하세요'), { target: { value: '자료실 메뉴 만들어 줘' } })
+  fireEvent.click(within(panel).getByRole('button', { name: '요청 분석하기' }))
+  fireEvent.click(await within(panel).findByRole('button', { name: '새 메뉴 만들기' }))
+
+  expect(await within(panel).findByText('승인 대기')).toBeInTheDocument()
+
+  fireEvent.click(within(panel).getByRole('button', { name: '변경 내용 자세히 보기' }))
+  const modal = await screen.findByRole('dialog', { name: '메뉴 관리 변경 미리보기' })
+  expect(within(modal).getByText('자료실')).toBeInTheDocument()
+  expect(within(modal).getByText('추가')).toBeInTheDocument()
+  expect(within(modal).queryByText('아직 변경 내용을 받지 못했습니다.')).not.toBeInTheDocument()
+
+  // 승인은 서버가 반영한다. 새로고침 없이 목록이 따라와야 한다.
+  fireEvent.click(within(modal).getByRole('button', { name: '승인하고 반영' }))
+  expect(await screen.findByRole('button', { name: /\/support\/archive/ })).toBeInTheDocument()
 })
 
 test('the page-scoped AI panel collapses to a rail and expands again', async () => {

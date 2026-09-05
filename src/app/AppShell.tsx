@@ -3,11 +3,15 @@ import { BrowserRouter, Navigate, Route, Routes, useLocation, useNavigate } from
 import LoginScreen from '../features/auth/LoginScreen'
 import { clearExplicitSignOut, clearStoredToken, hasExplicitSignOutMarker, markExplicitSignOut, readStoredToken, storeToken } from '../features/auth/session-store'
 import CmsWorkspace from '../features/cms/CmsWorkspace'
+import ApprovalBell from '../features/coding/ApprovalBell'
+import CodingWorkspace from '../features/coding/CodingWorkspace'
+import GuardrailWorkspace from '../features/coding/GuardrailWorkspace'
 import OpsWorkspace from '../features/ops/OpsWorkspace'
 import AgentSettingsWorkspace from '../features/orchestration/AgentSettingsWorkspace'
 import { ProfileVersionApi } from '../features/orchestration/api'
 import PublicSite from '../features/site/PublicSite'
 import { CmsApi } from '../features/cms/api'
+import { CodingConsoleApi } from '../features/coding/api'
 import { NaturalCmsApi } from '../features/cms/assistant/api'
 import { CmsSiteSettingsApi } from '../features/site-settings/api'
 import { fetchCurrentSession, logout, refreshSession, ROLE_LABELS, type AdminSession } from '../shared/api/session'
@@ -16,6 +20,8 @@ import { AppNavigation } from './navigation'
 import { defaultRouteForRole, groupForRoute, isCmsRouteId, labelForRoute, pathForRoute, routeIdForPath, routes, routesForRole, type RouteId } from './routes'
 
 const temporaryMockTitle = '임시 목업 · 향후 필요 시 현재 Runtime 계약 기준으로 구현'
+const ADMIN_THEME_KEY = 'axms-admin-theme'
+type AdminTheme = 'light' | 'dark'
 
 export default function AppShell() {
   return <BrowserRouter><AppEntry /></BrowserRouter>
@@ -23,10 +29,16 @@ export default function AppShell() {
 
 function AppEntry() {
   const location = useLocation()
-  return location.pathname.startsWith('/admin') ? <AdminApplication /> : <PublicSite />
+  return location.pathname.startsWith('/admin')
+    ? <AdminApplication />
+    : <div className="site-app"><PublicSite /></div>
 }
 
 function AdminApplication() {
+  const [theme, setTheme] = useState<AdminTheme>(() => {
+    try { return window.localStorage.getItem(ADMIN_THEME_KEY) === 'dark' ? 'dark' : 'light' }
+    catch { return 'light' }
+  })
   const [session, setSession] = useState<AdminSession | null>(null)
   const [restoring, setRestoring] = useState(true)
   const [notice, setNotice] = useState<string | null>(null)
@@ -81,14 +93,24 @@ function AdminApplication() {
     if (token) await logout(token)
   }, [])
 
-  if (restoring) return <div className="grid min-h-screen place-items-center bg-sb-bg text-sm text-white">CMS 세션을 확인하는 중입니다…</div>
-  if (!session) return <LoginScreen notice={notice} onSignedIn={signedIn} />
+  const toggleTheme = useCallback(() => {
+    setTheme((current) => {
+      const next = current === 'light' ? 'dark' : 'light'
+      try { window.localStorage.setItem(ADMIN_THEME_KEY, next) } catch { /* storage may be disabled */ }
+      return next
+    })
+  }, [])
+
+  if (restoring) return <div className="admin-app grid min-h-screen place-items-center bg-sb-bg text-sm text-white" data-admin-theme={theme}>CMS 세션을 확인하는 중입니다…</div>
+  if (!session) return <div className="admin-app" data-admin-theme={theme}><LoginScreen notice={notice} onSignedIn={signedIn} /></div>
   if (session.actor.role === 'GENERAL_USER') return <Navigate to="/" replace />
-  return <AuthenticatedAdmin session={session} onRefresh={refreshed} onExpired={expired} onSignOut={signOut} />
+  return <AuthenticatedAdmin session={session} theme={theme} onToggleTheme={toggleTheme} onRefresh={refreshed} onExpired={expired} onSignOut={signOut} />
 }
 
-function AuthenticatedAdmin({ session, onRefresh, onExpired, onSignOut }: {
+function AuthenticatedAdmin({ session, theme, onToggleTheme, onRefresh, onExpired, onSignOut }: {
   session: AdminSession
+  theme: AdminTheme
+  onToggleTheme: () => void
   onRefresh: (expectedToken: string, session: AdminSession) => void
   onExpired: (expectedToken: string) => void
   onSignOut: () => void
@@ -104,13 +126,14 @@ function AuthenticatedAdmin({ session, onRefresh, onExpired, onSignOut }: {
   const profileApi = useMemo(() => new ProfileVersionApi(session.sessionToken, lifecycle.refreshed, lifecycle.expired), [session.sessionToken, lifecycle])
   const siteSettingsApi = useMemo(() => new CmsSiteSettingsApi(session.sessionToken, lifecycle.refreshed, lifecycle.expired), [session.sessionToken, lifecycle])
   const naturalCmsApi = useMemo(() => new NaturalCmsApi(session.sessionToken, lifecycle.refreshed, lifecycle.expired), [session.sessionToken, lifecycle])
+  const codingApi = useMemo(() => new CodingConsoleApi(session.sessionToken, lifecycle.refreshed, lifecycle.expired), [session.sessionToken, lifecycle])
 
   function go(route: RouteId) { navigate(pathForRoute(route)); setMenuOpen(false) }
 
   const initials = session.actor.name.replace(/\s+/g, '').slice(0, 2)
   const onMockScreen = routes.find((item) => item.id === visible)?.mock === true
 
-  return <div className="flex min-h-screen bg-page">
+  return <div className="admin-app flex min-h-screen bg-page" data-admin-theme={theme}>
     {/* text-sb-item is the sidebar's base colour: anything inside inherits light-on-navy by default. */}
     <aside className={`sticky top-0 z-30 flex h-screen w-[14.75rem] shrink-0 flex-col border-r border-sb-border bg-sb-bg text-sb-item transition-transform max-[900px]:fixed max-[900px]:inset-y-0 max-[900px]:left-0 ${menuOpen ? 'max-[900px]:translate-x-0' : 'max-[900px]:-translate-x-full'}`}>
       <div className="flex items-center gap-[0.5625rem] px-4 pb-[0.875rem] pt-4">
@@ -167,9 +190,16 @@ function AuthenticatedAdmin({ session, onRefresh, onExpired, onSignOut }: {
           <i className="block h-[0.3125rem] w-[0.3125rem] rounded-full bg-run-dot" aria-hidden="true" />임시 목업
         </span>}
         <div className="flex items-center gap-3 text-muted max-[720px]:hidden">
-          <Icon name="bell" size={16} />
+          <ApprovalBell api={codingApi} onOpen={() => go('devops')} />
           <Icon name="circle-help" size={16} />
         </div>
+        <button
+          type="button"
+          className="admin-theme-toggle inline-flex h-[1.875rem] items-center gap-1.5 rounded-[0.3125rem] px-2.5 text-[0.6875rem] font-semibold text-strong"
+          aria-label={theme === 'light' ? '다크 테마 사용' : '라이트 테마 사용'}
+          aria-pressed={theme === 'dark'}
+          onClick={onToggleTheme}
+        ><span aria-hidden="true">{theme === 'light' ? '☾' : '☀'}</span><span className="max-[560px]:hidden">{theme === 'light' ? 'Dark' : 'Light'}</span></button>
         <div className="grid h-[1.625rem] w-[1.625rem] shrink-0 place-items-center rounded-full bg-teal-bg text-[0.59375rem] font-bold text-teal-ink max-[560px]:hidden" aria-hidden="true">{initials}</div>
         <button className="inline-flex h-[1.875rem] shrink-0 items-center rounded-[0.3125rem] border border-btn-line bg-white px-[0.625rem] text-[0.71875rem] font-semibold text-strong hover:bg-sub" onClick={onSignOut}>로그아웃</button>
       </header>
@@ -184,6 +214,10 @@ function AuthenticatedAdmin({ session, onRefresh, onExpired, onSignOut }: {
               ? <CmsWorkspace route={route.id} api={cmsApi} assistantApi={naturalCmsApi} />
               : route.id === 'models'
                 ? <AgentSettingsWorkspace api={profileApi} />
+              : route.id === 'devops'
+                ? <CodingWorkspace api={codingApi} role={session.actor.role} />
+              : route.id === 'guardrail'
+                ? <GuardrailWorkspace api={codingApi} />
               : <OpsWorkspace route={route.id} actorName={session.actor.name} roleLabel={ROLE_LABELS[session.actor.role]} profileApi={profileApi} siteSettingsApi={siteSettingsApi} />}
           />)}
           <Route path="/admin/*" element={<Navigate to={pathForRoute(fallback)} replace />} />
