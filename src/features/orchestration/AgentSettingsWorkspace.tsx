@@ -468,7 +468,7 @@ function ProviderModelPanel({ api }: { api: AgentSettingsApiClient }) {
               <button type="button" className={primaryButton} style={{ color: '#fff' }} disabled={controlsDisabled || !csrfToken} onClick={() => void save(provider)}>
                 {busy ? '처리 중' : status?.configured ? 'Key 교체' : 'Key 저장'}
               </button>
-              {status?.configured && <button type="button" className={secondaryButton} disabled={controlsDisabled || !csrfToken} onClick={() => void testConnection(provider, status)}>연결 테스트</button>}
+              {status?.configured && <button type="button" className={`${secondaryButton} provider-connection-test-button`} disabled={controlsDisabled || !csrfToken} onClick={() => void testConnection(provider, status)}>연결 테스트</button>}
               {status?.configured && <button type="button" className={dangerButton} disabled={controlsDisabled || !csrfToken} onClick={() => void remove(provider)}>Key 삭제</button>}
             </div>
           </article>

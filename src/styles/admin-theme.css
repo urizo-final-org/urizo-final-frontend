@@ -145,6 +145,15 @@
 
 .admin-theme-toggle { border: 1px solid var(--btn-line) !important; background: var(--field); }
 
+.provider-connection-test-button {
+  border-color: color-mix(in srgb, var(--run-fg) 38%, var(--btn-line));
+  background: var(--run-bg);
+  color: var(--run-fg);
+}
+.provider-connection-test-button:enabled:hover {
+  background: color-mix(in srgb, var(--run-bg) 82%, var(--run-fg));
+}
+
 @keyframes cms-success-toast {
   0% { opacity: 0; transform: translateY(18px) scale(0.96); }
   12%, 78% { opacity: 1; transform: translateY(0) scale(1); }
