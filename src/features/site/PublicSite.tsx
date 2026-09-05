@@ -2,7 +2,8 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type CSSPr
 import { Link, useLocation } from 'react-router-dom'
 import { describeFailure } from '../../shared/api/error'
 import { SITE_UPDATE_EVENT, SiteApi, type Article, type Board, type Menu, type Post, type PublicSiteContext, type SiteTemplate } from '../cms/api'
-import { ChatWidget, PortalHeader, PortalHome, PortalSearch } from './TourPortal'
+import { ChatWidget } from './ChatWidget'
+import { PortalHeader, PortalHome, PortalSearch } from './TourPortal'
 
 export default function PublicSite() {
   const api = useMemo(() => new SiteApi(), [])
