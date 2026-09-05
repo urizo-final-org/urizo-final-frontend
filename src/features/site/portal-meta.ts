@@ -39,3 +39,22 @@ export function addressLine(excerpt: string): string | null {
   const value = line?.slice('[주소]'.length).trim()
   return value || null
 }
+
+/**
+ * 본문의 `[홈페이지]` 줄에서 링크로 쓸 URL을 꺼낸다. 값이 `http://`·`https://`로 **시작할 때만**
+ * 돌려주고, 아니면 null이다.
+ *
+ * <p>R26 대응이다. `citation.sourceUrl`은 로더가 만든 합성 주소(`https://api-test.local/...`)라
+ * 열리지 않아 쓸 수 없고, 실제 홈페이지 주소는 본문에만 있다. `excerpt`가 앞 500자 절단이고
+ * `[홈페이지]` 오프셋 중앙값이 71이라 대개 절단선 안에 들어온다(9/5 측정).
+ *
+ * <p>스킴을 추측해 붙이지 않는다 — `www.gokseong.go.kr`처럼 스킴이 없는 값은 버린다.
+ * 줄 앞에 설명이 붙은 값(`공식 홈페이지 https://…`)도 버린다: 그런 줄은 URL과 한글이 공백 없이
+ * 붙어 있는 경우가 있어(`https://blog.naver.com/murungfarm공식 인스타그램…`) 잘라내면 틀린
+ * 주소가 된다. 없는 링크보다 틀린 링크가 나쁘다.
+ */
+export function homepageLine(excerpt: string): string | null {
+  const line = excerpt.split('\n').find((row) => row.startsWith('[홈페이지]'))
+  const value = line?.slice('[홈페이지]'.length).trim().split(/\s+/)[0]
+  return value && /^https?:\/\//.test(value) ? value : null
+}
