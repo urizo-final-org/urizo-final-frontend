@@ -8,6 +8,71 @@ export type ProviderCredentialState = 'STORED' | 'VERIFIED' | 'BILLING_BLOCKED' 
 export type ProfileNodeType = 'start' | 'agent' | 'tool' | 'approval' | 'check' | 'guardrail' | 'end'
 export type ToolBindingMode = 'MODEL_OPTIONAL' | 'MODEL_REQUIRED' | 'SYSTEM_REQUIRED'
 export type ProfileToolBindings = Record<string, Record<string, ToolBindingMode>>
+export type ObservabilityStatus = 'AVAILABLE' | 'DISABLED' | 'UNAVAILABLE'
+
+export interface ObservabilityMetricRow {
+  model: string | null
+  observationCount: number | null
+  inputTokens: number | null
+  outputTokens: number | null
+  totalTokens: number | null
+  totalCost: number | null
+  p50LatencyMs: number | null
+  p95LatencyMs: number | null
+}
+
+export interface ObservabilityMetricsResponse {
+  status: ObservabilityStatus
+  errorCode: string | null
+  from: string
+  to: string
+  environment: string
+  rows: ObservabilityMetricRow[]
+}
+
+export interface ObservabilityMetadata {
+  jobId: string | null
+  traceId: string | null
+  profileVersionId: string | null
+  nodeId: string | null
+  nodeType: string | null
+  nodeStatus: string | null
+  attempt: number | null
+  provider: string | null
+  model: string | null
+  inputTokens: number | null
+  outputTokens: number | null
+  latencyMs: number | null
+  errorCode: string | null
+  toolStatus: string | null
+  checkStatus: string | null
+}
+
+export interface ObservabilityRow {
+  id: string
+  traceId: string
+  parentObservationId: string | null
+  type: string
+  name: 'axms.node' | 'axms.model' | 'axms.tool' | 'axms.check'
+  level: string | null
+  environment: string
+  startTime: string
+  endTime: string | null
+  model: string | null
+  inputTokens: number | null
+  outputTokens: number | null
+  latencyMs: number | null
+  metadata: ObservabilityMetadata
+}
+
+export interface ObservabilityResponse {
+  status: ObservabilityStatus
+  errorCode: string | null
+  from: string
+  to: string
+  environment: string
+  observations: ObservabilityRow[]
+}
 
 export interface ProviderCredentialStatus {
   provider: ModelProvider
@@ -160,6 +225,8 @@ export interface ModelCatalogApiClient {
 }
 
 export interface AgentSettingsApiClient extends ProfileVersionApiClient, ProfileEditorLayoutApiClient, ProfileDefaultTemplateApiClient, ModelCatalogApiClient {
+  getObservabilityMetrics(from: string, to: string): Promise<ObservabilityMetricsResponse>
+  getObservations(from: string, to: string): Promise<ObservabilityResponse>
   listProviderCredentials(): Promise<ProviderCredentialOverview>
   storeProviderCredential(provider: ModelProvider, credential: string, csrfToken: string): Promise<ProviderCredentialStatus>
   testProviderCredential(provider: ModelProvider, csrfToken: string): Promise<ProviderConnectionTestResult>
@@ -237,6 +304,14 @@ export class ProfileVersionApi implements AgentSettingsApiClient {
 
   listModelCatalog = (profileKey: ProfileKey) => this.request<ModelCatalog>(
     `/api/admin/ai/model-catalog?profileKey=${encodeURIComponent(profileKey)}`,
+  )
+
+  getObservabilityMetrics = (from: string, to: string) => this.request<ObservabilityMetricsResponse>(
+    `/api/admin/ai/observability/metrics?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
+  )
+
+  getObservations = (from: string, to: string) => this.request<ObservabilityResponse>(
+    `/api/admin/ai/observability/observations?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
   )
 
   listProviderCredentials = () => this.request<ProviderCredentialOverview>(
