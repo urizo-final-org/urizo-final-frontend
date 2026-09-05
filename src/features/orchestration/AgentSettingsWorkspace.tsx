@@ -629,8 +629,9 @@ function UsagePanel({ api }: { api: AgentSettingsApiClient }) {
 
     {!loading && activeTab === 'node' && observations && <section className={`${panel} mt-3`} aria-label="Node 계측 결과">
       <PanelTitle title="Node 계측"><Badge tone={nodeAvailability?.tone ?? 'idle'}>{nodeAvailability?.label ?? '관측 대기'}</Badge></PanelTitle>
+      <p className="border-t border-line-soft px-4 py-2 text-[0.6875rem] text-muted-2">최근 최대 50건의 Observation 조회 결과입니다.</p>
       {nodeRows.length === 0
-        ? <p className="p-4 text-[0.71875rem] text-muted-2">{observations.status === 'AVAILABLE' ? '선택한 기간의 Node·Tool·Check 관측이 아직 없습니다.' : observations.errorCode ?? '관측 연결 상태를 확인해 주세요.'}</p>
+        ? <p className="p-4 text-[0.71875rem] text-muted-2">{observations.status === 'AVAILABLE' ? '이번 조회 결과에 Node·Tool·Check 관측이 없습니다.' : observations.errorCode ?? '관측 연결 상태를 확인해 주세요.'}</p>
         : <div className="overflow-x-auto"><table className="w-full min-w-[46rem] text-left text-[0.6875rem]"><thead className="bg-sub text-muted-2"><tr><th className="px-3 py-2">관측</th><th className="px-3 py-2">Job / Node</th><th className="px-3 py-2">상태 / Attempt</th><th className="px-3 py-2">지연시간</th><th className="px-3 py-2">시작 UTC</th></tr></thead><tbody>
           {nodeRows.map((row) => <tr key={row.id} className="border-t border-line-soft"><td className="px-3 py-2 font-mono">{row.name}</td><td className="px-3 py-2"><span className="block">{shown(row.metadata.jobId)}</span><span className="font-mono text-muted-2">{shown(row.metadata.nodeId)}</span></td><td className="px-3 py-2">{shown(row.metadata.nodeStatus ?? row.metadata.toolStatus ?? row.metadata.checkStatus ?? row.level)} / {shown(row.metadata.attempt)}</td><td className="px-3 py-2">{row.latencyMs === null ? '제공되지 않음' : `${row.latencyMs} ms`}</td><td className="px-3 py-2 font-mono">{row.startTime}</td></tr>)}
         </tbody></table></div>}
@@ -645,8 +646,9 @@ function UsagePanel({ api }: { api: AgentSettingsApiClient }) {
         </tbody></table></div>}
       {observations && <div className="border-t border-line-soft">
         <div className="flex items-center justify-between gap-2 bg-sub px-3 py-2"><b className="text-[0.6875rem]">실제 Provider 호출</b><Badge tone={providerDetailAvailability?.tone ?? 'idle'} dot={false}>{providerDetailAvailability?.label ?? '관측 대기'}</Badge></div>
+        <p className="border-t border-line-soft px-4 py-2 text-[0.6875rem] text-muted-2">최근 최대 50건의 Observation 조회 결과입니다.</p>
         {providerRows.length === 0
-          ? <p className="p-4 text-[0.71875rem] text-muted-2">{observations.status === 'AVAILABLE' ? '선택한 기간의 실제 Provider 호출 Observation이 아직 없습니다.' : observations.errorCode ?? '관측 연결 상태를 확인해 주세요.'}</p>
+          ? <p className="p-4 text-[0.71875rem] text-muted-2">{observations.status === 'AVAILABLE' ? '이번 조회 결과에 실제 Provider 호출 Observation이 없습니다.' : observations.errorCode ?? '관측 연결 상태를 확인해 주세요.'}</p>
           : <div className="overflow-x-auto"><table className="w-full min-w-[56rem] text-left text-[0.6875rem]"><thead className="bg-sub text-muted-2"><tr><th className="px-3 py-2">Provider / Model</th><th className="px-3 py-2">Job / Node</th><th className="px-3 py-2">OTel Trace</th><th className="px-3 py-2">입력 / 출력 Token</th><th className="px-3 py-2">지연시간</th></tr></thead><tbody>
             {providerRows.map((row) => <tr key={row.id} className="border-t border-line-soft"><td className="px-3 py-2"><span className="block">{shown(row.metadata.provider)}</span><span className="font-mono text-muted-2">{shown(row.metadata.model ?? row.model)}</span></td><td className="px-3 py-2"><span className="block">{shown(row.metadata.jobId)}</span><span className="font-mono text-muted-2">{shown(row.metadata.nodeId)}</span></td><td className="px-3 py-2 font-mono">{row.traceId}</td><td className="px-3 py-2">{shown(row.inputTokens)} / {shown(row.outputTokens)}</td><td className="px-3 py-2">{row.latencyMs === null ? '제공되지 않음' : `${row.latencyMs} ms`}</td></tr>)}
           </tbody></table></div>}
