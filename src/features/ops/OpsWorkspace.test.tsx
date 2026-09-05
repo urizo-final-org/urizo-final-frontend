@@ -52,7 +52,6 @@ const screens: [OpsRouteId, string][] = [
   ['home', '안녕하세요, 일반 관리자님'],
   ['agents', 'Agent 관리'],
   ['rag', 'RAG 관리'],
-  ['devops', 'LLM DevOps'],
   ['approvals', '승인 관리'],
   ['runs', '실행 이력'],
   ['settings', '설정'],
