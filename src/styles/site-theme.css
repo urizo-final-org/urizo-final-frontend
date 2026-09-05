@@ -1,0 +1,54 @@
+/* ─────────────────────────────────────────────────────────────────────────────
+   관광 포털(통합 검색·챗봇)이 쓰는 색 토큰.
+
+   dev 가 `tokens.css` 를 지우고 `admin-theme.css`(관리자) / `site-theme.css`(사이트) 로
+   나눴다. 관리자 색은 `.admin-app` 스코프 안에만 있어서, 포털이 `.site-app` 안에서 렌더되면
+   값을 못 받는다. 그래서 포털이 쓰는 값만 여기로 옮긴다.
+
+   **새 색을 고르지 않았다.** 전부 `tokens.css` 에 있던 값 그대로다.
+   이름이 관리자와 겹치는 16개는 값이 다르지만 스코프(`.admin-app` / `.site-app`)가 겹치지
+   않아 서로 간섭하지 않는다.
+
+   병합 시: dev 의 `.site-app` 기본 스타일 블록 아래에 이 파일 내용을 그대로 이어 붙이면 된다.
+   ───────────────────────────────────────────────────────────────────────────── */
+
+/* Placeholder 줄무늬 3종은 dev 에 없다(포털 전용). `text-site-ph-ink` 유틸리티가 필요해서
+   매핑도 함께 옮긴다 — 나머지 이름은 dev 의 `admin-theme.css` 가 이미 매핑하고 있다. */
+@theme inline {
+  --color-site-ph: var(--site-ph);
+  --color-site-ph-line: var(--site-ph-line);
+  --color-site-ph-ink: var(--site-ph-ink);
+}
+
+.site-app {
+  /* Surfaces */
+  --page: #f6f8fa;
+  --panel: #ffffff;
+  --sub: #fafbfc;
+
+  /* Hairlines */
+  --line: #e4e8ee;
+  --line-soft: #eef1f4;
+  --field-line: #e0e5ec;
+
+  /* Text */
+  --ink: #16222f;
+  --body: #4a5764;
+  --muted: #6b7785;
+  --muted-2: #8b96a1;
+  --muted-3: #98a3ae;
+  --link: #1d5f8a;
+
+  /* Accent */
+  --primary: #173b5b;
+  --sb-muted: #c4d3e0;
+
+  /* 상태 — 샘플 고지(F8-a)가 쓴다 */
+  --wait-bg: #fdf3e3;
+  --wait-fg: #96652a;
+
+  /* 이미지 자리 표시(F5 대기) 줄무늬 */
+  --site-ph: #eef3f5;
+  --site-ph-line: #e6edef;
+  --site-ph-ink: #93a6ad;
+}

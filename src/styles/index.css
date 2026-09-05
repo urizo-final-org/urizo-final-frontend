@@ -2,3 +2,4 @@
    component now styles itself with Tailwind utility classes directly in its .tsx file. */
 @import 'tailwindcss';
 @import './tokens.css';
+@import './site-theme.css';
