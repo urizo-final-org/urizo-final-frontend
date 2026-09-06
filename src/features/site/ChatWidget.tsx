@@ -31,10 +31,21 @@ export function ChatWidget() {
   const [open, setOpen] = useState(false)
   const [draft, setDraft] = useState('')
   const [turns, setTurns] = useState<Turn[]>([])
+  const [locked, setLocked] = useState(false)
   const { state, ask } = useRagQuery()
   const scroller = useRef<HTMLDivElement>(null)
 
   const sending = state.phase === 'loading'
+
+  // 429는 서버가 알려준 시간만큼 입력을 잠근다(F11: 60초/30회). 잠그지 않으면 사용자가
+  // 계속 눌러 같은 429를 반복해 받고, 검색과 예산을 나눠 쓰는 구조라 검색까지 막힌다.
+  // 남은 시간 카운트다운 표시는 D1(상태 화면) 범위다 — 여기서는 잠금만 한다.
+  useEffect(() => {
+    if (state.phase !== 'rate_limited') return
+    setLocked(true)
+    const timer = setTimeout(() => setLocked(false), state.retryAfterMs ?? 60_000)
+    return () => clearTimeout(timer)
+  }, [state])
 
   // 응답이 확정되면 마지막 턴을 채운다. 낙관적으로 먼저 그린 질문 말풍선 아래에 답이 붙는다.
   useEffect(() => {
@@ -61,7 +72,7 @@ export function ChatWidget() {
   function submit(event: FormEvent) {
     event.preventDefault()
     const question = draft.trim()
-    if (!question || sending) return
+    if (!question || sending || locked) return
     setDraft('')
     setTurns((previous) => [...previous, { question }])
     ask({ query: question })
@@ -126,12 +137,12 @@ export function ChatWidget() {
       <input
         value={draft}
         onChange={(event) => setDraft(event.target.value)}
-        disabled={sending}
+        disabled={sending || locked}
         placeholder="메시지를 입력하세요…"
         aria-label="관광 도우미 메시지"
         className="min-w-0 flex-1 rounded-[0.5625rem] border border-field-line bg-white px-3 py-2 text-[0.8125rem] text-ink outline-0 disabled:bg-sub"
       />
-      <button type="submit" disabled={sending || draft.trim() === ''} className="flex-none rounded-[0.5625rem] bg-primary px-[0.9375rem] py-2 text-[0.78125rem] font-bold text-white disabled:opacity-50">전송</button>
+      <button type="submit" disabled={sending || locked || draft.trim() === ''} className="flex-none rounded-[0.5625rem] bg-primary px-[0.9375rem] py-2 text-[0.78125rem] font-bold text-white disabled:opacity-50">전송</button>
     </form>
   </aside>
 }

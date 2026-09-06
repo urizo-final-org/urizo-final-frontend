@@ -179,6 +179,26 @@ test('the tour helper answers a question with its citations', async () => {
   expect(screen.queryByText(/api-test\.local/)).not.toBeInTheDocument()
 })
 
+test('the tour helper locks its input while the rate limit holds', async () => {
+  // 실서버 실측(9/6): 30회 통과 → 31번째 429 · retryAfterMs 60000. 그 봉투를 그대로 쓴다.
+  vi.stubGlobal('fetch', publicFetch(siteTemplate(), '/', {
+    status: 429,
+    body: { schemaVersion: '1.0', traceId: '44444444-4444-4444-8444-444444444444', error: { code: 'RATE_LIMITED', message: 'Too many public chat requests from this client.', retryable: true, retryAfterMs: 60_000 } },
+  }))
+  render(<AppShell />)
+  fireEvent.click(await screen.findByRole('button', { name: '관광 도우미 열기' }))
+  const panel = () => within(screen.getByRole('complementary', { name: '관광 도우미' }))
+  fireEvent.change(panel().getByLabelText('관광 도우미 메시지'), { target: { value: '전주 축제' } })
+  fireEvent.click(panel().getByRole('button', { name: '전송' }))
+
+  expect(await screen.findByText('요청이 많습니다')).toBeInTheDocument()
+  expect(screen.getByText('60초 후 다시 시도해 주세요.')).toBeInTheDocument()
+  // 잠그지 않으면 사용자가 계속 눌러 같은 429를 반복해 받고, 검색과 예산을 나눠 쓰는
+  // 구조라 검색까지 막힌다. 재시도 버튼도 붙이지 않는다.
+  await waitFor(() => expect(panel().getByLabelText('관광 도우미 메시지')).toBeDisabled())
+  expect(panel().getByRole('button', { name: '전송' })).toBeDisabled()
+})
+
 test('the tour helper shows a refusal without an evidence section', async () => {
   vi.stubGlobal('fetch', publicFetch(siteTemplate(), '/', {
     body: chatAnswer({ outcome: 'REFUSED', answer: '근거를 찾지 못했습니다.', citations: [] }),
