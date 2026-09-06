@@ -1,4 +1,4 @@
-import { homepageLine } from './portal-meta'
+import { homepageLine, overviewText } from './portal-meta'
 import { Placeholder } from './portal-primitives'
 
 /**
@@ -34,7 +34,9 @@ export function PortalResultCard({ title, excerpt, categoryLabel, address }: {
       {categoryLabel != null && <span className="self-start rounded-md border border-line px-2 py-1 text-[0.6875rem] font-bold text-primary">{categoryLabel}</span>}
       <strong className="text-[1.1875rem] font-extrabold tracking-[-.03em] text-ink">{title}</strong>
       {address != null && <span className="text-[0.8125rem] text-muted">{address}</span>}
-      <span className="mt-1.5 line-clamp-2 text-[0.8125rem] leading-[1.6] text-body">{excerpt}</span>
+      {/* 라벨 줄은 각자 제 자리(뱃지·주소·링크)로 올라갔다. 본문에는 개요만 남긴다 —
+          raw를 그대로 넣으면 `[분류] 숙박 [유형] 펜션 …`이 화면에 보인다. */}
+      <span className="mt-1.5 line-clamp-2 text-[0.8125rem] leading-[1.6] text-body">{overviewText(excerpt)}</span>
       {homepage && <a href={homepage} target="_blank" rel="noopener noreferrer" className="mt-1 self-start text-[0.8125rem] font-bold text-primary underline underline-offset-4">홈페이지 ↗</a>}
     </div>
   </article>

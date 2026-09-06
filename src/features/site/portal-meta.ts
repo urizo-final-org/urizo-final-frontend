@@ -41,6 +41,32 @@ export function addressLine(excerpt: string): string | null {
 }
 
 /**
+ * 카드 본문에 쓸 소개글을 꺼낸다 — `[개요]` 다음 줄부터 다음 라벨 줄 직전까지다.
+ *
+ * <p>`excerpt`는 원문 앞 500자를 그대로 자른 값이라 `[분류]`·`[유형]`·`[이름]`·`[주소]`·
+ * `[홈페이지]`·`[상세정보]` 라벨이 전부 들어 있다. 그대로 본문에 넣으면 화면에
+ * `[분류] 숙박 > 펜션/민박 [유형] 숙박 …`이 보인다(9/6 실호출에서 확인). 라벨은 각자
+ * 제 자리(뱃지·주소·링크)로 올라가므로 본문에는 개요만 남긴다.
+ *
+ * <p>`[개요]`가 없거나 값이 비면 **원문을 그대로 돌려준다.** 개요가 없는 문서(대동고택 등)에서
+ * 본문을 통째로 비우는 것보다, 라벨이 섞여도 내용을 보여주는 편이 낫다.
+ */
+export function overviewText(excerpt: string): string {
+  const rows = excerpt.split('\n')
+  const start = rows.findIndex((row) => row.startsWith('[개요]'))
+  if (start < 0) return excerpt
+  // `[개요]` 뒤에 같은 줄로 붙는 경우와 다음 줄로 내려가는 경우가 둘 다 있다.
+  const head = rows[start].slice('[개요]'.length).trim()
+  const rest: string[] = []
+  for (let index = start + 1; index < rows.length; index += 1) {
+    if (rows[index].startsWith('[')) break
+    rest.push(rows[index])
+  }
+  const body = [head, ...rest].join('\n').trim()
+  return body || excerpt
+}
+
+/**
  * 본문의 `[홈페이지]` 줄에서 링크로 쓸 URL을 꺼낸다. 값이 `http://`·`https://`로 **시작할 때만**
  * 돌려주고, 아니면 null이다.
  *

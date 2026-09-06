@@ -1,7 +1,10 @@
-import { useState, type FormEvent } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
+import { tabToCategory } from '../knowledge/category'
+import { useRagQuery } from '../knowledge/useRagQuery'
 import { withParticle } from './particle'
-import { PORTAL_TABS } from './portal-meta'
+import { addressLine, PORTAL_TABS } from './portal-meta'
+import { describePortalStatus } from './portal-status'
 import { Placeholder, SampleNotice } from './portal-primitives'
 import { PortalResultCard } from './PortalResultCard'
 
@@ -139,7 +142,9 @@ export function PortalHome() {
     <div className="mx-auto max-w-[75rem] px-7 pb-28 max-[560px]:px-4">
       {/* 첫 섹션만 1:1 대형 카드다. 플레이스홀더 위에 시안의 그라데이션을 덮어 흰 제목 대비를 확보한다. */}
       <section className="pt-16 max-[560px]:pt-12">
-        <SampleNotice className="mb-8">
+        {/* 검색·챗봇은 배선됐지만 이 큐레이션 목록은 여전히 고정이다 — 만들 API가 없다.
+            "검색 API 미배선"이라는 기본 라벨은 이제 사실이 아니므로 이 자리에 맞는 문구를 넘긴다. */}
+        <SampleNotice label="샘플 데이터 · 추천 목록은 고정입니다" className="mb-8">
           아래 카드는 코퍼스에 실재하는 문서를 카테고리별로 고정 표시한 것입니다. 조회수·계절 같은 큐레이션 축이 없어 집계 상위 카테고리와 코퍼스 순서로만 골랐습니다.
         </SampleNotice>
         <SectionHead title={hero.title} total={hero.total} />
@@ -168,28 +173,8 @@ export function PortalHome() {
   </main>
 }
 
-type MockResult = { name: string; categoryId: string; cat: string; addr: string; desc: string }
-
-/**
- * 코퍼스(`tourism-sample-documents-500.json`)에 실재하는 문서만 담는다. 이름·분류·주소·개요는
- * 원문에서 가져왔고, 없는 값은 비운다(대동고택은 `[개요]` 줄이 없어 desc가 빈 문자열).
- *
- * <p>여기 담긴 8건은 "주소에 전주가 들어가는 문서 전부"라는 사실의 결과일 뿐 노출 건수 결정이 아니다.
- * 배선 뒤에는 `CITATION_LIMIT = 3`처럼 더 적을 수 있으므로 카드 수에 기대는 레이아웃을 두지 않는다.
- *
- * <p>`categoryId`는 탭 접두 매핑(portal-meta)과 맞춰 뒀다. I7이 이 배열을 공개 검색 API 응답으로
- * 바꿀 때 필터 축이 이미 붙어 있게 하려는 것이고, 지금 화면 표시에는 쓰지 않는다.
- */
-const MOCK_RESULTS: MockResult[] = [
-  { name: '도원', categoryId: 'AC03', cat: '숙박 > 펜션/민박', addr: '전북특별자치도 전주시 완산구 팔달로 58-3 (서서학동)', desc: '다가도원은 객리단길에 위치한 한옥독채스테이다. 마당에서 실외 욕조를 사용 할 수 있다. 오직 한 팀만을 위한 독채 숙소로 운영 중이다.' },
-  { name: '대동고택', categoryId: 'AC03', cat: '숙박 > 펜션/민박', addr: '전북특별자치도 전주시 완산구 대동로 7-13 (태평동)', desc: '' },
-  { name: '더 한옥', categoryId: 'AC03', cat: '숙박 > 펜션/민박', addr: '전북특별자치도 전주시 완산구 은행로 68-15 (교동)', desc: '더한옥은 한옥마을 최중심지에 위치하여, 40년 동안 3명의 박사를 배출한 정남향의 명당터로서 현재 3대째 살고 있으며, 한옥마을 볼거리인 전동성당, 풍남문, 오목대, 향교, 전주천 및 공용주차장을 걸어서 5분 거리에 갈수 있는 최적의 위치에 자리 잡고 있다.' },
-  { name: '베니키아 전주한성 호텔', categoryId: 'AC_ETC', cat: '숙박 > 호텔·콘도·모텔·호스텔', addr: '전북특별자치도 전주시 완산구 전주객사5길 43-3 (고사동)', desc: '전주 한성 관광호텔은 1949년 전라북도 최초로 창립된 전통 여관에서 시작된 호텔이다. 현재는 3대째 가업을 이어오며 관광호텔로 발전하였고, 세계에서 하나뿐인 스테인리스 전통욕조를 체험할 수 있다.' },
-  { name: '블루원호텔', categoryId: 'AC_ETC', cat: '숙박 > 호텔·콘도·모텔·호스텔', addr: '전북특별자치도 전주시 덕진구 용산2길 18', desc: '전주시에 위치한 블루원호텔은 모던한 인테리어 꾸며진 객실에는 인터넷이 설치되어 있고, 에어컨, 냉장고 등이 구비되어 있는 숙소이다.' },
-  { name: '밥상위의한우', categoryId: 'FD01', cat: '음식 > 한식', addr: '전북특별자치도 전주시 완산구 천잠로 341', desc: "전주대학교 입구에 있는 '밥상위의한우'는 드라이에이징 기법으로 한우를 숙성시켜서 판매하고 있는 전문점이다. 넓은 좌석을 보유하고 있어 각종 모임에 적합하다." },
-  { name: '삼천빌리지 카페', categoryId: 'FD05', cat: '음식 > 카페/찻집', addr: '전북특별자치도 전주시 완산구 용와길 4-27 (평화동3가)', desc: '삼천빌리지카페는 바쁜 일상 속에서 잠시 쉬어갈 수 있는 여유로운 공간이다. 자연스러운 감성과 세련된 인테리어가 조화를 이루어 편안하면서도 감각적인 분위기를 자아낸다.' },
-  { name: '호남제일문', categoryId: 'HS01', cat: '역사관광 > 역사유적지', addr: '전북특별자치도 전주시 덕진구 여의동 1217-9', desc: '전주 IC 인근에 있는 호남제일문은 길이 43m, 폭 3.5m, 높이 12.4m의 규모를 자랑하는 국내에서 가장 큰 일주문이다. 전주의 지역 특색과도 잘 어울리는 한옥으로 지어졌다.' },
-]
+/** F11(60초/30회)이 검색과 챗봇을 함께 조인다. 탭 연타·타이핑이 예산을 태우지 않게 한다. */
+const SEARCH_DEBOUNCE_MS = 400
 
 export function PortalSearch() {
   const location = useLocation()
@@ -199,10 +184,27 @@ export function PortalSearch() {
   const requested = params.get('category')
   const active = PORTAL_TABS.some((tab) => tab.id === requested) ? (requested as string) : 'all'
   const [draft, setDraft] = useState(query)
+  const { state, ask, reset } = useRagQuery()
+
+  // URL이 단일 진실 소스다. q를 useState에 복제하지 않으므로 뒤로가기·새로고침·링크 공유가
+  // 그대로 동작한다. draft는 제출 전 입력값일 뿐 결과에 관여하지 않는다.
+  //
+  // 디바운스는 탭 연타 방어다. useRagQuery(useAsync)가 이전 요청을 abort하므로 늦게 온
+  // 응답이 화면을 덮지도 않는다.
+  useEffect(() => {
+    if (!query) {
+      reset()
+      return
+    }
+    const timer = setTimeout(() => {
+      ask({ query, category: tabToCategory(active) })
+    }, SEARCH_DEBOUNCE_MS)
+    return () => clearTimeout(timer)
+  }, [query, active, ask, reset])
 
   // 탭 전환은 프론트 필터링이 아니라 category 파라미터를 바꾼 재검색 URL이다.
-  // I7이 이 파라미터를 PORTAL_TABS.prefixes로 풀어 공개 검색 API에 전달한다. 그전까지
-  // MOCK_RESULTS가 하드코딩이라 목록은 바뀌지 않는다 — 알려진 제약이다.
+  // 프론트에서 상위 N건을 걸러내면 결과가 0건이 되기 쉽다 — SQL 평가 순서상 WHERE가
+  // ORDER BY·LIMIT보다 먼저라 "필터 후 상위 N건"은 서버에서만 성립한다.
   function search(nextQuery: string, category: string) {
     const next = new URLSearchParams()
     if (nextQuery) next.set('q', nextQuery)
@@ -246,26 +248,84 @@ export function PortalSearch() {
         </aside>
 
         <div>
-          {/* 시안의 "OO 근처의 검색결과 표시"는 위치 기능이 없어 옮기지 않았다. 건수도 적지 않는다 —
-              지금 값은 고정 배열 길이일 뿐이고 배선 뒤 건수를 여기서 약속할 근거가 없다. */}
+          {/* 시안의 "OO 근처의 검색결과 표시"는 위치 기능이 없어 옮기지 않았다.
+              건수는 서버가 고정한 citations 길이(CITATION_LIMIT=3 이하)이며, 코퍼스 전체에서
+              몇 건이 일치했는지가 아니다 — 그 값은 공개 응답에 없다. */}
           <h1 className="m-0 mb-3 text-[clamp(1.5rem,2.6vw,2rem)] font-extrabold tracking-[-.04em] text-ink">
             {query ? `“${query}”${withParticle(query, '과', '와')} 일치하는 검색 결과` : '검색 결과'}
+            {state.phase === 'ready' && <span className="ml-2 text-base font-bold text-muted">{state.data?.citations.length ?? 0}건</span>}
           </h1>
-          <SampleNotice className="mb-7">
-            아래 목록은 코퍼스에 실재하는 문서를 고정해 둔 것입니다. <b className="font-semibold">검색어와 카테고리 탭은 아직 결과에 반영되지 않습니다</b> — 검색 API 배선(I7) 전이라 무엇을 입력하거나 선택해도 같은 목록이 나옵니다.
+          <SampleNotice label="관광 코퍼스 500건 · 근거 문서 기준 검색" className="mb-7">
+            질문에 대한 <b className="font-semibold">근거가 되는 문서</b>를 찾아 보여 줍니다. 사진은 아직 준비 중이라 자리 표시로 나옵니다.
           </SampleNotice>
 
-          <div className="flex flex-col gap-[0.875rem]">
-            {MOCK_RESULTS.map((result) => <PortalResultCard
-              key={result.name}
-              title={result.name}
-              excerpt={result.desc}
-              categoryLabel={result.cat}
-              address={result.addr}
-            />)}
-          </div>
+          <SearchResults state={state} onRetry={() => ask({ query, category: tabToCategory(active) })} hasQuery={query !== ''} />
         </div>
       </div>
     </div>
   </main>
+}
+
+/**
+ * 검색 결과 영역의 상태별 표시.
+ *
+ * <p>`REFUSED`를 오류로 그리지 않는 것이 핵심이다 — "근거가 없어 답하지 않았다"는 RAG가
+ * 제대로 동작한 결과이지 장애가 아니다. 경고색과 [다시 시도]를 붙이면 성과를 장애로 보이게 한다.
+ *
+ * <p>상태 6종의 디자인 정리는 D1에서 한다. 여기서는 동작과 문구만 맞춘다.
+ */
+function SearchResults({ state, onRetry, hasQuery }: {
+  state: ReturnType<typeof useRagQuery>['state']
+  onRetry: () => void
+  hasQuery: boolean
+}) {
+  if (!hasQuery) {
+    return <PortalNotice title="검색어를 입력해 주세요">
+      찾으시는 곳의 이름이나 특징을 적어 주세요. 예: 한옥스테이, 전주 축제
+    </PortalNotice>
+  }
+
+  if (state.phase === 'idle' || state.phase === 'loading') {
+    return <div aria-busy="true" aria-label="검색 중" className="flex flex-col gap-[0.875rem]">
+      {[0, 1, 2].map((row) => <Placeholder key={row} label="" className="h-[12.25rem] rounded-2xl" />)}
+    </div>
+  }
+
+  const status = describePortalStatus(state)
+  if (status) {
+    return <PortalNotice title={status.title} trace={status.trace} onRetry={status.retry ? onRetry : undefined}>
+      {status.detail}
+    </PortalNotice>
+  }
+
+  const citations = state.data?.citations ?? []
+  // ANSWERED인데 인용이 비는 상태는 서버가 막고 있다(V1 불변식). 방어적으로만 둔다.
+  if (citations.length === 0) {
+    return <PortalNotice title="표시할 결과가 없습니다">다른 검색어로 다시 시도해 주세요.</PortalNotice>
+  }
+
+  return <div className="flex flex-col gap-[0.875rem]">
+    {citations.map((citation, index) => <PortalResultCard
+      key={`${citation.title}-${index}`}
+      title={citation.title}
+      excerpt={citation.excerpt}
+      categoryLabel={citation.categoryLabel}
+      address={addressLine(citation.excerpt) ?? undefined}
+    />)}
+  </div>
+}
+
+/** 결과 영역의 빈 상태 한 장. 제목 + 부연 + (있으면) 재시도·추적자. */
+function PortalNotice({ title, children, trace, onRetry }: {
+  title: string
+  children?: React.ReactNode
+  trace?: string
+  onRetry?: () => void
+}) {
+  return <div className="flex flex-col items-start gap-2 rounded-2xl border border-line-soft bg-panel px-7 py-10">
+    <strong className="text-[1.0625rem] font-extrabold tracking-[-.03em] text-ink">{title}</strong>
+    {children != null && <span className="text-[0.875rem] leading-[1.7] text-body">{children}</span>}
+    {onRetry && <button type="button" onClick={onRetry} className="mt-2 rounded-full bg-primary px-5 py-2 text-[0.8125rem] font-bold text-white">다시 시도</button>}
+    {trace && <span className="mt-1 text-[0.75rem] text-muted-3">{trace}</span>}
+  </div>
 }
