@@ -98,3 +98,31 @@ export type AgentJob = {
 
 /** 빌드·활성화·롤백이 공통으로 요구하는 본문 필드. */
 export const ADMIN_SCHEMA_VERSION = '1.0'
+
+export type Project = {
+  projectId: string
+  name: string
+  status: string
+}
+
+export type KnowledgeBase = {
+  knowledgeBaseId: string
+  projectId: string
+  name: string
+  /** 활성 버전이 없으면 null. 계약이 ALWAYS 직렬화라 키는 항상 온다. */
+  activeVersionId: string | null
+}
+
+/**
+ * 화면이 다룰 지식 베이스를 정하는 결과.
+ *
+ * <p>UUID를 상수로 박지 않는다. `5352d53e…`는 **이 노트북 DB의 값**이라 팀원이 콜드
+ * 스타트로 환경을 세우면 다른 UUID가 생기고, 박아 두면 그 환경에서 관리자 화면이 통째로
+ * 깨진다(함정 24 — 문서값은 "마지막 확인 시점의 기록"이다).
+ */
+export type KnowledgeTarget =
+  | { kind: 'ready'; projectId: string; knowledgeBaseId: string; name: string }
+  /** 0건. 콜드 스타트 직후 상태다. */
+  | { kind: 'empty'; what: 'project' | 'knowledgeBase' }
+  /** 여러 건. **첫 번째를 조용히 고르지 않는다** — 잘못된 KB를 보고도 모르게 된다. */
+  | { kind: 'ambiguous'; what: 'project' | 'knowledgeBase'; count: number }

@@ -6,6 +6,7 @@ import CmsWorkspace from '../features/cms/CmsWorkspace'
 import ApprovalBell from '../features/coding/ApprovalBell'
 import CodingWorkspace from '../features/coding/CodingWorkspace'
 import GuardrailWorkspace from '../features/coding/GuardrailWorkspace'
+import { KnowledgeAdminApi } from '../features/knowledge/admin-api'
 import OpsWorkspace from '../features/ops/OpsWorkspace'
 import AgentSettingsWorkspace from '../features/orchestration/AgentSettingsWorkspace'
 import { ProfileVersionApi } from '../features/orchestration/api'
@@ -127,6 +128,7 @@ function AuthenticatedAdmin({ session, theme, onToggleTheme, onRefresh, onExpire
   const siteSettingsApi = useMemo(() => new CmsSiteSettingsApi(session.sessionToken, lifecycle.refreshed, lifecycle.expired), [session.sessionToken, lifecycle])
   const naturalCmsApi = useMemo(() => new NaturalCmsApi(session.sessionToken, lifecycle.refreshed, lifecycle.expired), [session.sessionToken, lifecycle])
   const codingApi = useMemo(() => new CodingConsoleApi(session.sessionToken, lifecycle.refreshed, lifecycle.expired), [session.sessionToken, lifecycle])
+  const knowledgeApi = useMemo(() => new KnowledgeAdminApi(session.sessionToken, lifecycle.refreshed, lifecycle.expired), [session.sessionToken, lifecycle])
 
   function go(route: RouteId) { navigate(pathForRoute(route)); setMenuOpen(false) }
 
@@ -218,7 +220,7 @@ function AuthenticatedAdmin({ session, theme, onToggleTheme, onRefresh, onExpire
                 ? <CodingWorkspace api={codingApi} role={session.actor.role} />
               : route.id === 'guardrail'
                 ? <GuardrailWorkspace api={codingApi} />
-              : <OpsWorkspace route={route.id} actorName={session.actor.name} roleLabel={ROLE_LABELS[session.actor.role]} profileApi={profileApi} siteSettingsApi={siteSettingsApi} />}
+              : <OpsWorkspace route={route.id} actorName={session.actor.name} roleLabel={ROLE_LABELS[session.actor.role]} role={session.actor.role} knowledgeApi={knowledgeApi} profileApi={profileApi} siteSettingsApi={siteSettingsApi} />}
           />)}
           <Route path="/admin/*" element={<Navigate to={pathForRoute(fallback)} replace />} />
         </Routes>

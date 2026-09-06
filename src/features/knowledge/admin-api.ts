@@ -3,8 +3,11 @@ import { fetchWithSessionRefresh, type AdminSession } from '../../shared/api/ses
 import {
   ADMIN_SCHEMA_VERSION,
   type AgentJob,
+  type KnowledgeBase,
+  type KnowledgeTarget,
   type KnowledgeVersion,
   type KnowledgeVersionList,
+  type Project,
 } from './admin-types'
 
 /**
@@ -50,6 +53,32 @@ export class KnowledgeAdminApi {
     const body = await response.json().catch(() => undefined)
     if (!response.ok) throw toProductApiError(response.status, body)
     return body as T
+  }
+
+  listProjects = () => this.request<{ items: Project[] }>('/api/projects')
+
+  /** `projectId`가 필수 파라미터다 — 전체 목록 엔드포인트가 없다. */
+  listKnowledgeBases = (projectId: string) => this.request<{ items: KnowledgeBase[] }>(
+    `/api/knowledge-bases?projectId=${encodeURIComponent(projectId)}`,
+  )
+
+  /**
+   * 화면이 다룰 지식 베이스를 찾는다. 진입 시 1회, 폴링은 versions만 돌므로 반복 비용이 없다.
+   *
+   * <p>**여러 건이면 첫 번째를 고르지 않는다.** 조용히 고르면 잘못된 KB를 보고도 모른다.
+   * 선택 UI는 이번 범위 밖이므로 명시적으로 그렇게 말한다.
+   */
+  resolveTarget = async (): Promise<KnowledgeTarget> => {
+    const projects = (await this.listProjects()).items ?? []
+    if (projects.length === 0) return { kind: 'empty', what: 'project' }
+    if (projects.length > 1) return { kind: 'ambiguous', what: 'project', count: projects.length }
+
+    const projectId = projects[0].projectId
+    const bases = (await this.listKnowledgeBases(projectId)).items ?? []
+    if (bases.length === 0) return { kind: 'empty', what: 'knowledgeBase' }
+    if (bases.length > 1) return { kind: 'ambiguous', what: 'knowledgeBase', count: bases.length }
+
+    return { kind: 'ready', projectId, knowledgeBaseId: bases[0].knowledgeBaseId, name: bases[0].name }
   }
 
   /** A2 요약 · A5 목록 · 진행 중 감지가 전부 이 응답 하나를 쓴다. 진입 시 1회 호출. */

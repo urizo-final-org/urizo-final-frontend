@@ -9,12 +9,15 @@ import {
 import type { ProfileVersion, ProfileVersionApiClient } from '../orchestration/api'
 import { notifySiteUpdated, type SiteTemplate } from '../cms/api'
 import type { CmsSite, CmsSiteSettings, CmsSiteSettingsApiClient } from '../site-settings/api'
+import type { AdminRole } from '../../shared/api/session'
+import type { KnowledgeAdminApi } from '../knowledge/admin-api'
+import { RagAdminPanel } from '../knowledge/RagAdminPanel'
 
 /** Operations screens added on top of the CMS; only Profile-backed sections call an API. */
-export default function OpsWorkspace({ route, actorName, roleLabel, profileApi, siteSettingsApi }: { route: OpsRouteId; actorName: string; roleLabel: string; profileApi: ProfileVersionApiClient; siteSettingsApi: CmsSiteSettingsApiClient }) {
+export default function OpsWorkspace({ route, actorName, roleLabel, role, knowledgeApi, profileApi, siteSettingsApi }: { route: OpsRouteId; actorName: string; roleLabel: string; role: AdminRole; knowledgeApi: KnowledgeAdminApi; profileApi: ProfileVersionApiClient; siteSettingsApi: CmsSiteSettingsApiClient }) {
   if (route === 'home') return <Home actorName={actorName} />
   if (route === 'agents') return <Agents />
-  if (route === 'rag') return <Rag />
+  if (route === 'rag') return <RagAdminPanel api={knowledgeApi} role={role} />
   if (route === 'devops') return <Devops />
   if (route === 'approvals') return <Approvals />
   if (route === 'runs') return <Runs />
@@ -127,159 +130,6 @@ function Agents() {
 }
 
 /* ------------------------------------------------------------------ RAG 관리 */
-
-const tree: { label: string; icon: IconName; count: string; indent: number; active?: boolean; strong?: boolean }[] = [
-  { label: '한빛관광공사', icon: 'building-2', count: '', indent: 8, strong: true },
-  { label: '관광지 공공데이터 API', icon: 'plug', count: '5', indent: 22, active: true, strong: true },
-  { label: '관광지', icon: 'file-text', count: '4,120', indent: 36 },
-  { label: '문화시설', icon: 'file-text', count: '1,870', indent: 36 },
-  { label: '축제·행사', icon: 'file-text', count: '2,240', indent: 36 },
-  { label: '숙박', icon: 'file-text', count: '2,010', indent: 36 },
-  { label: '음식점', icon: 'file-text', count: '2,240', indent: 36 },
-  { label: 'RAG 버전', icon: 'layers', count: '3', indent: 22, strong: true },
-  { label: '수집 로그', icon: 'scroll-text', count: '128', indent: 22 },
-]
-
-const ragMeta = [
-  { label: 'API Key', value: 'TOUR-••••-9A2F' },
-  { label: '데이터 종류', value: '5종 · 관광지 외' },
-  { label: '최근 수집', value: '12,480건 · 정상' },
-  { label: '활성 버전', value: 'Tour-RAG v3' },
-]
-
-const buildSteps: { label: string; dur: string; kind: 'done' | 'run' | 'wait' }[] = [
-  { label: '관광 데이터 수집', dur: '00:03:12', kind: 'done' },
-  { label: '파싱·정제', dur: '00:05:40', kind: 'done' },
-  { label: '청킹', dur: '00:02:18', kind: 'done' },
-  { label: '임베딩', dur: '진행 중', kind: 'run' },
-  { label: 'pgvector 저장·버전 생성', dur: '대기', kind: 'wait' },
-]
-
-const metrics = [
-  { label: 'Recall@5', value: '91.3%', pct: 91.3 },
-  { label: 'Hit@5', value: '93.1%', pct: 93.1 },
-  { label: 'MRR@5', value: '0.88', pct: 88 },
-  { label: '질문 성공률', value: '96.0%', pct: 96 },
-]
-
-const ragRows: { name: string; recall: string; hit: string; mrr: string; fail: string; active: boolean; tone: Tone; state: string }[] = [
-  { name: 'Tour-RAG v1', recall: '78.2%', hit: '81.0%', mrr: '0.71', fail: '12', active: false, tone: 'ok', state: '완료' },
-  { name: 'Tour-RAG v2', recall: '84.6%', hit: '87.5%', mrr: '0.79', fail: '8', active: false, tone: 'ok', state: '완료' },
-  { name: 'Tour-RAG v3', recall: '91.3%', hit: '93.1%', mrr: '0.88', fail: '4', active: true, tone: 'run', state: '진행 중' },
-]
-
-const ragColumns = 'grid-cols-[1.4fr_.8fr_.8fr_.8fr_.8fr_.9fr]'
-const stepSkin = { done: 'border-[#c9e2d4] bg-ok-bg text-ok-fg', run: 'border-[#cfe0ec] bg-run-bg text-run-fg', wait: 'border-line bg-white text-muted-4' }
-
-function Rag() {
-  return <>
-    <PageHead title="RAG 관리" description="관광 공공데이터를 검색자료로 만들고 버전별 품질을 비교합니다.">
-      <button className={secondaryButton}>데이터 소스 추가</button>
-      <button className={primaryButton}><Icon name="play" size={13} />Build 시작</button>
-    </PageHead>
-    <MockNote>정적 데모 화면입니다. 모든 지표와 진행 상태는 예시 값입니다.</MockNote>
-
-    <div className="grid items-start gap-[0.875rem] xl:grid-cols-[17rem_minmax(0,1fr)]">
-      <section className={panel}>
-        <div className="border-b border-line-soft px-[0.875rem] py-3">
-          <SearchField placeholder="데이터 소스 검색" />
-        </div>
-        <div className="px-2 pb-3 pt-2">
-          {tree.map((node) => <button
-            key={node.label}
-            type="button"
-            className={`flex w-full items-center gap-2 rounded-[0.3125rem] py-[0.375rem] pr-2 text-left text-xs ${node.active ? 'bg-[#eef2f7] font-semibold text-primary' : node.strong ? 'font-semibold text-ink' : 'font-medium text-body'}`}
-            style={{ paddingLeft: `${node.indent / 16}rem` }}
-          >
-            <Icon name={node.icon} className={node.active ? 'text-run-fg' : node.strong ? 'text-muted-2' : 'text-muted-4'} />
-            <span className="flex-1 truncate">{node.label}</span>
-            <small className="text-[0.65625rem] text-muted-3">{node.count}</small>
-          </button>)}
-        </div>
-      </section>
-
-      <div className="flex min-w-0 flex-col gap-[0.875rem]">
-        <section className={panel}>
-          <div className="flex items-start justify-between gap-4 border-b border-line-soft p-4">
-            <div>
-              <div className="flex items-center gap-2">
-                <h2 className="text-base font-semibold">관광지 공공데이터 API</h2>
-                <Badge tone="ok">등록 완료</Badge>
-              </div>
-              <p className="mt-[0.3125rem] text-xs text-muted-2">고객사 · 한빛관광공사 · 최근 수집 2026.08.23</p>
-            </div>
-            <button className={smallButton}>수집 설정</button>
-          </div>
-          <div className="grid sm:grid-cols-2 xl:grid-cols-4">
-            {ragMeta.map((meta) => <div key={meta.label} className="border-r border-row-line px-4 py-[0.875rem]">
-              <small className="block text-[0.65625rem] text-muted-3">{meta.label}</small>
-              <b className="mt-[0.3125rem] block text-[0.78125rem] font-semibold">{meta.value}</b>
-            </div>)}
-          </div>
-        </section>
-
-        <div className="grid gap-[0.875rem] lg:grid-cols-2">
-          <section className={panel}>
-            <PanelTitle title="RAG Build 진행"><Badge tone="run">진행 중 · 3/5</Badge></PanelTitle>
-            <div className="flex flex-col gap-[0.125rem] px-4 pb-4 pt-[0.875rem]">
-              {buildSteps.map((step) => <div key={step.label} className={`flex items-center gap-[0.625rem] py-[0.5625rem] text-xs ${step.kind === 'wait' ? 'text-muted-3' : 'text-body'}`}>
-                <span className={`grid h-5 w-5 shrink-0 place-items-center rounded-full border text-[0.625rem] font-bold ${stepSkin[step.kind]}`}>
-                  {step.kind === 'done' ? '✓' : step.kind === 'run' ? '•' : '—'}
-                </span>
-                <span className="flex-1">{step.label}</span>
-                <small className="font-mono text-[0.6875rem] text-muted-3">{step.dur}</small>
-              </div>)}
-            </div>
-          </section>
-
-          <section className={panel}>
-            <PanelTitle title="품질 지표 · Tour-RAG v3"><small className="text-[0.6875rem] text-muted-2">Mock 데이터</small></PanelTitle>
-            <div className="flex flex-col gap-[0.875rem] px-4 pb-4 pt-[0.875rem]">
-              {metrics.map((metric) => <div key={metric.label}>
-                <div className="flex items-center justify-between text-[0.71875rem] text-muted">
-                  <span>{metric.label}</span>
-                  <b className="text-[0.78125rem] font-semibold text-ink">{metric.value}</b>
-                </div>
-                <div className="mt-[0.4375rem] h-[0.375rem] overflow-hidden rounded-[0.1875rem] bg-[#f0f2f5]">
-                  <div className="h-[0.375rem] rounded-[0.1875rem] bg-run-fg" style={{ width: `${metric.pct}%` }} />
-                </div>
-              </div>)}
-            </div>
-          </section>
-        </div>
-
-        <section className={panel}>
-          <PanelTitle title="RAG 버전" sub="모든 수치는 데모 데이터입니다.">
-            <div className="flex gap-2">
-              <button className={smallButton}>두 버전 비교</button>
-              <button className={smallButton}>Rollback</button>
-            </div>
-          </PanelTitle>
-          <div className="overflow-x-auto">
-            <div className="min-w-[43.75rem]">
-              <div className={`${headRow} ${ragColumns}`}>
-                <span>버전</span><span>Recall@5</span><span>Hit@5</span><span>MRR@5</span><span>실패 질문</span><span className="text-right">빌드 상태</span>
-              </div>
-              {ragRows.map((version) => <div key={version.name} className={`${bodyRow} ${ragColumns}`}>
-                <span className="flex items-center gap-2">
-                  <b className="text-[0.78125rem] font-semibold text-ink">{version.name}</b>
-                  {version.active && <span className="rounded bg-ok-bg px-[0.375rem] py-[0.125rem] text-[0.625rem] font-semibold text-ok-fg">현재 활성</span>}
-                </span>
-                <span className="font-mono">{version.recall}</span>
-                <span className="font-mono">{version.hit}</span>
-                <span className="font-mono">{version.mrr}</span>
-                <span className="font-mono">{version.fail}</span>
-                <span className="flex justify-end"><Badge tone={version.tone}>{version.state}</Badge></span>
-              </div>)}
-            </div>
-          </div>
-        </section>
-      </div>
-    </div>
-  </>
-}
-
-/* ------------------------------------------------------------------ LLM DevOps */
 
 const devopsStatus: { name: string; meta: string; tone: Tone; state: string }[] = [
   { name: 'Agent 1', meta: 'OpenAI · 요구사항 분석', tone: 'ok', state: '완료' },
