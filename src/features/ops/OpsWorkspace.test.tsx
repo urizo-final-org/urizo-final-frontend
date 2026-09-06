@@ -1,4 +1,5 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, render as rtlRender, screen, waitFor, within } from '@testing-library/react'
+import { MemoryRouter } from 'react-router-dom'
 import { afterEach, expect, test, vi } from 'vitest'
 import type { OpsRouteId } from '../../app/routes'
 import type { ProfileVersion, ProfileVersionApiClient } from '../orchestration/api'
@@ -13,6 +14,14 @@ import OpsWorkspace from './OpsWorkspace'
  */
 function knowledgeApi() {
   return { resolveTarget: vi.fn(), listVersions: vi.fn(), getJob: vi.fn() } as unknown as KnowledgeAdminApi
+}
+
+/**
+ * rag가 실배선되면서 선택 상태를 URL 쿼리에 두게 됐다(useSearchParams). 라우터 컨텍스트가
+ * 없으면 그 라우트만 렌더에서 죽으므로 이 파일의 렌더를 한 겹 감싼다.
+ */
+function render(ui: React.ReactElement) {
+  return rtlRender(<MemoryRouter initialEntries={['/admin/rag']}>{ui}</MemoryRouter>)
 }
 
 afterEach(() => vi.unstubAllGlobals())

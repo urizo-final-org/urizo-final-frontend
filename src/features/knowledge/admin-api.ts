@@ -66,19 +66,27 @@ export class KnowledgeAdminApi {
    * 화면이 다룰 지식 베이스를 찾는다. 진입 시 1회, 폴링은 versions만 돌므로 반복 비용이 없다.
    *
    * <p>**여러 건이면 첫 번째를 고르지 않는다.** 조용히 고르면 잘못된 KB를 보고도 모른다.
-   * 선택 UI는 이번 범위 밖이므로 명시적으로 그렇게 말한다.
+   * 대신 후보를 그대로 돌려주고 화면이 고르게 한다.
+   *
+   * @param chosen URL 쿼리에서 온 선택값. 목록에 없으면 무시한다(다른 환경의 URL을 붙여넣는 경우).
    */
-  resolveTarget = async (): Promise<KnowledgeTarget> => {
+  resolveTarget = async (chosen: { projectId?: string; knowledgeBaseId?: string } = {}): Promise<KnowledgeTarget> => {
     const projects = (await this.listProjects()).items ?? []
     if (projects.length === 0) return { kind: 'empty', what: 'project' }
-    if (projects.length > 1) return { kind: 'ambiguous', what: 'project', count: projects.length }
 
-    const projectId = projects[0].projectId
-    const bases = (await this.listKnowledgeBases(projectId)).items ?? []
-    if (bases.length === 0) return { kind: 'empty', what: 'knowledgeBase' }
-    if (bases.length > 1) return { kind: 'ambiguous', what: 'knowledgeBase', count: bases.length }
+    const project = pick(projects, chosen.projectId, (item) => item.projectId)
+    if (!project) return { kind: 'choose', what: 'project', projects }
 
-    return { kind: 'ready', projectId, knowledgeBaseId: bases[0].knowledgeBaseId, name: bases[0].name }
+    const bases = (await this.listKnowledgeBases(project.projectId)).items ?? []
+    if (bases.length === 0) return { kind: 'empty', what: 'knowledgeBase', projects, project }
+
+    const base = pick(bases, chosen.knowledgeBaseId, (item) => item.knowledgeBaseId)
+    if (!base) return { kind: 'choose', what: 'knowledgeBase', projects, project, bases }
+
+    return {
+      kind: 'ready', projectId: project.projectId, knowledgeBaseId: base.knowledgeBaseId,
+      name: base.name, projects, project, bases,
+    }
   }
 
   /** A2 요약 · A5 목록 · 진행 중 감지가 전부 이 응답 하나를 쓴다. 진입 시 1회 호출. */
@@ -129,4 +137,15 @@ function toProductApiError(status: number, body: unknown): ProductApiError {
     retryable: envelope.error?.retryable,
     retryAfterMs: envelope.error?.retryAfterMs,
   })
+}
+
+/**
+ * 1건이면 자동 선택, 여러 건이면 명시적으로 고른 것만 쓴다.
+ *
+ * <p>고른 값이 목록에 없으면 `undefined`를 준다 — 다른 환경에서 만들어진 URL을 붙여넣었을 때
+ * 엉뚱한 대상을 조용히 잡지 않기 위해서다.
+ */
+function pick<T>(items: T[], chosenId: string | undefined, idOf: (item: T) => string): T | undefined {
+  if (items.length === 1) return items[0]
+  return chosenId ? items.find((item) => idOf(item) === chosenId) : undefined
 }

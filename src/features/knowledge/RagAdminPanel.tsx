@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { describeFailure } from '../../shared/api/error'
 import type { AdminRole } from '../../shared/api/session'
 import { Badge, Callout, PageHead, PanelTitle, panel, primaryButton, secondaryButton, smallButton, type Tone } from '../../shared/ui/primitives'
 import { KnowledgeAdminApi } from './admin-api'
-import type { KnowledgeTarget, KnowledgeVersion, KnowledgeVersionStatus, AgentJob } from './admin-types'
+import type { KnowledgeBase, KnowledgeTarget, KnowledgeVersion, KnowledgeVersionStatus, AgentJob, Project } from './admin-types'
 import { buildView, findInProgress, formatElapsed, BUILD_STEPS, stepStates, type BuildView } from './build-progress'
 
 /**
@@ -39,6 +40,10 @@ export function RagAdminPanel({ api, role }: { api: KnowledgeAdminApi; role: Adm
   const [failure, setFailure] = useState<unknown>(null)
   const [nowMs, setNowMs] = useState(() => Date.now())
   const alive = useRef(true)
+  // 선택은 URL에 둔다. 새로고침·링크 공유가 그대로 되고 전역 상태가 필요 없다.
+  const [params, setParams] = useSearchParams()
+  const chosenProjectId = params.get('projectId') ?? undefined
+  const chosenKnowledgeBaseId = params.get('knowledgeBaseId') ?? undefined
 
   const mayWrite = role === 'SUPER_ADMIN'
 
@@ -61,7 +66,7 @@ export function RagAdminPanel({ api, role }: { api: KnowledgeAdminApi; role: Adm
     let cancelled = false
     void (async () => {
       try {
-        const resolved = await api.resolveTarget()
+        const resolved = await api.resolveTarget({ projectId: chosenProjectId, knowledgeBaseId: chosenKnowledgeBaseId })
         if (cancelled || !alive.current) return
         setTarget(resolved)
         if (resolved.kind === 'ready') await loadVersions(resolved.knowledgeBaseId)
@@ -71,7 +76,7 @@ export function RagAdminPanel({ api, role }: { api: KnowledgeAdminApi; role: Adm
       }
     })()
     return () => { cancelled = true }
-  }, [api, loadVersions])
+  }, [api, loadVersions, chosenProjectId, chosenKnowledgeBaseId])
 
   const inProgress = versions ? findInProgress(versions) : null
 
@@ -102,6 +107,18 @@ export function RagAdminPanel({ api, role }: { api: KnowledgeAdminApi; role: Adm
   const active = versions?.find((version) => version.status === 'ACTIVE') ?? null
   const view = inProgress ? buildView(inProgress, job, nowMs) : null
 
+  // 프로젝트를 바꾸면 하위 선택은 버린다 — 다른 프로젝트의 지식 베이스 id가 남으면
+  // 목록에 없어 무시되고, 남아 있는 것만으로 헷갈린다.
+  const pickTarget = useCallback((what: 'project' | 'knowledgeBase', id: string) => {
+    const next = new URLSearchParams(params)
+    if (what === 'project') {
+      next.set('projectId', id)
+      next.delete('knowledgeBaseId')
+    }
+    else next.set('knowledgeBaseId', id)
+    setParams(next, { replace: true })
+  }, [params, setParams])
+
   return <>
     <PageHead title="RAG 관리" description="관광 공공데이터를 검색자료로 만들고 버전별 품질을 비교합니다.">
       <button className={secondaryButton} disabled title="커넥터 관리는 이번 범위 밖입니다.">데이터 소스 추가</button>
@@ -110,7 +127,8 @@ export function RagAdminPanel({ api, role }: { api: KnowledgeAdminApi; role: Adm
 
     {!mayWrite && <Callout tone="warn" icon="lock">조회만 가능합니다. {WRITE_DENIED}</Callout>}
     {failure != null && <Callout tone="warn" icon="triangle-alert">{describeFailure(failure)}</Callout>}
-    {target != null && target.kind !== 'ready' && <TargetNotice target={target} />}
+    {target?.kind === 'empty' && <TargetNotice target={target} />}
+    {target != null && target.kind !== 'empty' && <TargetPicker target={target} onPick={pickTarget} />}
 
     <div className="flex min-w-0 flex-col gap-[0.875rem]">
       {/* 대상이 정해지지 않으면 요약·버전 표는 영원히 "조회 중"에 머문다. 기다리는 것처럼
@@ -132,12 +150,64 @@ export function RagAdminPanel({ api, role }: { api: KnowledgeAdminApi; role: Adm
  * 0건·여러 건을 **추측으로 넘기지 않는다.** 여러 건일 때 첫 번째를 조용히 고르면
  * 잘못된 지식 베이스를 보고도 모른다.
  */
-function TargetNotice({ target }: { target: Exclude<KnowledgeTarget, { kind: 'ready' }> }) {
+function TargetNotice({ target }: { target: Extract<KnowledgeTarget, { kind: 'empty' }> }) {
   const what = target.what === 'project' ? '프로젝트' : '지식 베이스'
-  if (target.kind === 'empty') {
-    return <Callout tone="warn" icon="circle-help">{what}가 없습니다. 로컬 환경을 처음 세운 상태라면 백엔드 부트스트랩이 먼저입니다.</Callout>
-  }
-  return <Callout tone="warn" icon="circle-help">{what}가 {target.count}개입니다. 선택 화면은 이번 범위 밖이라 자동으로 고르지 않습니다 — 잘못된 대상을 보고도 모르게 되기 때문입니다.</Callout>
+  return <Callout tone="warn" icon="circle-help">{what}가 없습니다. 로컬 환경을 처음 세운 상태라면 백엔드 부트스트랩이 먼저입니다.</Callout>
+}
+
+/**
+ * 후보가 여럿일 때만 드롭다운을 그린다. 1건이면 자동 선택돼 여기 오지 않는다.
+ *
+ * <p>디자인은 최소다 — 이번 범위는 "동작한다"이지 "다듬는다"가 아니다.
+ */
+function TargetPicker({ target, onPick }: {
+  target: Extract<KnowledgeTarget, { kind: 'ready' | 'choose' }>
+  onPick: (what: 'project' | 'knowledgeBase', id: string) => void
+}) {
+  const projects: Project[] = target.projects
+  const bases: KnowledgeBase[] = target.bases ?? []
+  const needsProject = projects.length > 1
+  const needsBase = bases.length > 1
+  if (!needsProject && !needsBase) return null
+
+  return <section className={panel}>
+    <div className="flex flex-wrap items-end gap-4 px-4 py-3">
+      {needsProject && <Field
+        label="프로젝트"
+        value={target.project?.projectId ?? ''}
+        options={projects.map((item) => ({ id: item.projectId, name: item.name }))}
+        onPick={(id) => onPick('project', id)}
+      />}
+      {needsBase && <Field
+        label="지식 베이스"
+        value={target.kind === 'ready' ? target.knowledgeBaseId : ''}
+        options={bases.map((item) => ({ id: item.knowledgeBaseId, name: item.name }))}
+        onPick={(id) => onPick('knowledgeBase', id)}
+      />}
+      {target.kind === 'choose' && <p className="m-0 text-[0.6875rem] text-muted-3">
+        후보가 여럿이라 자동으로 고르지 않습니다 — 잘못된 대상을 보고도 모르게 되기 때문입니다.
+      </p>}
+    </div>
+  </section>
+}
+
+function Field({ label, value, options, onPick }: {
+  label: string
+  value: string
+  options: { id: string; name: string }[]
+  onPick: (id: string) => void
+}) {
+  return <label className="flex flex-col gap-1 text-[0.6875rem] text-muted-3">
+    {label}
+    <select
+      value={value}
+      onChange={(event) => onPick(event.target.value)}
+      className="min-w-[14rem] rounded-[0.3125rem] border border-field-line bg-white px-2 py-[0.375rem] text-xs text-ink"
+    >
+      <option value="" disabled>선택하세요</option>
+      {options.map((option) => <option key={option.id} value={option.id}>{option.name}</option>)}
+    </select>
+  </label>
 }
 
 /** A2 요약. 활성 버전이 없으면 그렇게 말한다(콜드 스타트·전 버전 보관 상태). */

@@ -121,8 +121,18 @@ export type KnowledgeBase = {
  * 깨진다(함정 24 — 문서값은 "마지막 확인 시점의 기록"이다).
  */
 export type KnowledgeTarget =
-  | { kind: 'ready'; projectId: string; knowledgeBaseId: string; name: string }
+  | {
+    kind: 'ready'; projectId: string; knowledgeBaseId: string; name: string
+    /** 드롭다운을 계속 그리기 위해 후보를 함께 들고 온다. */
+    projects: Project[]; project: Project; bases: KnowledgeBase[]
+  }
   /** 0건. 콜드 스타트 직후 상태다. */
-  | { kind: 'empty'; what: 'project' | 'knowledgeBase' }
-  /** 여러 건. **첫 번째를 조용히 고르지 않는다** — 잘못된 KB를 보고도 모르게 된다. */
-  | { kind: 'ambiguous'; what: 'project' | 'knowledgeBase'; count: number }
+  | { kind: 'empty'; what: 'project' | 'knowledgeBase'; projects?: Project[]; project?: Project }
+  /**
+   * 여러 건인데 아직 고르지 않았다. **첫 번째를 조용히 고르지 않는다** — 잘못된 KB를 보고도
+   * 모르게 된다. 후보를 그대로 올려 사람이 고르게 한다.
+   */
+  | {
+    kind: 'choose'; what: 'project' | 'knowledgeBase'
+    projects: Project[]; project?: Project; bases?: KnowledgeBase[]
+  }
