@@ -95,6 +95,32 @@ test('loads the Profile-scoped model catalog without credential metadata', async
   expect(fetcher.mock.calls[0][1].body).toBeUndefined()
 })
 
+test('loads Metrics and Observations with the same encoded UTC range', async () => {
+  const metrics = {
+    status: 'AVAILABLE', errorCode: null, from: '2026-09-05T00:00:00Z', to: '2026-09-06T00:00:00Z',
+    environment: 'local', rows: [],
+  }
+  const observations = {
+    status: 'AVAILABLE', errorCode: null, from: metrics.from, to: metrics.to,
+    environment: 'local', observations: [],
+  }
+  const fetcher = vi.fn()
+    .mockResolvedValueOnce(new Response(JSON.stringify(metrics)))
+    .mockResolvedValueOnce(new Response(JSON.stringify(observations)))
+  vi.stubGlobal('fetch', fetcher)
+  vi.stubGlobal('crypto', { randomUUID: () => 'trace-id' })
+  const api = new ProfileVersionApi('token', vi.fn(), vi.fn())
+
+  await expect(api.getObservabilityMetrics(metrics.from, metrics.to)).resolves.toEqual(metrics)
+  await expect(api.getObservations(metrics.from, metrics.to)).resolves.toEqual(observations)
+
+  const query = 'from=2026-09-05T00%3A00%3A00Z&to=2026-09-06T00%3A00%3A00Z'
+  expect(fetcher.mock.calls[0][0]).toBe(`/api/admin/ai/observability/metrics?${query}`)
+  expect(fetcher.mock.calls[1][0]).toBe(`/api/admin/ai/observability/observations?${query}`)
+  expect(new Headers(fetcher.mock.calls[0][1].headers).get('X-Trace-Id')).toBe('trace-id')
+  expect(new Headers(fetcher.mock.calls[1][1].headers).get('X-Trace-Id')).toBe('trace-id')
+})
+
 test('manages local provider credentials with the one-time CSRF token and never expects a returned secret', async () => {
   const overview = {
     csrfToken: 'csrf-fixture',
