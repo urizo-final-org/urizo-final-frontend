@@ -7,7 +7,7 @@ import {
   control, fieldLabel, panel, primaryButton, secondaryButton, smallButton, textarea, type Tone,
 } from '../../shared/ui/primitives'
 import { CmsApi, CMS_CHANGED_EVENT, notifySiteUpdated, type Article, type Board, type Member, type Menu, type MenuTargetType, type Post, type SiteTemplate } from './api'
-import CmsAiAssistant, { NEW_MENU_TARGET, type CmsAssistantTarget } from './assistant/CmsAiAssistant'
+import CmsAiAssistant, { NEW_BOARD_TARGET, NEW_MENU_TARGET, postTargetId, type CmsAssistantTarget } from './assistant/CmsAiAssistant'
 import type { NaturalCmsApi } from './assistant/api'
 import type { AssistantMenu } from './assistant/menuTree'
 
@@ -37,7 +37,7 @@ export default function CmsWorkspace({ route, api, assistantApi }: { route: CmsR
   const workspace = route === 'members' ? <Members api={api} />
     : route === 'menus' ? <Menus api={api} onSelect={setAssistantTarget} onCandidates={setAssistantCandidates} onMenus={setAssistantMenus} />
       : route === 'contents' ? <Contents api={api} onSelect={setAssistantTarget} onCandidates={setAssistantCandidates} />
-        : route === 'boards' ? <Boards api={api} />
+        : route === 'boards' ? <Boards api={api} onSelect={setAssistantTarget} onCandidates={setAssistantCandidates} onMenus={setAssistantMenus} />
           : <Templates api={api} />
   const assistantRoute = route === 'members' ? null : route
   return <>
@@ -289,23 +289,103 @@ function Contents({ api, onSelect, onCandidates }: {
   </>
 }
 
-function Boards({ api }: { api: CmsApi }) {
+function Boards({ api, onSelect, onCandidates, onMenus }: {
+  api: CmsApi
+  onSelect: (target: CmsAssistantTarget | null) => void
+  onCandidates: (candidates: CmsAssistantTarget[]) => void
+  /** 게시판 화면에서는 **선택한 게시판을 연결한 메뉴**만 넘긴다. 삭제 확인이 그것을 알린다. */
+  onMenus: (menus: AssistantMenu[]) => void
+}) {
   const [boards, setBoards] = useState<Board[]>([])
+  const [menus, setMenus] = useState<Menu[]>([])
   const [selectedBoard, setSelectedBoard] = useState<Board | null>(null)
   const [posts, setPosts] = useState<Post[]>([])
   const [selectedPost, setSelectedPost] = useState<Post | null>(null)
+  /**
+   * 게시물 폼이 등록 모드인지. 선택 해제(`null`)와 구분해야 대상이 갈린다.
+   *
+   * 게시판만 고른 상태에서는 대상이 게시판이라 `글 하나 써줘`가 화면 범위 밖으로 거부된다.
+   * 사람이 `새 게시물`을 눌러 등록하겠다고 말했을 때만 대상을 새 게시글로 옮긴다.
+   */
+  const [writingPost, setWritingPost] = useState(false)
   const [boardName, setBoardName] = useState('')
   const [description, setDescription] = useState('')
   const [title, setTitle] = useState('')
   const [body, setBody] = useState('')
   const [failure, setFailure] = useState<string | null>(null)
-  const loadBoards = () => api.boards().then(setBoards).catch((e) => setFailure(`불러오지 못했습니다. ${describeFailure(e)}`))
+  /**
+   * 목록 갱신은 선택한 게시판의 게시물까지 다시 읽는다.
+   *
+   * 자연어 반영이 끝나면 이 함수가 다시 불린다. 게시판·메뉴만 읽으면 게시물 등록·수정·삭제가
+   * 화면에 안 나타나 새로고침해야 보였다. 선택 대상이 자연어로 사라졌을 수 있어 존재도 확인한다.
+   */
+  const loadBoards = async () => {
+    try {
+      const [freshBoards, freshMenus] = await Promise.all([api.boards(), api.menus()])
+      setBoards(freshBoards)
+      setMenus(freshMenus)
+      if (!selectedBoard) return
+      // 선택 상태도 새 값으로 바꾼다. 목록만 갱신하면 폼과 패널 제목이 옛 이름을 계속 보여준다.
+      const freshBoard = freshBoards.find((board) => board.id === selectedBoard.id)
+      if (!freshBoard) { newBoard(); return }
+      setSelectedBoard(freshBoard)
+      setBoardName(freshBoard.name)
+      setDescription(freshBoard.description)
+      const freshPosts = await api.posts(freshBoard.id)
+      setPosts(freshPosts)
+      if (!selectedPost) return
+      const freshPost = freshPosts.find((post) => post.id === selectedPost.id)
+      if (!freshPost) { choosePost(null); return }
+      choosePost(freshPost)
+    }
+    catch (e) { setFailure(`불러오지 못했습니다. ${describeFailure(e)}`) }
+  }
   useCmsList(api, loadBoards)
-  async function chooseBoard(board: Board) { setSelectedBoard(board); setBoardName(board.name); setDescription(board.description); setSelectedPost(null); setTitle(''); setBody(''); try { setPosts(await api.posts(board.id)) } catch (e) { setFailure(describeFailure(e)) } }
-  function newBoard() { setSelectedBoard(null); setBoardName(''); setDescription(''); setPosts([]); setSelectedPost(null); setTitle(''); setBody('') }
+  /**
+   * 게시판을 지우면 그 게시판을 연결한 메뉴가 `연결 없음`이 되어 사이트에서 빈 페이지가 된다.
+   *
+   * 기존 CMS의 `deleteBoard`가 이미 연결을 끊으므로 만들 것은 없고 **삭제 전에 알리기만** 한다.
+   * 메뉴 목록은 화면이 이미 들고 있어 서버에 묻지 않는다.
+   */
+  useEffect(() => {
+    if (!selectedBoard) { onMenus([]); return }
+    onMenus(menus
+      .filter((menu) => menu.targetType === 'BOARD' && menu.targetId === selectedBoard.id)
+      .map((menu) => ({
+        id: menu.id,
+        name: menuTrail(menu, menus),
+        path: menu.path,
+        parentId: menu.parentId,
+        link: '',
+      })))
+  }, [menus, selectedBoard, onMenus])
+  /**
+   * 선택은 2단계다. 게시물까지 골랐으면 게시물이, 게시판만 골랐으면 게시판이 대상이다.
+   *
+   * 게시물 선택을 풀면 다시 게시판으로 돌아간다. 상태에서 끌어내므로 어느 경로로 바뀌든 어긋나지 않는다.
+   */
+  useEffect(() => {
+    if (!selectedBoard) { onSelect(null); return }
+    if (selectedPost) { onSelect(postTarget(selectedBoard.id, selectedPost)); return }
+    onSelect(writingPost ? newPostTarget(selectedBoard) : boardTarget(selectedBoard))
+  }, [selectedBoard, selectedPost, writingPost, onSelect])
+  /** 되묻기 후보는 화면이 이미 가진 목록에서 나온다. 등록은 고정 표식으로 고른다. */
+  useEffect(() => {
+    onCandidates([
+      NEW_BOARD_TARGET,
+      ...boards.map(boardTarget),
+      ...(selectedBoard
+        ? [newPostTarget(selectedBoard), ...posts.map((post) => postTarget(selectedBoard.id, post))]
+        : []),
+    ])
+  }, [boards, posts, selectedBoard, onCandidates])
+  async function chooseBoard(board: Board) { setSelectedBoard(board); setBoardName(board.name); setDescription(board.description); setSelectedPost(null); setWritingPost(false); setTitle(''); setBody(''); try { setPosts(await api.posts(board.id)) } catch (e) { setFailure(describeFailure(e)) } }
+  function newBoard() { setSelectedBoard(null); setBoardName(''); setDescription(''); setPosts([]); setSelectedPost(null); setWritingPost(false); setTitle(''); setBody('') }
   async function saveBoard(event: FormEvent) { event.preventDefault(); setFailure(null); const action = selectedBoard ? '수정' : '등록'; try { const saved = selectedBoard ? await api.updateBoard(selectedBoard.id, { name: boardName, description }) : await api.createBoard({ name: boardName, description }); await loadBoards(); await chooseBoard(saved); notifySiteUpdated(); notifyCmsSuccess(`게시판을 ${action}했습니다.`) } catch (e) { setFailure(`게시판을 저장하지 못했습니다. ${describeFailure(e)}`) } }
   async function removeBoard() { if (!selectedBoard || !window.confirm('게시판과 게시물을 삭제할까요?')) return; setFailure(null); try { await api.deleteBoard(selectedBoard.id); newBoard(); await loadBoards(); notifySiteUpdated(); notifyCmsSuccess('게시판을 삭제했습니다.') } catch (e) { setFailure(`게시판을 삭제하지 못했습니다. ${describeFailure(e)}`) } }
-  function choosePost(post: Post | null) { setSelectedPost(post); setTitle(post?.title ?? ''); setBody(post?.body ?? '') }
+  function choosePost(post: Post | null) { setSelectedPost(post); setWritingPost(false); setTitle(post?.title ?? ''); setBody(post?.body ?? '') }
+  /** `새 게시물`은 등록하겠다는 선언이다. 대상을 그 게시판의 새 게시글로 옮긴다. */
+  function startPost() { setSelectedPost(null); setWritingPost(true); setTitle(''); setBody('') }
   async function savePost(event: FormEvent) { event.preventDefault(); if (!selectedBoard) return; setFailure(null); const action = selectedPost ? '수정' : '등록'; try { if (selectedPost) await api.updatePost(selectedPost.id, { title, body }); else await api.createPost(selectedBoard.id, { title, body }); choosePost(null); setPosts(await api.posts(selectedBoard.id)); notifySiteUpdated(); notifyCmsSuccess(`게시물을 ${action}했습니다.`) } catch (e) { setFailure(`게시물을 저장하지 못했습니다. ${describeFailure(e)}`) } }
   async function removePost() { if (!selectedPost || !selectedBoard || !window.confirm('게시물을 삭제할까요?')) return; setFailure(null); try { await api.deletePost(selectedPost.id); choosePost(null); setPosts(await api.posts(selectedBoard.id)); notifySiteUpdated(); notifyCmsSuccess('게시물을 삭제했습니다.') } catch (e) { setFailure(`게시물을 삭제하지 못했습니다. ${describeFailure(e)}`) } }
   return <>
@@ -341,7 +421,7 @@ function Boards({ api }: { api: CmsApi }) {
         </form>
         {selectedBoard && <div className={panel}>
           <PanelTitle title="게시물" sub={`${selectedBoard.name} · 총 ${posts.length}건`}>
-            <button className={smallButton} onClick={() => choosePost(null)}>새 게시물</button>
+            <button className={smallButton} onClick={startPost}>새 게시물</button>
           </PanelTitle>
           {posts.length === 0
             ? <EmptyState icon="file-text" title="게시물이 없습니다" description="새 게시물 버튼으로 작성하세요." />
@@ -492,6 +572,42 @@ function MenuLink({ menu, contents, boards }: { menu: Menu; contents: Article[];
     </em>
     {name ?? '미지정'}
   </span>
+}
+
+/** `고객지원 > 자료실`처럼 어느 메뉴인지 알아볼 수 있게 상위 이름을 앞에 붙인다. */
+function menuTrail(menu: Menu, menus: Menu[]) {
+  const parent = menu.parentId === null ? null : menus.find((item) => item.id === menu.parentId)
+  return parent ? `${parent.name} > ${menu.name}` : menu.name
+}
+
+/** 미리보기가 변경 전으로 쓸 수 있도록 현재 값을 함께 넘긴다. */
+function boardTarget(board: Board): CmsAssistantTarget {
+  return {
+    type: 'BOARD',
+    id: String(board.id),
+    label: board.name,
+    fields: { name: board.name, description: board.description },
+  }
+}
+
+/** 게시물은 소속 게시판을 대상 id에 함께 담는다. 서버가 그 값으로 소속을 확인한다. */
+function postTarget(boardId: number, post: Post): CmsAssistantTarget {
+  return {
+    type: 'BOARD',
+    id: postTargetId(boardId, post.id),
+    label: post.title,
+    fields: { title: post.title, body: post.body },
+  }
+}
+
+function newPostTarget(board: Board): CmsAssistantTarget {
+  return {
+    type: 'BOARD',
+    id: postTargetId(board.id, 'new'),
+    label: `${board.name}에 새 게시글 쓰기`,
+    /** 등록 미리보기가 빠진 필드를 알아보도록 빈 틀을 담는다. */
+    fields: { title: '', body: '' },
+  }
 }
 
 /** 미리보기가 변경 전으로 쓸 수 있도록 현재 값을 함께 넘긴다. */

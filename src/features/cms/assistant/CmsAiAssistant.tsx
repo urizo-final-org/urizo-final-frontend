@@ -2,6 +2,8 @@ import { type FormEvent, useEffect, useId, useRef, useState } from 'react'
 import type { CmsRouteId } from '../../../app/routes'
 import { describeFailure } from '../../../shared/api/error'
 import { notifyCmsChanged, notifySiteUpdated } from '../api'
+// 게시물 미리보기는 사용자 화면과 같은 렌더러를 쓴다. `AI05-001`이 이 재사용을 위해 export를 뽑았다.
+import { RichText } from '../../site/PublicSite'
 import { Icon } from '../../../shared/ui/icons'
 import { Badge, control, panel, primaryButton, secondaryButton, textarea } from '../../../shared/ui/primitives'
 import AssistantPreviewModal from './AssistantPreviewModal'
@@ -94,8 +96,8 @@ const profiles: Record<AssistedRoute, AssistantProfile> = {
     section: '게시판 관리',
     title: '게시판 AI',
     description: '게시판과 게시글 작성 작업을 현재 화면 안에서 도와드려요.',
-    empty: '목록에서 항목을 선택하면 그 대상에 적용합니다.',
-    capabilities: ['게시판 등록·수정', '게시글 작성·편집', '제목·본문 정리', '삭제 전 확인'],
+    empty: '목록에서 고르거나, 바로 요청해 새 게시판·게시글을 만들 수 있어요.',
+    capabilities: ['게시판 등록·수정·삭제', '게시글 작성·편집·삭제', '제목·본문 정리', '삭제 전 확인'],
     excluded: '메뉴 연결, 정적 컨텐츠, 템플릿은 변경하지 않아요.',
     suggestions: ['공지사항 게시판 설명을 작성해 줘', '선택한 게시글 제목을 다듬어 줘', '게시글 본문을 읽기 쉽게 정리해 줘'],
   },
@@ -122,10 +124,10 @@ type Phase =
   | { kind: 'failed'; message: string }
 
 /** 지금 자연어 변경이 가능한 리소스. 나머지 화면은 안내만 한다. */
-const SUPPORTED: ReadonlySet<CmsAssistantTarget['type']> = new Set(['CONTENT', 'MENU'])
+const SUPPORTED: ReadonlySet<CmsAssistantTarget['type']> = new Set(['CONTENT', 'MENU', 'BOARD'])
 
 /** 자연어 변경을 받는 화면. 리소스별 작업이 끝난 화면부터 연다. */
-const SUPPORTED_ROUTES: ReadonlySet<AssistedRoute> = new Set<AssistedRoute>(['contents', 'menus'])
+const SUPPORTED_ROUTES: ReadonlySet<AssistedRoute> = new Set<AssistedRoute>(['contents', 'menus', 'boards'])
 
 /** 등록은 만들기 전이라 가리킬 id가 없다. 대상 자리에 고정 표식을 보낸다. */
 export const NEW_MENU_TARGET: CmsAssistantTarget = {
@@ -133,6 +135,50 @@ export const NEW_MENU_TARGET: CmsAssistantTarget = {
   id: 'new',
   label: '새 메뉴 만들기',
   fields: {},
+}
+
+export const NEW_BOARD_TARGET: CmsAssistantTarget = {
+  type: 'BOARD',
+  id: 'new',
+  label: '새 게시판 만들기',
+  /** 등록 미리보기가 빠진 필드를 알아보도록 빈 틀을 담는다. 변경 전 값이 없다는 뜻이기도 하다. */
+  fields: { name: '', description: '' },
+}
+
+/** 필드 이름을 사람 말로. 목록에 없으면 원래 이름을 그대로 쓴다. */
+const FIELD_LABELS: Record<string, string> = {
+  name: '이름',
+  description: '설명',
+  title: '제목',
+  body: '내용',
+}
+
+function fieldLabel(name: string) {
+  return FIELD_LABELS[name] ?? name
+}
+
+/**
+ * 게시물은 별도 Resource 타입이 아니라 `BOARD` 안에서 대상 id로 갈린다.
+ *
+ * 소속 게시판을 id가 함께 담으므로 서버가 등록·수정·삭제 모두 소속을 확인할 수 있다.
+ * 게시물 번호만 보내면 화면이 어느 게시판을 열었는지 서버가 알 수 없다.
+ */
+export function postTargetId(boardId: number, postId: number | 'new') {
+  return `board:${boardId}:post:${postId}`
+}
+
+const POST_TARGET_ID = /^board:\d+:post:(new|\d+)$/
+
+function isPostTarget(target: CmsAssistantTarget | null) {
+  return target !== null && target.type === 'BOARD' && POST_TARGET_ID.test(target.id)
+}
+
+/** 삭제 확인 문구는 무엇이 사라지는지 이름으로 말한다. 조사까지 붙여 둔다. */
+function removalSubject(target: CmsAssistantTarget | null) {
+  if (target === null) return '항목은'
+  if (target.type === 'MENU') return '메뉴는'
+  if (target.type === 'CONTENT') return '컨텐츠는'
+  return isPostTarget(target) ? '게시물은' : '게시판은'
 }
 
 export default function CmsAiAssistant({ route, target, candidates, menus, onTarget, api, collapsed, onToggle }: {
@@ -301,15 +347,97 @@ export default function CmsAiAssistant({ route, target, candidates, menus, onTar
     return Object.entries(command?.fields ?? {}).map(([name, value]) => [name, String(value)] as const)
   }
 
+  /**
+   * 메뉴가 아닌 리소스의 미리보기.
+   *
+   * 삭제는 무엇이 사라지는지만 확인하고, 게시물은 필드 아래에 저장 뒤 모습을 덧붙인다.
+   * 등록한 게시물은 변경 전이 없어 diff가 같은 글을 두 번 보이게 하므로 렌더만 준다.
+   */
+  function resourcePreview(job: NaturalCmsJob) {
+    const operation = commandOf(job)?.operation
+    if (operation === 'DELETE') {
+      return <>
+        <section>
+          <small className="block text-[0.65625rem] font-semibold text-muted-2">삭제 대상</small>
+          <span className="mt-[0.1875rem] block text-[0.8125rem] font-semibold text-body">{target?.label}</span>
+        </section>
+        {/* 게시판 화면에서 `menus`는 이 게시판을 연결한 메뉴다. 화면이 걸러 넘긴다. */}
+        {!isPostTarget(target) && menus.length > 0 && <section>
+          <small className="block text-[0.65625rem] font-semibold text-muted-2">이 게시판을 연결한 메뉴</small>
+          <ul className="m-0 mt-[0.375rem] list-none p-0">
+            {menus.map((menu) => <li className="py-[0.1875rem] text-[0.71875rem] text-body" key={menu.id}>
+              {menu.name} <span className="text-muted-3">({menu.path})</span>
+            </li>)}
+          </ul>
+          <p className="m-0 mt-[0.375rem] text-[0.6875rem] leading-[1.5] text-muted-2">
+            메뉴는 삭제되지 않고 `연결 없음` 상태가 됩니다.
+          </p>
+        </section>}
+      </>
+    }
+    const fields = previewFields(job)
+    if (fields.length === 0) {
+      return <p className="m-0 text-[0.71875rem] text-muted-2">아직 변경 내용을 받지 못했습니다.</p>
+    }
+    const post = isPostTarget(target)
+    return <>
+      {!(post && operation === 'CREATE') && fields.map(([name, value]) => <section key={name}>
+        <small className="block text-[0.65625rem] font-semibold text-muted-2">{fieldLabel(name)}</small>
+        {value === null
+          ? <p className="m-0 mt-[0.1875rem] text-[0.71875rem] text-muted-3">(비어 있음)</p>
+          : <FieldDiff before={target?.fields[name] ?? ''} after={value} />}
+      </section>)}
+      {post && postRender(job)}
+    </>
+  }
+
+  /**
+   * 게시물은 사용자가 읽는 글이라 저장 뒤 모습까지 보여준다.
+   *
+   * 사이트와 같은 `RichText`를 쓰므로 문법이 실제로 어떻게 렌더되는지 그대로 보인다.
+   * **diff가 위, 렌더가 아래다.** 렌더가 위에 있으면 매끄럽게 읽히는 글에서 만족하고
+   * 사실이 틀어진 것을 놓친다.
+   */
+  function postRender(job: NaturalCmsJob) {
+    const sent = new Map(commandFields(job))
+    const value = (name: string) => sent.get(name) ?? target?.fields[name] ?? ''
+    return <section>
+      <small className="block text-[0.65625rem] font-semibold text-muted-2">실제 화면</small>
+      <div className="mt-[0.375rem] rounded-[0.3125rem] border border-line-soft bg-white px-4 py-[1.125rem]">
+        <h3 className="m-0 text-[1.125rem] font-medium tracking-[-.03em] text-[#263e48]">{value('title')}</h3>
+        <div className="mt-3 border-t border-[#e4ece9] pt-2">
+          <RichText body={value('body')} />
+        </div>
+      </div>
+    </section>
+  }
+
+  /**
+   * 등록은 보내지 않은 필드까지 보여준다. 값이 `null`이면 비어 있다는 뜻이다.
+   *
+   * 모델이 이름만 보내면 설명 줄이 아예 안 나와 무엇이 비었는지 알 수 없다. 등록 대상이
+   * 빈 필드 틀을 들고 있으므로 그 이름으로 채운다. 수정은 보내지 않은 필드가 현재 값을
+   * 그대로 유지하므로 채우지 않는다.
+   */
+  function previewFields(job: NaturalCmsJob): (readonly [string, string | null])[] {
+    const sent = new Map(commandFields(job))
+    if (commandOf(job)?.operation !== 'CREATE') {
+      return [...sent].map(([name, value]) => [name, value] as const)
+    }
+    const names = [...new Set([...Object.keys(target?.fields ?? {}), ...sent.keys()])]
+    return names.map((name) => [name, sent.get(name) ?? null] as const)
+  }
+
   /** 명령서가 아직 없을 수 있다. 미리보기 전에는 `null`이다. */
-  function menuCommand(job: NaturalCmsJob): MenuCommand | null {
+  function commandOf(job: NaturalCmsJob): MenuCommand | null {
     const command = job.structuredCommand as Partial<MenuCommand> | null
     if (!command || typeof command.operation !== 'string') return null
     return { operation: command.operation, fields: command.fields ?? {} }
   }
 
+  /** 삭제는 리소스와 무관하게 확인 모달로 받는다. 되돌릴 수 없는 것은 모두 같다. */
   function removes(job: NaturalCmsJob) {
-    return target?.type === 'MENU' && menuCommand(job)?.operation === 'DELETE'
+    return commandOf(job)?.operation === 'DELETE'
   }
 
   /**
@@ -318,7 +446,7 @@ export default function CmsAiAssistant({ route, target, candidates, menus, onTar
    * 결과 순서는 화면이 계산한다. 파이프라인이 주는 미리보기는 대상 한 행뿐이다.
    */
   function menuPreview(job: NaturalCmsJob) {
-    const command = menuCommand(job)
+    const command = commandOf(job)
     if (!command || !target) return <p className="m-0 text-[0.71875rem] text-muted-2">아직 변경 내용을 받지 못했습니다.</p>
     if (command.operation === 'DELETE') {
       const removal = menuRemoval(menus, target.id)
@@ -496,7 +624,7 @@ export default function CmsAiAssistant({ route, target, candidates, menus, onTar
     {detail && (phase.kind === 'waiting' || phase.kind === 'deciding') && <AssistantPreviewModal
       title={removes(phase.job) ? `${profile.section} 삭제 확인` : `${profile.section} 변경 미리보기`}
       subtitle={removes(phase.job)
-        ? '삭제한 메뉴는 되돌릴 수 없습니다.'
+        ? `삭제한 ${removalSubject(target)} 되돌릴 수 없습니다.`
         : '승인하면 기존 CMS 저장 경로로 반영됩니다.'}
       busy={phase.kind === 'deciding'}
       approveLabel={removes(phase.job) ? '삭제하고 반영' : undefined}
@@ -510,13 +638,7 @@ export default function CmsAiAssistant({ route, target, candidates, menus, onTar
       </div>
       {target?.type === 'MENU'
         ? <div className="mt-3">{menuPreview(phase.job)}</div>
-        : <div className="mt-3 grid gap-3">
-          {commandFields(phase.job).map(([name, value]) => <section key={name}>
-            <small className="block text-[0.65625rem] font-semibold text-muted-2">{name}</small>
-            <FieldDiff before={target?.fields[name] ?? ''} after={value} />
-          </section>)}
-          {commandFields(phase.job).length === 0 && <p className="m-0 text-[0.71875rem] text-muted-2">아직 변경 내용을 받지 못했습니다.</p>}
-        </div>}
+        : <div className="mt-3 grid gap-3">{resourcePreview(phase.job)}</div>}
     </AssistantPreviewModal>}
   </aside>
 }
