@@ -177,6 +177,9 @@ function profileApi(overrides: Partial<AgentSettingsApiClient> = {}): AgentSetti
       profileKey: 'LLM_OPS', updatedAt: '2026-09-03T00:00:00Z', snapshot: starterSnapshots.LLM_OPS,
     }),
     listModelCatalog: vi.fn().mockImplementation((profileKey) => Promise.resolve(modelCatalog(profileKey))),
+    listMonitoringJobs: vi.fn().mockResolvedValue({ schemaVersion: '1.0', observedAt: '2026-09-07T00:00:00Z', jobs: [] }),
+    getMonitoringJobSnapshot: vi.fn(),
+    getMonitoringOccurrenceObservations: vi.fn(),
     getObservabilityMetrics: vi.fn().mockImplementation((from, to) => Promise.resolve({
       status: 'AVAILABLE', errorCode: null, from, to, environment: 'local', rows: [],
     })),
@@ -199,7 +202,7 @@ function profileApi(overrides: Partial<AgentSettingsApiClient> = {}): AgentSetti
   }
 }
 
-test('the five Agent settings tabs expose the Backend observability contract without fake scores', async () => {
+test('the six Agent settings tabs separate live monitoring from observability and fake scores', async () => {
   render(<AgentSettingsWorkspace api={profileApi()} />)
 
   expect(screen.getByRole('heading', { name: 'Agent 설정' })).toBeInTheDocument()
@@ -207,12 +210,13 @@ test('the five Agent settings tabs expose the Backend observability contract wit
   expect(screen.getByText(/Agent·Workflow Profile Version은 실제 API를 사용합니다/)).toBeInTheDocument()
 
   const tabs = within(screen.getByRole('tablist', { name: 'Agent 설정 영역' })).getAllByRole('tab')
-  expect(tabs).toHaveLength(5)
+  expect(tabs).toHaveLength(6)
   expect(tabs[2]).toHaveTextContent('자연어 기능 Profile')
   expect(tabs[2]).not.toHaveTextContent('임시')
   expect(tabs[3]).not.toHaveTextContent('임시')
-  expect(tabs[4]).not.toHaveTextContent('임시')
-  expect(tabs.map((tab) => tab.tabIndex)).toEqual([-1, 0, -1, -1, -1])
+  expect(tabs[4]).toHaveTextContent('실행 모니터링')
+  expect(tabs[5]).toHaveTextContent('사용량·평가')
+  expect(tabs.map((tab) => tab.tabIndex)).toEqual([-1, 0, -1, -1, -1, -1])
   fireEvent.keyDown(tabs[1], { key: 'ArrowRight' })
   expect(tabs[2]).toHaveFocus()
   expect(tabs[2]).toHaveAttribute('aria-selected', 'true')

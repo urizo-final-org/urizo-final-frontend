@@ -9,12 +9,13 @@ import type {
   ObservabilityMetricsResponse, ObservabilityResponse, ObservabilityStatus, ProfileVersionApiClient,
   ProviderCredentialState, ProviderCredentialStatus,
 } from './api'
+import ActiveJobMonitoringPanel from './ActiveJobMonitoringPanel'
 import WorkflowPanel, {
   hydrateToolBindings, normalizeModelBindings, profileToolRequirement, starterSnapshots,
   toolCatalog, toolDetails, toolRequirementLabel,
 } from './WorkflowPanel'
 
-type TabId = 'provider' | 'workflow' | 'profile' | 'policy' | 'usage'
+type TabId = 'provider' | 'workflow' | 'profile' | 'policy' | 'monitoring' | 'usage'
 
 const temporaryMockTitle = '임시 목업 · 향후 필요 시 현재 Runtime 계약 기준으로 구현'
 
@@ -23,6 +24,7 @@ const tabs: { id: TabId; label: string; temporary?: true }[] = [
   { id: 'workflow', label: 'Agent·Workflow' },
   { id: 'profile', label: '자연어 기능 Profile' },
   { id: 'policy', label: 'Tool·실행 정책' },
+  { id: 'monitoring', label: '실행 모니터링' },
   { id: 'usage', label: '사용량·평가' },
 ]
 
@@ -113,6 +115,7 @@ export default function AgentSettingsWorkspace({ api }: { api: AgentSettingsApiC
       onSelect={setSelectedProfileKey}
     />}
     {activeTab === 'policy' && <PolicyPanel />}
+    {activeTab === 'monitoring' && <ActiveJobMonitoringPanel api={api} />}
     {activeTab === 'usage' && <UsagePanel api={api} />}
   </>
 }
