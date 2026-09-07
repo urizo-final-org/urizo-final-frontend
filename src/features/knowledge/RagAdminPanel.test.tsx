@@ -339,3 +339,83 @@ test('the folded versions are still one click away', async () => {
   fireEvent.click(screen.getByRole('button', { name: '접기' }))
   expect(screen.queryByText('v4')).not.toBeInTheDocument()
 })
+
+function building() {
+  return api({
+    listVersions: vi.fn().mockResolvedValue({
+      items: [version({ versionNumber: 12, status: 'BUILDING', knowledgeVersionId: 'kv-12', buildJobId: 'job-1', createdAt: new Date(Date.now() - 8 * 60_000).toISOString(), activatedAt: undefined })],
+    }),
+    getJob: vi.fn().mockResolvedValue({ progress: { phase: 'CHUNK', percent: 45 } }),
+  })
+}
+
+/**
+ * 9/7 실화: 빌드가 끝났는데 화면이 「진행 중 · 8분 33초」로 얼어붙었다. 시계가 폴링
+ * 안에만 있어서, 폴링이 멈추면 경과와 12분 정체 경고가 함께 멈췄다.
+ */
+test('the clock keeps moving even when every call fails', async () => {
+  vi.useFakeTimers()
+  try {
+    const dead = api({
+      listVersions: vi.fn()
+        .mockResolvedValueOnce({
+          items: [version({ versionNumber: 12, status: 'BUILDING', knowledgeVersionId: 'kv-12', createdAt: new Date(Date.now() - 8 * 60_000).toISOString(), activatedAt: undefined })],
+        })
+        .mockRejectedValue(new Error('network down')),
+      getJob: vi.fn().mockRejectedValue(new Error('network down')),
+    })
+    show(<RagAdminPanel api={dead} role="SUPER_ADMIN" />)
+    await vi.waitFor(() => expect(screen.getByText(/8분 \d+초 경과/)).toBeInTheDocument())
+
+    // 호출이 전부 죽은 채로 5분을 흘린다. 시계가 폴링에 묶여 있으면 여기서 멈춘다.
+    await vi.advanceTimersByTimeAsync(5 * 60_000)
+    // 12분을 넘겼으므로 진행 문구와 정체 경고 양쪽에 13분이 찍힌다.
+    expect(screen.getAllByText(/13분 \d+초 경과/)).toHaveLength(2)
+    // 정체 경고 자체도 떠야 한다 — 예전에는 이것도 시계와 함께 얼어붙었다.
+    expect(screen.getByText(/응답이 정체됐습니다/, { selector: 'span' })).toBeInTheDocument()
+  }
+  finally {
+    vi.useRealTimers()
+  }
+})
+
+test('returning to the tab catches up at once instead of waiting for the next poll', async () => {
+  const running = building()
+  show(<RagAdminPanel api={running} role="SUPER_ADMIN" />)
+  await screen.findByText(/지식 빌드 진행 중/)
+  await waitFor(() => expect(running.getJob).toHaveBeenCalled())
+  const before = (running.getJob as ReturnType<typeof vi.fn>).mock.calls.length
+
+  // 브라우저가 얼렸다 푼 상황. 다음 폴링을 기다리면 최대 5초를 옛 화면으로 보낸다.
+  Object.defineProperty(document, 'hidden', { value: false, configurable: true })
+  document.dispatchEvent(new Event('visibilitychange'))
+
+  await waitFor(() => expect((running.getJob as ReturnType<typeof vi.fn>).mock.calls.length).toBeGreaterThan(before))
+})
+
+test('a hidden tab does not trigger the catch-up', async () => {
+  const running = building()
+  show(<RagAdminPanel api={running} role="SUPER_ADMIN" />)
+  await screen.findByText(/지식 빌드 진행 중/)
+  await waitFor(() => expect(running.getJob).toHaveBeenCalled())
+  const before = (running.getJob as ReturnType<typeof vi.fn>).mock.calls.length
+
+  Object.defineProperty(document, 'hidden', { value: true, configurable: true })
+  document.dispatchEvent(new Event('visibilitychange'))
+  expect((running.getJob as ReturnType<typeof vi.fn>).mock.calls.length).toBe(before)
+  Object.defineProperty(document, 'hidden', { value: false, configurable: true })
+})
+
+/** 빌드가 없으면 시계도 돌지 않는다 — 진행 패널이 없는데 1초마다 렌더할 이유가 없다. */
+test('an idle screen runs no clock', async () => {
+  vi.useFakeTimers()
+  try {
+    show(<RagAdminPanel api={api()} role="SUPER_ADMIN" />)
+    await vi.waitFor(() => expect(screen.getByText('관광 지식 베이스')).toBeInTheDocument())
+    await vi.advanceTimersByTimeAsync(10_000)
+    expect(screen.queryByText(/경과/)).not.toBeInTheDocument()
+  }
+  finally {
+    vi.useRealTimers()
+  }
+})

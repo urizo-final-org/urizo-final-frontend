@@ -19,6 +19,17 @@ import { buildView, findInProgress, formatElapsed, BUILD_STEPS, stepStates, type
  */
 
 const POLL_INTERVAL_MS = 5_000
+/**
+ * 경과 시간 시계. **폴링과 분리한다.**
+ *
+ * <p>원래는 `setNowMs`가 폴링 `tick()` 안에만 있었다. 그래서 폴링이 멈추면 경과 시간이
+ * 얼어붙고, **얼어붙은 것을 알려 줄 12분 정체 경고도 같이 얼어붙었다** — 정체를 감지하려고
+ * 만든 장치가 정체의 가장 흔한 원인(폴링 중단)에 작동하지 않았다.
+ *
+ * <p>9/7 실측: 빌드가 끝났는데 화면이 「진행 중 · 8분 33초」로 남았다. 브라우저가 백그라운드
+ * 탭을 얼린 것으로 보이며, 그 상태에서 경과도 경고도 멈춰 있었다.
+ */
+const CLOCK_INTERVAL_MS = 1_000
 
 /** 쓰기 4종은 전부 SUPER_ADMIN 전용이다(`SecurityConfig:127-134`). */
 const WRITE_DENIED = 'SUPER_ADMIN 권한이 필요합니다. 최고 관리자에게 요청하세요.'
@@ -128,6 +139,14 @@ export function RagAdminPanel({ api, role }: { api: KnowledgeAdminApi; role: Adm
 
   const inProgress = versions ? findInProgress(versions) : null
 
+  // 시계는 네트워크와 무관하게 돈다. API가 다 죽어도 경과 시간은 올라가야
+  // "멈췄다"를 사람이 알아볼 수 있다.
+  useEffect(() => {
+    if (!inProgress) return
+    const timer = setInterval(() => setNowMs(Date.now()), CLOCK_INTERVAL_MS)
+    return () => clearInterval(timer)
+  }, [inProgress])
+
   // 폴링은 진행 중일 때만 돈다(설계 §5). 진행 중 감지는 진입 시 versions 1회 조회가
   // 겸하므로 추가 호출이 없고, 8분 빌드 도중 새로고침이 나도 패널이 복구된다.
   useEffect(() => {
@@ -149,7 +168,14 @@ export function RagAdminPanel({ api, role }: { api: KnowledgeAdminApi; role: Adm
     }
     void tick()
     const timer = setInterval(() => void tick(), POLL_INTERVAL_MS)
-    return () => clearInterval(timer)
+    // 브라우저는 백그라운드 탭의 인터벌을 늦추거나 아예 얼린다. 돌아온 순간 한 번
+    // 따라잡지 않으면 최대 5초를 더 옛 화면으로 보낸다 — 촬영에서는 그 사이가 컷이 된다.
+    const catchUp = () => { if (!document.hidden) { setNowMs(Date.now()); void tick() } }
+    document.addEventListener('visibilitychange', catchUp)
+    return () => {
+      clearInterval(timer)
+      document.removeEventListener('visibilitychange', catchUp)
+    }
   }, [api, inProgress, target, loadVersions])
 
   const active = versions?.find((version) => version.status === 'ACTIVE') ?? null
