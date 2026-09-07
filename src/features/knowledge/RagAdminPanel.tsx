@@ -55,6 +55,27 @@ const NOT_SWITCHABLE: Partial<Record<KnowledgeVersionStatus, string>> = {
   BUILD_REQUESTED: '빌드가 끝나야 활성화할 수 있습니다.',
 }
 
+/**
+ * 기본으로 보이는 버전 — **활성 · 승인 대기 · 최신 2건**의 합집합.
+ *
+ * <p>버전은 지우지 않는다. 실패한 빌드까지 남아 있는 것이 "버전은 고치지 않고 새로
+ * 만든다"의 증거다. 다만 11건이 한 번에 깔리면 지금 무엇을 봐야 하는지가 묻힌다 —
+ * 지우는 대신 접는다.
+ *
+ * <p>"최신 N건"만으로는 부족하다. 활성 버전이 목록 중간에 있을 수 있어서(롤백하면 그렇게
+ * 된다) 최신순으로 자르면 정작 지금 쓰는 버전이 사라진다.
+ */
+const ALWAYS_VISIBLE_RECENT = 2
+
+function visibleVersions(versions: KnowledgeVersion[]): KnowledgeVersion[] {
+  const keep = new Set<string>()
+  versions.slice(0, ALWAYS_VISIBLE_RECENT).forEach((v) => keep.add(v.knowledgeVersionId))
+  versions
+    .filter((v) => v.status === 'ACTIVE' || v.status === 'APPROVAL_PENDING')
+    .forEach((v) => keep.add(v.knowledgeVersionId))
+  return versions.filter((v) => keep.has(v.knowledgeVersionId))
+}
+
 /** 확인 창 하나로 쓰기 3종을 받는다. 되돌리기 어려운 동작 앞에 사람 손을 한 번 더 둔다. */
 type Confirmation = { title: string; lines: string[]; label: string; run: () => Promise<unknown> }
 
@@ -468,6 +489,9 @@ function VersionTable({ versions, mayWrite, blocked, busy, canRollback, onSwitch
   onRollback: () => void
 }) {
   const columns = 'grid-cols-[minmax(0,1fr)_7rem_7rem_9rem_8rem]'
+  const [showAll, setShowAll] = useState(false)
+  const shown = versions == null ? null : showAll ? versions : visibleVersions(versions)
+  const hidden = versions == null || shown == null ? 0 : versions.length - shown.length
   return <section className={panel}>
     <PanelTitle title="RAG 버전" sub={versions ? `${versions.length}건` : undefined}>
       <button
@@ -485,8 +509,8 @@ function VersionTable({ versions, mayWrite, blocked, busy, canRollback, onSwitch
         {versions == null && <div className="px-4 py-6 text-xs text-muted-3">
           {blocked ? '위 안내를 해결해야 버전을 불러올 수 있습니다.' : '버전을 불러오는 중…'}
         </div>}
-        {versions?.length === 0 && <div className="px-4 py-6 text-xs text-muted-3">버전이 없습니다.</div>}
-        {versions?.map((version) => <div key={version.knowledgeVersionId} className={`${bodyRow} ${columns}`}>
+        {shown?.length === 0 && <div className="px-4 py-6 text-xs text-muted-3">버전이 없습니다.</div>}
+        {shown?.map((version) => <div key={version.knowledgeVersionId} className={`${bodyRow} ${columns}`}>
           <span className="flex items-center gap-2">
             <b className="text-[0.78125rem] font-semibold text-ink">v{version.versionNumber}</b>
             {version.label && <small className="truncate text-[0.6875rem] text-muted-3">{version.label}</small>}
@@ -507,6 +531,16 @@ function VersionTable({ versions, mayWrite, blocked, busy, canRollback, onSwitch
               </button>}
           </span>
         </div>)}
+        {hidden > 0 && <button
+          type="button"
+          className="w-full border-t border-line bg-transparent px-4 py-[0.625rem] text-left text-[0.6875rem] text-muted-3 hover:text-muted"
+          onClick={() => setShowAll(true)}
+        >이전 버전 {hidden}건 더 보기</button>}
+        {showAll && versions != null && versions.length > ALWAYS_VISIBLE_RECENT && <button
+          type="button"
+          className="w-full border-t border-line bg-transparent px-4 py-[0.625rem] text-left text-[0.6875rem] text-muted-3 hover:text-muted"
+          onClick={() => setShowAll(false)}
+        >접기</button>}
       </div>
     </div>
   </section>

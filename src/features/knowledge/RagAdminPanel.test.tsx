@@ -299,3 +299,43 @@ test('a failing switch surfaces the error and leaves the table refreshed', async
   await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
   expect(listVersions.mock.calls.length).toBeGreaterThan(1)
 })
+
+function ladder() {
+  // 실제 로컬 상태와 같은 모양 — 활성이 중간에 있고(롤백 흔적) 실패 버전이 섞여 있다.
+  return [
+    version({ versionNumber: 11, status: 'ARCHIVED', knowledgeVersionId: 'kv-11' }),
+    version({ versionNumber: 10, status: 'APPROVAL_PENDING', knowledgeVersionId: 'kv-10', activatedAt: undefined }),
+    version({ versionNumber: 9, status: 'ARCHIVED', knowledgeVersionId: 'kv-9' }),
+    version({ versionNumber: 8, status: 'ACTIVE', knowledgeVersionId: 'kv-8' }),
+    version({ versionNumber: 4, status: 'FAILED', knowledgeVersionId: 'kv-4', documentCount: 0, chunkCount: 0, activatedAt: undefined }),
+    version({ versionNumber: 3, status: 'FAILED', knowledgeVersionId: 'kv-3', documentCount: 0, chunkCount: 0, activatedAt: undefined }),
+  ]
+}
+
+/** 11건이 한 번에 깔리면 지금 무엇을 봐야 하는지가 묻힌다. 지우지 않고 접는다. */
+test('the table opens on the versions that matter and folds the rest away', async () => {
+  show(<RagAdminPanel api={api({ listVersions: vi.fn().mockResolvedValue({ items: ladder() }) })} role="SUPER_ADMIN" />)
+
+  // v8은 요약 카드에도 나오므로 버전 표 안으로 좁혀 단언한다.
+  const table = within((await screen.findByText('RAG 버전')).closest('section') as HTMLElement)
+  expect(table.getByText('v11')).toBeInTheDocument()
+  expect(table.getByText('v10')).toBeInTheDocument()
+  // 활성 버전은 최신 2건 밖에 있어도 항상 보인다 — 롤백하면 목록 중간으로 내려간다.
+  expect(table.getByText('v8')).toBeInTheDocument()
+  expect(table.queryByText('v9')).not.toBeInTheDocument()
+  expect(table.queryByText('v4')).not.toBeInTheDocument()
+  // 접었을 뿐 지운 것이 아니라는 사실을 숫자로 남긴다.
+  expect(table.getByText('6건')).toBeInTheDocument()
+  expect(table.getByRole('button', { name: '이전 버전 3건 더 보기' })).toBeInTheDocument()
+})
+
+test('the folded versions are still one click away', async () => {
+  show(<RagAdminPanel api={api({ listVersions: vi.fn().mockResolvedValue({ items: ladder() }) })} role="SUPER_ADMIN" />)
+
+  fireEvent.click(await screen.findByRole('button', { name: '이전 버전 3건 더 보기' }))
+  // 실패한 빌드가 남아 있는 것이 "버전은 고치지 않고 새로 만든다"의 증거다.
+  expect(screen.getByText('v4')).toBeInTheDocument()
+  expect(screen.getByText('v3')).toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: '접기' }))
+  expect(screen.queryByText('v4')).not.toBeInTheDocument()
+})
