@@ -33,12 +33,39 @@ const STATUS_LABEL: Record<KnowledgeVersionStatus, string> = {
   ACTIVE: '활성', ARCHIVED: '보관', FAILED: '실패',
 }
 
+/**
+ * 전환 경로는 상태마다 다르다 — **같은 버튼이 다른 엔드포인트를 부른다.**
+ *
+ * <p>`activate`는 `APPROVAL_PENDING`·`ACTIVE`에서만 허용되므로 보관된 버전에 부르면
+ * 409 `KNOWLEDGE_VERSION_NOT_APPROVABLE`이 난다(9/7 실호출로 확인). 보관 버전으로
+ * 되돌아가는 것은 rollback 전용 엔드포인트의 일이다.
+ *
+ * <p>`FAILED`는 어느 쪽도 받지 않는다. 게다가 실패 버전은 문서 0건이라 활성화되면
+ * 챗봇이 통째로 빈 지식을 보게 된다(함정 2).
+ */
+function switchPath(status: KnowledgeVersionStatus): 'activate' | 'rollback' | null {
+  if (status === 'APPROVAL_PENDING') return 'activate'
+  if (status === 'ARCHIVED') return 'rollback'
+  return null
+}
+
+const NOT_SWITCHABLE: Partial<Record<KnowledgeVersionStatus, string>> = {
+  FAILED: '실패한 빌드는 활성화할 수 없습니다.',
+  BUILDING: '빌드가 끝나야 활성화할 수 있습니다.',
+  BUILD_REQUESTED: '빌드가 끝나야 활성화할 수 있습니다.',
+}
+
+/** 확인 창 하나로 쓰기 3종을 받는다. 되돌리기 어려운 동작 앞에 사람 손을 한 번 더 둔다. */
+type Confirmation = { title: string; lines: string[]; label: string; run: () => Promise<unknown> }
+
 export function RagAdminPanel({ api, role }: { api: KnowledgeAdminApi; role: AdminRole }) {
   const [target, setTarget] = useState<KnowledgeTarget | null>(null)
   const [versions, setVersions] = useState<KnowledgeVersion[] | null>(null)
   const [job, setJob] = useState<AgentJob | null>(null)
   const [failure, setFailure] = useState<unknown>(null)
   const [nowMs, setNowMs] = useState(() => Date.now())
+  const [confirmation, setConfirmation] = useState<Confirmation | null>(null)
+  const [busy, setBusy] = useState(false)
   const alive = useRef(true)
   // 선택은 URL에 둔다. 새로고침·링크 공유가 그대로 되고 전역 상태가 필요 없다.
   const [params, setParams] = useSearchParams()
@@ -119,10 +146,89 @@ export function RagAdminPanel({ api, role }: { api: KnowledgeAdminApi; role: Adm
     setParams(next, { replace: true })
   }, [params, setParams])
 
+  const knowledgeBaseId = target?.kind === 'ready' ? target.knowledgeBaseId : null
+  const newest = versions?.[0] ?? null
+  /** 이전 활성 버전 = 마지막으로 활성화된 적 있는 보관 버전. 없으면 롤백 대상이 없다. */
+  const previousActive = (versions ?? [])
+    .filter((v) => v.status === 'ARCHIVED' && v.activatedAt)
+    .sort((a, b) => (a.activatedAt! < b.activatedAt! ? 1 : -1))[0] ?? null
+
+  /** 확인 창에서 승인했을 때만 실행한다. 성공하든 실패하든 목록을 다시 읽어 화면을 실제 상태에 맞춘다. */
+  const runConfirmed = useCallback(async () => {
+    if (!confirmation || !knowledgeBaseId) return
+    setBusy(true)
+    try {
+      await confirmation.run()
+      if (alive.current) setFailure(null)
+    }
+    catch (error) {
+      if (alive.current) setFailure(error)
+    }
+    finally {
+      try { await loadVersions(knowledgeBaseId) } catch { /* 위 실패 표시를 덮지 않는다 */ }
+      if (alive.current) { setBusy(false); setConfirmation(null) }
+    }
+  }, [confirmation, knowledgeBaseId, loadVersions])
+
+  const askSwitch = useCallback((version: KnowledgeVersion) => {
+    if (!knowledgeBaseId) return
+    const path = switchPath(version.status)
+    if (!path) return
+    setConfirmation({
+      title: path === 'activate' ? `v${version.versionNumber} 활성화 (승인)` : `v${version.versionNumber}로 되돌리기`,
+      lines: [
+        `활성화하면 포털 검색·챗봇이 즉시 v${version.versionNumber} 기준으로 답합니다.`,
+        // 함정 2 — 빈 버전도 조용히 ACTIVE가 된다. 누르기 전에 건수를 눈으로 확인시킨다.
+        `문서 ${version.documentCount} · 청크 ${version.chunkCount}`,
+        '현재 활성 버전은 보관됨으로 남고 다시 되돌릴 수 있습니다.',
+      ],
+      label: path === 'activate' ? '활성화 (승인)' : '되돌리기',
+      run: () => path === 'activate'
+        ? api.activate(version.knowledgeVersionId)
+        : api.rollback(knowledgeBaseId, version.knowledgeVersionId),
+    })
+  }, [api, knowledgeBaseId])
+
+  const askRollback = useCallback(() => {
+    if (!knowledgeBaseId || !previousActive) return
+    setConfirmation({
+      title: `이전 활성 버전(v${previousActive.versionNumber})으로 롤백`,
+      lines: [
+        `현재 활성 ${active ? `v${active.versionNumber}` : '버전'} → v${previousActive.versionNumber}로 되돌립니다.`,
+        `문서 ${previousActive.documentCount} · 청크 ${previousActive.chunkCount}`,
+        '포털 답변이 즉시 바뀝니다. 되돌린 버전은 보관됨으로 남습니다.',
+      ],
+      label: '롤백',
+      run: () => api.rollback(knowledgeBaseId, previousActive.knowledgeVersionId),
+    })
+  }, [api, knowledgeBaseId, previousActive, active])
+
+  const askBuild = useCallback(() => {
+    // 커넥터를 따로 고르지 않는다 — 최신 버전이 쓴 것을 그대로 재사용한다(같은 자료원 재수집).
+    if (!knowledgeBaseId || !newest) return
+    setConfirmation({
+      title: '새 지식 버전 빌드',
+      lines: [
+        '수집 → 청크 → 임베딩까지 도는 작업입니다. 실측 8분대가 걸립니다.',
+        '완료돼도 자동 활성화되지 않고 승인 대기 상태로 멈춥니다.',
+        '진행 중에는 이 화면에서 경과 시간을 볼 수 있습니다.',
+      ],
+      label: '빌드 시작',
+      run: () => api.startBuild(knowledgeBaseId, newest.connectorVersionId, `admin build ${new Date().toISOString().slice(0, 10)}`),
+    })
+  }, [api, knowledgeBaseId, newest])
+
+  const canWrite = mayWrite && knowledgeBaseId != null
+
   return <>
     <PageHead title="RAG 관리" description="관광 공공데이터를 검색자료로 만들고 버전별 품질을 비교합니다.">
       <button className={secondaryButton} disabled title="커넥터 관리는 이번 범위 밖입니다.">데이터 소스 추가</button>
-      <button className={primaryButton} disabled title={mayWrite ? '빌드 실행은 별도 검증 단계입니다.' : WRITE_DENIED}>Build 시작</button>
+      <button
+        className={primaryButton}
+        disabled={!canWrite || busy || newest == null || view != null}
+        onClick={askBuild}
+        title={!mayWrite ? WRITE_DENIED : view != null ? '이미 빌드가 진행 중입니다.' : '새 지식 버전을 만듭니다 (8분대).'}
+      >Build 시작</button>
     </PageHead>
 
     {!mayWrite && <Callout tone="warn" icon="lock">조회만 가능합니다. {WRITE_DENIED}</Callout>}
@@ -141,9 +247,58 @@ export function RagAdminPanel({ api, role }: { api: KnowledgeAdminApi; role: Adm
       />
       {view && <BuildProgress view={view} />}
       <QualityMetrics />
-      <VersionTable versions={versions} mayWrite={mayWrite} blocked={target != null && target.kind !== 'ready'} />
+      <VersionTable
+        versions={versions}
+        mayWrite={mayWrite}
+        blocked={target != null && target.kind !== 'ready'}
+        busy={busy || !canWrite}
+        canRollback={canWrite && previousActive != null}
+        onSwitch={askSwitch}
+        onRollback={askRollback}
+      />
     </div>
+    {confirmation && <ConfirmDialog
+      confirmation={confirmation}
+      busy={busy}
+      onCancel={() => { if (!busy) setConfirmation(null) }}
+      onConfirm={() => { void runConfirmed() }}
+    />}
   </>
+}
+
+/**
+ * 되돌리기 어려운 쓰기 3종 앞의 확인 창.
+ *
+ * <p>건수(문서·청크)를 본문에 넣는 것이 핵심이다 — 빈 버전도 오류 없이 활성화되므로
+ * (함정 2) 누르기 전에 사람이 눈으로 볼 마지막 지점이 여기다.
+ */
+function ConfirmDialog({ confirmation, busy, onCancel, onConfirm }: {
+  confirmation: Confirmation
+  busy: boolean
+  onCancel: () => void
+  onConfirm: () => void
+}) {
+  return <div
+    className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+    role="dialog"
+    aria-modal="true"
+    aria-label={confirmation.title}
+  >
+    <div className={`${panel} w-full max-w-[26rem]`}>
+      <div className="px-4 py-3">
+        <h2 className="text-[0.875rem] font-semibold text-ink">{confirmation.title}</h2>
+        <ul className="mt-2 flex flex-col gap-1">
+          {confirmation.lines.map((line) => <li key={line} className="text-[0.75rem] text-muted-2">{line}</li>)}
+        </ul>
+      </div>
+      <div className="flex justify-end gap-2 border-t border-line px-4 py-3">
+        <button className={secondaryButton} onClick={onCancel} disabled={busy}>취소</button>
+        <button className={primaryButton} onClick={onConfirm} disabled={busy}>
+          {busy ? '처리 중…' : confirmation.label}
+        </button>
+      </div>
+    </div>
+  </div>
 }
 
 /**
@@ -303,11 +458,24 @@ function QualityMetrics() {
 }
 
 /** A5 버전 테이블. 쓰기 버튼은 역할로 미리 판별해 disabled로 둔다 — 눌러서 403을 받지 않는다. */
-function VersionTable({ versions, mayWrite, blocked }: { versions: KnowledgeVersion[] | null; mayWrite: boolean; blocked: boolean }) {
+function VersionTable({ versions, mayWrite, blocked, busy, canRollback, onSwitch, onRollback }: {
+  versions: KnowledgeVersion[] | null
+  mayWrite: boolean
+  blocked: boolean
+  busy: boolean
+  canRollback: boolean
+  onSwitch: (version: KnowledgeVersion) => void
+  onRollback: () => void
+}) {
   const columns = 'grid-cols-[minmax(0,1fr)_7rem_7rem_9rem_8rem]'
   return <section className={panel}>
     <PanelTitle title="RAG 버전" sub={versions ? `${versions.length}건` : undefined}>
-      <button className={smallButton} disabled title={mayWrite ? '롤백은 별도 검증 단계입니다.' : WRITE_DENIED}>이전 활성 버전으로 롤백</button>
+      <button
+        className={smallButton}
+        disabled={busy || !canRollback}
+        onClick={onRollback}
+        title={!mayWrite ? WRITE_DENIED : canRollback ? '마지막으로 활성화됐던 버전으로 되돌립니다.' : '되돌릴 이전 활성 버전이 없습니다.'}
+      >이전 활성 버전으로 롤백</button>
     </PanelTitle>
     <div className="overflow-x-auto">
       <div className="min-w-[43.75rem]">
@@ -329,7 +497,12 @@ function VersionTable({ versions, mayWrite, blocked }: { versions: KnowledgeVers
           <span className="flex justify-end">
             {version.status === 'ACTIVE'
               ? <small className="text-[0.6875rem] text-ok-fg">현재 활성</small>
-              : <button className={smallButton} disabled title={mayWrite ? '활성화는 별도 검증 단계입니다.' : WRITE_DENIED}>
+              : <button
+                className={smallButton}
+                disabled={busy || switchPath(version.status) == null}
+                onClick={() => onSwitch(version)}
+                title={!mayWrite ? WRITE_DENIED : NOT_SWITCHABLE[version.status] ?? `포털이 v${version.versionNumber} 기준으로 답하게 합니다.`}
+              >
                 {version.status === 'APPROVAL_PENDING' ? '활성화(승인)' : '활성화'}
               </button>}
           </span>

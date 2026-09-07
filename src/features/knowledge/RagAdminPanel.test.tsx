@@ -158,3 +158,144 @@ test('a blocked target says so instead of waiting forever', async () => {
   expect(screen.getByText(/위 안내를 해결해야 버전을 불러올 수 있습니다/)).toBeInTheDocument()
   expect(screen.queryByText('조회 중…')).not.toBeInTheDocument()
 })
+
+/**
+ * 상태마다 다른 엔드포인트를 부른다. 이 분기가 없으면 보관 버전에서 409
+ * KNOWLEDGE_VERSION_NOT_APPROVABLE이 난다 — 9/7 실호출로 확인한 사고다.
+ */
+test('an archived version rolls back while an approval-pending one activates', async () => {
+  const rollback = vi.fn().mockResolvedValue({})
+  const activate = vi.fn().mockResolvedValue({})
+  const calls = api({
+    listVersions: vi.fn().mockResolvedValue({
+      items: [
+        version({ versionNumber: 11, status: 'ARCHIVED', knowledgeVersionId: 'kv-11' }),
+        version({ versionNumber: 10, status: 'APPROVAL_PENDING', knowledgeVersionId: 'kv-10', activatedAt: undefined }),
+        version(),
+      ],
+    }),
+    rollback, activate,
+  })
+  show(<RagAdminPanel api={calls} role="SUPER_ADMIN" />)
+
+  fireEvent.click(await screen.findByTitle('포털이 v11 기준으로 답하게 합니다.'))
+  fireEvent.click(screen.getByRole('button', { name: '되돌리기' }))
+  await waitFor(() => expect(rollback).toHaveBeenCalledWith('kb-1', 'kv-11'))
+  expect(activate).not.toHaveBeenCalled()
+
+  fireEvent.click(await screen.findByTitle('포털이 v10 기준으로 답하게 합니다.'))
+  fireEvent.click(screen.getByRole('button', { name: '활성화 (승인)' }))
+  await waitFor(() => expect(activate).toHaveBeenCalledWith('kv-10'))
+})
+
+test('a failed build cannot be activated — it would make the chatbot see an empty knowledge', async () => {
+  const rollback = vi.fn()
+  const calls = api({
+    listVersions: vi.fn().mockResolvedValue({
+      items: [version({ versionNumber: 4, status: 'FAILED', documentCount: 0, chunkCount: 0, activatedAt: undefined }), version()],
+    }),
+    rollback,
+  })
+  show(<RagAdminPanel api={calls} role="SUPER_ADMIN" />)
+
+  const denied = await screen.findByTitle('실패한 빌드는 활성화할 수 없습니다.')
+  expect(denied).toBeDisabled()
+  fireEvent.click(denied)
+  expect(rollback).not.toHaveBeenCalled()
+})
+
+test('the confirmation shows the document count before a switch — an empty version activates silently otherwise', async () => {
+  show(<RagAdminPanel api={api({
+    listVersions: vi.fn().mockResolvedValue({
+      items: [version({ versionNumber: 11, status: 'ARCHIVED', knowledgeVersionId: 'kv-11', documentCount: 500, chunkCount: 500 }), version()],
+    }),
+    rollback: vi.fn().mockResolvedValue({}),
+  })} role="SUPER_ADMIN" />)
+
+  fireEvent.click(await screen.findByTitle('포털이 v11 기준으로 답하게 합니다.'))
+  const dialog = screen.getByRole('dialog')
+  expect(within(dialog).getByText('문서 500 · 청크 500')).toBeInTheDocument()
+  expect(within(dialog).getByText(/포털 검색·챗봇이 즉시 v11 기준으로 답합니다/)).toBeInTheDocument()
+})
+
+test('cancelling the confirmation calls nothing', async () => {
+  const rollback = vi.fn()
+  show(<RagAdminPanel api={api({
+    listVersions: vi.fn().mockResolvedValue({
+      items: [version({ versionNumber: 11, status: 'ARCHIVED', knowledgeVersionId: 'kv-11' }), version()],
+    }),
+    rollback,
+  })} role="SUPER_ADMIN" />)
+
+  fireEvent.click(await screen.findByTitle('포털이 v11 기준으로 답하게 합니다.'))
+  fireEvent.click(screen.getByRole('button', { name: '취소' }))
+  await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+  expect(rollback).not.toHaveBeenCalled()
+})
+
+test('the top rollback targets the most recently activated archived version', async () => {
+  const rollback = vi.fn().mockResolvedValue({})
+  show(<RagAdminPanel api={api({
+    listVersions: vi.fn().mockResolvedValue({
+      items: [
+        version({ versionNumber: 11, status: 'ACTIVE', knowledgeVersionId: 'kv-11', activatedAt: '2026-09-07T02:00:00.000Z' }),
+        version({ versionNumber: 9, status: 'ARCHIVED', knowledgeVersionId: 'kv-9', activatedAt: '2026-09-01T00:00:00.000Z' }),
+        version({ versionNumber: 8, status: 'ARCHIVED', knowledgeVersionId: 'kv-8', activatedAt: '2026-09-06T12:00:00.000Z' }),
+      ],
+    }),
+    rollback,
+  })} role="SUPER_ADMIN" />)
+
+  fireEvent.click(await screen.findByTitle('마지막으로 활성화됐던 버전으로 되돌립니다.'))
+  fireEvent.click(screen.getByRole('button', { name: '롤백' }))
+  // v9가 아니라 v8이다 — 버전 번호가 아니라 마지막 활성화 시각으로 고른다.
+  await waitFor(() => expect(rollback).toHaveBeenCalledWith('kb-1', 'kv-8'))
+})
+
+test('a build reuses the newest version connector and warns it will not auto-activate', async () => {
+  const startBuild = vi.fn().mockResolvedValue({})
+  show(<RagAdminPanel api={api({
+    listVersions: vi.fn().mockResolvedValue({ items: [version({ connectorVersionId: 'cv-9' })] }),
+    startBuild,
+  })} role="SUPER_ADMIN" />)
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Build 시작' }))
+  expect(screen.getByText(/자동 활성화되지 않고 승인 대기 상태로 멈춥니다/)).toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: '빌드 시작' }))
+  await waitFor(() => expect(startBuild).toHaveBeenCalledWith('kb-1', 'cv-9', expect.any(String)))
+})
+
+test('a general admin sees every write disabled and can open no dialog', async () => {
+  const rollback = vi.fn()
+  show(<RagAdminPanel api={api({
+    listVersions: vi.fn().mockResolvedValue({
+      items: [version({ versionNumber: 11, status: 'ARCHIVED', knowledgeVersionId: 'kv-11' }), version()],
+    }),
+    rollback,
+  })} role="GENERAL_ADMIN" />)
+
+  // 쓰기 버튼 전부가 같은 안내를 단다 — 롤백 · 버전별 활성화 · Build 시작
+  const denied = await screen.findAllByTitle('SUPER_ADMIN 권한이 필요합니다. 최고 관리자에게 요청하세요.')
+  expect(denied.length).toBeGreaterThan(1)
+  denied.forEach((button) => expect(button).toBeDisabled())
+  expect(screen.getByRole('button', { name: 'Build 시작' })).toBeDisabled()
+  fireEvent.click(denied[0])
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  expect(rollback).not.toHaveBeenCalled()
+})
+
+test('a failing switch surfaces the error and leaves the table refreshed', async () => {
+  const listVersions = vi.fn().mockResolvedValue({
+    items: [version({ versionNumber: 11, status: 'ARCHIVED', knowledgeVersionId: 'kv-11' }), version()],
+  })
+  show(<RagAdminPanel api={api({
+    listVersions,
+    rollback: vi.fn().mockRejectedValue(new Error('boom')),
+  })} role="SUPER_ADMIN" />)
+
+  fireEvent.click(await screen.findByTitle('포털이 v11 기준으로 답하게 합니다.'))
+  fireEvent.click(screen.getByRole('button', { name: '되돌리기' }))
+  // 실패해도 창은 닫히고, 화면이 실제 상태와 어긋나지 않도록 목록을 다시 읽는다.
+  await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+  expect(listVersions.mock.calls.length).toBeGreaterThan(1)
+})
