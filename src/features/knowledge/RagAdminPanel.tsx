@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom'
 import { describeFailure } from '../../shared/api/error'
 import type { AdminRole } from '../../shared/api/session'
 import { Badge, Callout, PageHead, PanelTitle, panel, primaryButton, secondaryButton, smallButton, type Tone } from '../../shared/ui/primitives'
+import { ActivationRequests } from './ActivationRequests'
 import { KnowledgeAdminApi } from './admin-api'
 import type { KnowledgeBase, KnowledgeTarget, KnowledgeVersion, KnowledgeVersionStatus, AgentJob, Project } from './admin-types'
 import { buildView, findInProgress, formatElapsed, BUILD_STEPS, stepStates, type BuildView } from './build-progress'
@@ -98,6 +99,9 @@ export function RagAdminPanel({ api, role }: { api: KnowledgeAdminApi; role: Adm
   const [nowMs, setNowMs] = useState(() => Date.now())
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null)
   const [busy, setBusy] = useState(false)
+  // 활성화·롤백이 곧 요청 처리다. 서버가 그때 열린 요청을 닫으므로 쓰기 성공 뒤
+  // 요청 목록도 다시 읽어 사라지는 것을 보인다 — 버전 목록만 갱신하면 처리된 요청이 남아 보인다.
+  const [requestsKey, setRequestsKey] = useState(0)
   const alive = useRef(true)
   // 선택은 URL에 둔다. 새로고침·링크 공유가 그대로 되고 전역 상태가 필요 없다.
   const [params, setParams] = useSearchParams()
@@ -213,7 +217,7 @@ export function RagAdminPanel({ api, role }: { api: KnowledgeAdminApi; role: Adm
     }
     finally {
       try { await loadVersions(knowledgeBaseId) } catch { /* 위 실패 표시를 덮지 않는다 */ }
-      if (alive.current) { setBusy(false); setConfirmation(null) }
+      if (alive.current) { setBusy(false); setConfirmation(null); setRequestsKey((key) => key + 1) }
     }
   }, [confirmation, knowledgeBaseId, loadVersions])
 
@@ -278,7 +282,8 @@ export function RagAdminPanel({ api, role }: { api: KnowledgeAdminApi; role: Adm
       >Build 시작</button>
     </PageHead>
 
-    {!mayWrite && <Callout tone="warn" icon="lock">조회만 가능합니다. {WRITE_DENIED}</Callout>}
+    {/* 이 문장은 원래 아무 데로도 가지 않았다. 이제 아래 요청 패널이 그 경로다. */}
+    {!mayWrite && <Callout tone="warn" icon="lock">조회만 가능합니다. {WRITE_DENIED} 아래 「자료 갱신 요청」에 남기면 그대로 전달됩니다.</Callout>}
     {failure != null && <Callout tone="warn" icon="triangle-alert">{describeFailure(failure)}</Callout>}
     {target?.kind === 'empty' && <TargetNotice target={target} />}
     {target != null && target.kind !== 'empty' && <TargetPicker target={target} onPick={pickTarget} />}
@@ -293,6 +298,13 @@ export function RagAdminPanel({ api, role }: { api: KnowledgeAdminApi; role: Adm
         blocked={target != null && target.kind !== 'ready'}
       />
       {view && <BuildProgress view={view} />}
+      <ActivationRequests
+        api={api}
+        knowledgeBaseId={knowledgeBaseId}
+        mayWrite={mayWrite}
+        versions={versions}
+        refreshKey={requestsKey}
+      />
       <QualityMetrics />
       <VersionTable
         versions={versions}

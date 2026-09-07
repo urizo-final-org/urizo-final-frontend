@@ -30,6 +30,7 @@ function api(overrides: Partial<Record<keyof KnowledgeAdminApi, unknown>> = {}) 
       projects: [project], project, bases: [base],
     }),
     listVersions: vi.fn().mockResolvedValue({ items: [version()] }),
+    listActivationRequests: vi.fn().mockResolvedValue({ items: [] }),
     getJob: vi.fn(),
     ...overrides,
   } as unknown as KnowledgeAdminApi
@@ -418,4 +419,32 @@ test('an idle screen runs no clock', async () => {
   finally {
     vi.useRealTimers()
   }
+})
+
+/**
+ * 활성화·롤백이 곧 요청 처리다. 서버가 그때 열린 요청을 닫으므로 화면은 다시 읽기만 하면
+ * 되는데, **버전 목록만 갱신하면 이미 처리된 요청이 계속 남아 보인다.**
+ */
+test('a successful activation refetches the open requests too', async () => {
+  const listActivationRequests = vi.fn().mockResolvedValue({ items: [] })
+  const calls = api({
+    listVersions: vi.fn().mockResolvedValue({
+      items: [version({ versionNumber: 10, status: 'APPROVAL_PENDING', knowledgeVersionId: 'kv-10', activatedAt: undefined })],
+    }),
+    activate: vi.fn().mockResolvedValue({}),
+    listActivationRequests,
+  })
+  show(<RagAdminPanel api={calls} role="SUPER_ADMIN" />)
+  await waitFor(() => expect(listActivationRequests).toHaveBeenCalledTimes(1))
+
+  fireEvent.click(await screen.findByTitle('포털이 v10 기준으로 답하게 합니다.'))
+  fireEvent.click(screen.getByRole('button', { name: '활성화 (승인)' }))
+  await waitFor(() => expect(listActivationRequests).toHaveBeenCalledTimes(2))
+})
+
+/** 회색 버튼 툴팁의 "최고 관리자에게 요청하세요"가 이제 실제 경로를 가리킨다. */
+test('a general admin gets a request path instead of a dead-ended tooltip', async () => {
+  show(<RagAdminPanel api={api()} role="GENERAL_ADMIN" />)
+  expect(await screen.findByRole('button', { name: '갱신 요청' })).toBeEnabled()
+  expect(screen.getByText(/아래 「자료 갱신 요청」에 남기면/)).toBeInTheDocument()
 })

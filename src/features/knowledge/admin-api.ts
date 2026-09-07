@@ -2,6 +2,8 @@ import { ProductApiError, type PublicErrorEnvelope } from '../../shared/api/erro
 import { fetchWithSessionRefresh, type AdminSession } from '../../shared/api/session'
 import {
   ADMIN_SCHEMA_VERSION,
+  type ActivationRequest,
+  type ActivationRequestList,
   type AgentJob,
   type KnowledgeBase,
   type KnowledgeTarget,
@@ -117,6 +119,25 @@ export class KnowledgeAdminApi {
       `/api/knowledge-versions/${encodeURIComponent(knowledgeVersionId)}/activate`,
       { method: 'POST', body: JSON.stringify({ schemaVersion: ADMIN_SCHEMA_VERSION, expectedStateVersion }) },
     )
+
+  /**
+   * 자료 갱신 요청. **쓰기 3종과 달리 SUPER_ADMIN 전용이 아니다** — 두 관리자 역할 모두
+   * 남길 수 있다. 발견은 일반 관리자도 하고, 못 하는 것은 처리뿐이다.
+   *
+   * <p>`knowledgeVersionId`를 생략하면 "새로 만들어 달라"가 된다. 대상 버전이 아직 없는
+   * 경우다. `request()`가 붙이는 `Idempotency-Key`는 서버가 요구하지 않지만 무해하다 —
+   * 저장소가 "같은 사람 · 같은 대상 · 열린 요청"을 하나로 접으므로 재촉이 목록을 늘리지 않는다.
+   */
+  createActivationRequest = (knowledgeBaseId: string, body: { knowledgeVersionId?: string; reason?: string }) =>
+    this.request<ActivationRequest>(
+      `/api/knowledge-bases/${encodeURIComponent(knowledgeBaseId)}/activation-requests`,
+      { method: 'POST', body: JSON.stringify({ schemaVersion: ADMIN_SCHEMA_VERSION, ...body }) },
+    )
+
+  /** `OPEN`만 내려온다. 필터 파라미터가 없고, 처리된 요청은 서버가 알아서 뺀다. */
+  listActivationRequests = (knowledgeBaseId: string) => this.request<ActivationRequestList>(
+    `/api/knowledge-bases/${encodeURIComponent(knowledgeBaseId)}/activation-requests`,
+  )
 
   /** 전용 엔드포인트다. "구버전을 activate"가 아니다 — 대상은 ARCHIVED 또는 ACTIVE여야 한다. */
   rollback = (knowledgeBaseId: string, targetKnowledgeVersionId: string) =>

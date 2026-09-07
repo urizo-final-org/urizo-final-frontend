@@ -133,10 +133,17 @@ function AuthenticatedAdmin({ session, theme, onToggleTheme, onRefresh, onExpire
   // 승인 대기는 화면에 들어가야만 보였다. 메뉴에 건수를 띄워 들어가기 전에 알린다.
   // 두 역할 모두 본다 — 발견은 일반 관리자도 하고, 못 하는 것은 처리뿐이다.
   const pendingApprovals = usePendingApprovals(knowledgeApi, permitted.some((route) => route.id === 'rag'))
-  const navBadges = useMemo(
-    () => (pendingApprovals ? { rag: { count: pendingApprovals, title: `승인 대기 ${pendingApprovals}건` } } : undefined),
-    [pendingApprovals],
-  )
+  // 뱃지 하나에 두 축을 합산한다. 답하는 질문이 "들어가 볼 일이 있나" 하나이기 때문이다.
+  // 어느 쪽인지는 툴팁이 나눠 말하고, 화면 안에서 각각 따로 보인다.
+  const navBadges = useMemo(() => {
+    if (!pendingApprovals) return undefined
+    const { approvals, requests } = pendingApprovals
+    const title = [
+      approvals > 0 ? `승인 대기 ${approvals}건` : null,
+      requests > 0 ? `갱신 요청 ${requests}건` : null,
+    ].filter(Boolean).join(' · ')
+    return { rag: { count: approvals + requests, title } }
+  }, [pendingApprovals])
 
   function go(route: RouteId) { navigate(pathForRoute(route)); setMenuOpen(false) }
 

@@ -8,17 +8,24 @@ import type { KnowledgeAdminApi } from './admin-api'
  * 그 멈춤은 `/admin/rag`에 **들어가야만** 보인다. 안 들어가면 며칠이고 모른다. 여기서는
  * 껍데기 메뉴에 건수만 띄워 "볼 게 있다"를 들어가기 전에 알린다.
  *
- * <p>새 테이블도 새 엔드포인트도 만들지 않는다 — 이미 읽고 있는 버전 목록을 셀 뿐이다.
- * 알림 저장소가 필요한 것은 사람 사이의 요청 전달이지 이 표시가 아니다.
+ * <p>여기에 **자료 갱신 요청 건수를 함께 센다**(AI02-007). 축이 둘이지만 뱃지는 하나로
+ * 둔다 — 메뉴 뱃지가 답하는 질문은 "저기 들어가 볼 일이 있나"이고 그 답은 둘 다 같다.
+ * 뱃지를 둘로 나누면 메뉴가 복잡해지는 만큼을 화면 안에서 이미 구분해 보여 준다. 어느
+ * 쪽인지는 툴팁이 나눠 말한다.
  *
  * <p>실패하면 조용히 없는 셈 친다(null). 편의 표시 하나 때문에 껍데기가 깨지면 안 된다.
+ * 다만 **요청 조회 실패는 승인 대기 건수까지 지우지 않는다** — 백엔드가 아직 이 엔드포인트를
+ * 배포하지 않은 환경에서 404 하나로 기존 뱃지가 통째로 꺼지면 안 된다.
  */
 const REFRESH_INTERVAL_MS = 60_000
 /** 껍데기에서 도는 조회라 상한을 둔다. 뱃지 하나를 위해 목록을 무한정 훑지 않는다. */
 const MAX_PROJECTS = 5
 
-export function usePendingApprovals(api: KnowledgeAdminApi, enabled: boolean): number | null {
-  const [count, setCount] = useState<number | null>(null)
+/** 뱃지는 합계를 쓰고 툴팁이 축을 나눈다. */
+export type PendingCounts = { approvals: number; requests: number }
+
+export function usePendingApprovals(api: KnowledgeAdminApi, enabled: boolean): PendingCounts | null {
+  const [count, setCount] = useState<PendingCounts | null>(null)
   const alive = useRef(true)
 
   // RagAdminPanel과 같은 이유로 마운트마다 되살린다 — StrictMode는 mount → unmount →
@@ -50,12 +57,19 @@ export function usePendingApprovals(api: KnowledgeAdminApi, enabled: boolean): n
           }
           bases = found
         }
-        let pending = 0
+        let approvals = 0
+        let requests = 0
         for (const knowledgeBaseId of bases) {
           const list = await api.listVersions(knowledgeBaseId)
-          pending += (list.items ?? []).filter((v) => v.status === 'APPROVAL_PENDING').length
+          approvals += (list.items ?? []).filter((v) => v.status === 'APPROVAL_PENDING').length
+          // 목록은 OPEN만 내려주므로 상태로 다시 거르지 않는다.
+          try {
+            const open = await api.listActivationRequests(knowledgeBaseId)
+            requests += (open.items ?? []).length
+          }
+          catch { /* 엔드포인트가 없는 환경에서도 승인 대기 뱃지는 살아 있어야 한다 */ }
         }
-        if (alive.current) setCount(pending)
+        if (alive.current) setCount({ approvals, requests })
       }
       catch {
         if (alive.current) setCount(null)
