@@ -13,6 +13,18 @@ import type { AssistantMenu } from './assistant/menuTree'
 
 const dangerButton = 'inline-flex h-8 items-center gap-[0.375rem] rounded-[0.3125rem] border border-[#f0d5d1] bg-fail-bg px-[0.6875rem] text-xs font-semibold text-fail-fg enabled:hover:bg-[#f8e0dc]'
 const recordRow = 'flex w-full items-center gap-[0.625rem] border-b border-row-line px-4 py-[0.625rem] text-left text-body hover:bg-sub'
+
+/**
+ * 선택은 호버와 다른 축으로 표시한다.
+ *
+ * 배경(`bg-sub`)만 쓰면 호버와 같은 색이라, 마우스를 다른 행에 올린 순간 어디가 선택인지 사라진다.
+ *
+ * 왼쪽 선은 테두리가 아니라 `box-shadow`다. `admin-theme.css`의 `.admin-app button { border: 0 }`이
+ * 레이어 밖에 있어 Tailwind 테두리 유틸리티를 모두 눌러 버린다. 그림자는 그 규칙에 걸리지 않고
+ * 자리도 차지하지 않아 글자가 밀리지 않는다.
+ */
+const selectedRow = 'bg-sub shadow-[inset_2px_0_0_var(--primary)]'
+const recordName = 'block truncate text-[0.78125rem] text-ink'
 const CMS_SUCCESS_EVENT = 'axms:cms-success'
 type SuccessNotice = { id: string; message: string }
 
@@ -184,12 +196,12 @@ function Menus({ api, onSelect, onCandidates, onMenus }: {
           : items.map((item) => <button
             type="button"
             key={item.id}
-            className={`${recordRow} ${item.parentId ? 'pl-9' : ''} ${editing?.id === item.id ? 'bg-sub' : ''}`}
+            className={`${recordRow} ${item.parentId ? 'pl-9' : ''} ${editing?.id === item.id ? selectedRow : ''}`}
             onClick={() => select(item)}
           >
             <span className="grid h-6 w-6 shrink-0 place-items-center rounded bg-run-bg text-[0.65625rem] font-bold text-run-fg">{item.displayOrder}</span>
             <span className="min-w-0 flex-1">
-              <b className="block text-[0.78125rem] font-semibold text-ink">{item.parentId ? '└ ' : ''}{item.name}</b>
+              <b className={`block text-[0.78125rem] text-ink ${editing?.id === item.id ? 'font-bold' : 'font-semibold'}`}>{item.parentId ? '└ ' : ''}{item.name}</b>
               <small className="block font-mono text-[0.6875rem] text-muted-3">{item.path}</small>
             </span>
             <MenuLink menu={item} contents={contents} boards={boards} />
@@ -398,10 +410,10 @@ function Boards({ api, onSelect, onCandidates, onMenus }: {
         <PanelTitle title="게시판" sub={`총 ${boards.length}건`} />
         {boards.length === 0
           ? <EmptyState icon="message-square" title="게시판이 없습니다" description="새 게시판 버튼으로 시작하세요." />
-          : boards.map((board) => <button key={board.id} className={`${recordRow} ${selectedBoard?.id === board.id ? 'bg-sub' : ''}`} onClick={() => void chooseBoard(board)}>
+          : boards.map((board) => <button key={board.id} className={`${recordRow} ${selectedBoard?.id === board.id ? selectedRow : ''}`} onClick={() => void chooseBoard(board)}>
             <Icon name="message-square" className="text-muted-2" />
             <span className="min-w-0 flex-1">
-              <b className="block truncate text-[0.78125rem] font-semibold text-ink">{board.name}</b>
+              <b className={`${recordName} ${selectedBoard?.id === board.id ? 'font-bold' : 'font-semibold'}`}>{board.name}</b>
               <small className="block truncate text-[0.6875rem] text-muted-3">{board.description}</small>
             </span>
             <Icon name="chevron-right" className="text-muted-4" />
@@ -425,9 +437,9 @@ function Boards({ api, onSelect, onCandidates, onMenus }: {
           </PanelTitle>
           {posts.length === 0
             ? <EmptyState icon="file-text" title="게시물이 없습니다" description="새 게시물 버튼으로 작성하세요." />
-            : posts.map((post) => <button className={recordRow} key={post.id} onClick={() => choosePost(post)}>
+            : posts.map((post) => <button className={`${recordRow} ${selectedPost?.id === post.id ? selectedRow : ''}`} key={post.id} onClick={() => choosePost(post)}>
               <span className="min-w-0 flex-1">
-                <b className="block truncate text-[0.78125rem] font-semibold text-ink">{post.title}</b>
+                <b className={`${recordName} ${selectedPost?.id === post.id ? 'font-bold' : 'font-semibold'}`}>{post.title}</b>
                 <small className="block text-[0.6875rem] text-muted-3">{date(post.updatedAt)}</small>
               </span>
               <Icon name="chevron-right" className="text-muted-4" />
