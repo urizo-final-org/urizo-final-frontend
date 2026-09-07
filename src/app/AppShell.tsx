@@ -6,6 +6,8 @@ import CmsWorkspace from '../features/cms/CmsWorkspace'
 import ApprovalBell from '../features/coding/ApprovalBell'
 import CodingWorkspace from '../features/coding/CodingWorkspace'
 import GuardrailWorkspace from '../features/coding/GuardrailWorkspace'
+import { KnowledgeAdminApi } from '../features/knowledge/admin-api'
+import { usePendingApprovals } from '../features/knowledge/pending-approvals'
 import OpsWorkspace from '../features/ops/OpsWorkspace'
 import AgentSettingsWorkspace from '../features/orchestration/AgentSettingsWorkspace'
 import { ProfileVersionApi } from '../features/orchestration/api'
@@ -127,6 +129,14 @@ function AuthenticatedAdmin({ session, theme, onToggleTheme, onRefresh, onExpire
   const siteSettingsApi = useMemo(() => new CmsSiteSettingsApi(session.sessionToken, lifecycle.refreshed, lifecycle.expired), [session.sessionToken, lifecycle])
   const naturalCmsApi = useMemo(() => new NaturalCmsApi(session.sessionToken, lifecycle.refreshed, lifecycle.expired), [session.sessionToken, lifecycle])
   const codingApi = useMemo(() => new CodingConsoleApi(session.sessionToken, lifecycle.refreshed, lifecycle.expired), [session.sessionToken, lifecycle])
+  const knowledgeApi = useMemo(() => new KnowledgeAdminApi(session.sessionToken, lifecycle.refreshed, lifecycle.expired), [session.sessionToken, lifecycle])
+  // 승인 대기는 화면에 들어가야만 보였다. 메뉴에 건수를 띄워 들어가기 전에 알린다.
+  // 두 역할 모두 본다 — 발견은 일반 관리자도 하고, 못 하는 것은 처리뿐이다.
+  const pendingApprovals = usePendingApprovals(knowledgeApi, permitted.some((route) => route.id === 'rag'))
+  const navBadges = useMemo(
+    () => (pendingApprovals ? { rag: { count: pendingApprovals, title: `승인 대기 ${pendingApprovals}건` } } : undefined),
+    [pendingApprovals],
+  )
 
   function go(route: RouteId) { navigate(pathForRoute(route)); setMenuOpen(false) }
 
@@ -148,7 +158,7 @@ function AuthenticatedAdmin({ session, theme, onToggleTheme, onRefresh, onExpire
         <button type="button" className="ml-auto text-sb-muted min-[901px]:hidden" onClick={() => setMenuOpen(false)} aria-label="메뉴 닫기">✕</button>
       </div>
 
-      <AppNavigation activeRoute={visible} role={session.actor.role} onNavigate={go} />
+      <AppNavigation activeRoute={visible} role={session.actor.role} onNavigate={go} badges={navBadges} />
 
       <div className="border-t border-sb-border px-3 pb-3 pt-[0.625rem]">
         <a className="flex w-full items-center gap-2 rounded-[0.3125rem] px-2 py-[0.4375rem] text-[0.71875rem] text-sb-muted hover:bg-sb-active hover:text-white" href="/" target="_blank" rel="noreferrer">
@@ -218,7 +228,7 @@ function AuthenticatedAdmin({ session, theme, onToggleTheme, onRefresh, onExpire
                 ? <CodingWorkspace api={codingApi} role={session.actor.role} />
               : route.id === 'guardrail'
                 ? <GuardrailWorkspace api={codingApi} />
-              : <OpsWorkspace route={route.id} actorName={session.actor.name} roleLabel={ROLE_LABELS[session.actor.role]} profileApi={profileApi} siteSettingsApi={siteSettingsApi} />}
+              : <OpsWorkspace route={route.id} actorName={session.actor.name} roleLabel={ROLE_LABELS[session.actor.role]} role={session.actor.role} knowledgeApi={knowledgeApi} profileApi={profileApi} siteSettingsApi={siteSettingsApi} />}
           />)}
           <Route path="/admin/*" element={<Navigate to={pathForRoute(fallback)} replace />} />
         </Routes>

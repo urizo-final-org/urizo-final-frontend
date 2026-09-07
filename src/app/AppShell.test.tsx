@@ -23,7 +23,8 @@ test('the public URL renders the tour portal home without login, isolated from t
   for (const section of ['관광지', '음식', '숙박']) {
     expect(screen.getByRole('heading', { name: section, level: 2 })).toBeInTheDocument()
   }
-  expect(within(screen.getByRole('note')).getByText('샘플 데이터 · 검색 API 미배선')).toBeInTheDocument()
+  // 검색·챗봇은 배선됐지만 홈 큐레이션은 여전히 고정이다. 고지가 그 구분을 정확히 말해야 한다.
+  expect(within(screen.getByRole('note')).getByText('샘플 데이터 · 추천 목록은 고정입니다')).toBeInTheDocument()
   expect(screen.getByRole('button', { name: '관광 도우미 열기' })).toBeInTheDocument()
   // 탭은 확정 8종이다. 시안이 6종이어도 이 개수를 따라가지 않는다.
   const tabs = within(screen.getByRole('tablist', { name: '여행 검색 카테고리' })).getAllByRole('tab')
@@ -39,9 +40,10 @@ test('a home search moves to the results screen with a side filter', async () =>
   fireEvent.change(await screen.findByPlaceholderText('어디로 떠나볼까요?'), { target: { value: '전주 한옥스테이' } })
   fireEvent.click(screen.getByRole('button', { name: '검색' }))
   // 조사는 받침으로 고른다 — '한옥스테이'는 받침이 없으므로 '와'.
-  expect(await screen.findByRole('heading', { name: '“전주 한옥스테이”와 일치하는 검색 결과' })).toBeInTheDocument()
-  // 건수는 단언하지 않는다. 지금 목록 길이는 고정 배열의 결과일 뿐 노출 건수 결정이 아니다.
-  expect(screen.getAllByRole('article').length).toBeGreaterThan(0)
+  expect(await screen.findByRole('heading', { name: /“전주 한옥스테이”와 일치하는 검색 결과/ })).toBeInTheDocument()
+  // 건수는 단언하지 않는다. citations 길이는 서버가 정하고(CITATION_LIMIT 이하) 화면 결정이 아니다.
+  // 400ms 디바운스가 있어 카드는 즉시 나오지 않는다.
+  await waitFor(() => expect(screen.getAllByRole('article').length).toBeGreaterThan(0), { timeout: 3000 })
   const filter = () => screen.getByRole('complementary', { name: '검색 필터' })
   expect(within(filter()).getAllByRole('button')).toHaveLength(8)
   fireEvent.click(within(filter()).getByRole('button', { name: '숙박' }))
@@ -51,16 +53,47 @@ test('a home search moves to the results screen with a side filter', async () =>
   expect(window.location.search).toContain('q=')
 })
 
-test('the results screen says the list is a fixed sample that ignores query and tab', async () => {
+test('the results screen sends the selected tab to the server as category prefixes', async () => {
   window.history.pushState({}, '', '/search?q=%EC%9E%90%EC%97%B0&category=attraction')
-  vi.stubGlobal('fetch', publicFetch())
+  const fetcher = publicFetch()
+  vi.stubGlobal('fetch', fetcher)
   render(<AppShell />)
-  // 실재하는 이름을 쓰므로 표본임을 밝히는 단서가 화면에 있어야 한다.
-  const note = within(await screen.findByRole('note'))
-  expect(note.getByText('샘플 데이터 · 검색 API 미배선')).toBeInTheDocument()
-  // 필터가 '관광지'인데 목록은 숙박·음식이 섞여 있다. 표기가 그 어긋남까지 덮어야 한다.
-  expect(note.getByText(/검색어와 카테고리 탭은 아직 결과에 반영되지 않습니다/)).toBeInTheDocument()
-  expect(screen.getByRole('heading', { name: '“자연”과 일치하는 검색 결과' })).toBeInTheDocument()
+  expect(await screen.findByRole('heading', { name: /“자연”과 일치하는 검색 결과/ })).toBeInTheDocument()
+
+  // 탭 필터는 프론트에서 거르지 않고 서버로 간다. 상위 N건을 받아 프론트에서 거르면
+  // 결과가 0건이 되기 쉽다 — WHERE가 ORDER BY·LIMIT보다 먼저라 "필터 후 상위 N건"은
+  // 서버에서만 성립한다.
+  await waitFor(() => {
+    const call = fetcher.mock.calls.find(([input]) => String(input) === '/api/public/chat/query')
+    expect(call).toBeDefined()
+    const body = JSON.parse(String((call?.[1] as RequestInit).body))
+    expect(body.query).toBe('자연')
+    // '관광지'는 접두 하나로 표현되지 않는다 — 단일 값 계약이었다면 이 탭이 깨진다.
+    expect(body.category).toEqual(['NA', 'HS', 'VE'])
+  }, { timeout: 3000 })
+})
+
+test('the results screen keeps a refusal out of the error path', async () => {
+  window.history.pushState({}, '', '/search?q=%EB%B9%84%ED%8A%B8%EC%BD%94%EC%9D%B8')
+  vi.stubGlobal('fetch', publicFetch(siteTemplate(), '/', {
+    body: chatAnswer({ outcome: 'REFUSED', answer: '근거를 찾지 못했습니다.', citations: [] }),
+  }))
+  render(<AppShell />)
+  // 거절은 RAG가 제대로 동작한 결과다. 장애 문구·재시도 버튼을 붙이면 성과가 장애로 보인다.
+  expect(await screen.findByText('근거 문서를 찾지 못했습니다', undefined, { timeout: 3000 })).toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: '다시 시도' })).not.toBeInTheDocument()
+  expect(screen.queryByRole('article')).not.toBeInTheDocument()
+})
+
+test('the results screen asks for a query instead of calling the API with an empty one', async () => {
+  window.history.pushState({}, '', '/search?category=stay')
+  const fetcher = publicFetch()
+  vi.stubGlobal('fetch', fetcher)
+  render(<AppShell />)
+  expect(await screen.findByText('검색어를 입력해 주세요')).toBeInTheDocument()
+  // F7: 탭만 눌러 들어온 화면에서 빈 질의를 보내지 않는다(rate limit 예산 낭비).
+  await new Promise((resolve) => setTimeout(resolve, 600))
+  expect(fetcher.mock.calls.some(([input]) => String(input) === '/api/public/chat/query')).toBe(false)
 })
 
 test('the results screen never shows a score, rating or review count', async () => {
@@ -106,24 +139,78 @@ test('the tour helper opens as a floating panel and closes back to the launcher'
   render(<AppShell />)
   fireEvent.click(await screen.findByRole('button', { name: '관광 도우미 열기' }))
   const panel = screen.getByRole('complementary', { name: '관광 도우미' })
-  expect(within(panel).getByText('답변 근거')).toBeInTheDocument()
-  expect(within(panel).getByLabelText('관광 도우미 메시지')).toBeDisabled()
+  // 배선 후에는 입력이 열려 있다. 열린 입력이 곧 "실제로 동작한다"는 약속이다.
+  expect(within(panel).getByLabelText('관광 도우미 메시지')).toBeEnabled()
+  // 대화 전에는 근거 섹션이 없다 — 빈 헤더를 남기지 않는다.
+  expect(within(panel).queryByText('답변 근거')).not.toBeInTheDocument()
   fireEvent.click(within(panel).getByRole('button', { name: '관광 도우미 닫기' }))
   expect(screen.queryByRole('complementary', { name: '관광 도우미' })).not.toBeInTheDocument()
   expect(screen.getByRole('button', { name: '관광 도우미 열기' })).toBeInTheDocument()
 })
 
-test('the tour helper marks its conversation as a sample', async () => {
+test('the tour helper states that it answers only from collected documents', async () => {
   vi.stubGlobal('fetch', publicFetch())
   render(<AppShell />)
   await screen.findByRole('button', { name: '관광 도우미 열기' })
   // 닫힌 상태에서는 고지가 없다. 홈 큐레이션 고지와 문구가 달라 서로 잡히지 않는다.
-  expect(screen.queryByText('샘플 대화입니다 · 챗봇 API 미배선')).not.toBeInTheDocument()
+  expect(screen.queryByText(/근거 문서에서 찾은 내용만 답합니다/)).not.toBeInTheDocument()
 
   fireEvent.click(screen.getByRole('button', { name: '관광 도우미 열기' }))
   const panel = within(screen.getByRole('complementary', { name: '관광 도우미' }))
-  // 정적 대화가 실동작으로 보이지 않도록 패널 안에 구별 단서를 둔다.
-  expect(panel.getByRole('note')).toHaveTextContent('샘플 대화입니다 · 챗봇 API 미배선')
+  // 고지는 스크롤 영역 밖에 있어 대화를 내려도 사라지지 않는다(F8-a가 정한 위치).
+  expect(panel.getByRole('note')).toHaveTextContent('근거 문서에서 찾은 내용만 답합니다')
+})
+
+test('the tour helper answers a question with its citations', async () => {
+  vi.stubGlobal('fetch', publicFetch())
+  render(<AppShell />)
+  fireEvent.click(await screen.findByRole('button', { name: '관광 도우미 열기' }))
+  const panel = () => within(screen.getByRole('complementary', { name: '관광 도우미' }))
+  fireEvent.change(panel().getByLabelText('관광 도우미 메시지'), { target: { value: '전주 한옥스테이 추천해줘' } })
+  fireEvent.click(panel().getByRole('button', { name: '전송' }))
+
+  // 질문 말풍선은 응답을 기다리지 않고 바로 그린다.
+  expect(panel().getByText('전주 한옥스테이 추천해줘')).toBeInTheDocument()
+  expect(await screen.findByText('전주 한옥마을 인근에 한옥 숙소가 있습니다.')).toBeInTheDocument()
+  expect(panel().getByText('답변 근거')).toBeInTheDocument()
+  expect(panel().getByText('더 한옥')).toBeInTheDocument()
+  // 「홈페이지」는 excerpt의 [홈페이지] 줄에서 나온다. sourceUrl은 합성 주소라 쓰지 않는다(R26).
+  expect(panel().getByRole('link', { name: /홈페이지/ })).toHaveAttribute('href', 'http://thehanok.modoo.at')
+  expect(screen.queryByText(/api-test\.local/)).not.toBeInTheDocument()
+})
+
+test('the tour helper locks its input while the rate limit holds', async () => {
+  // 실서버 실측(9/6): 30회 통과 → 31번째 429 · retryAfterMs 60000. 그 봉투를 그대로 쓴다.
+  vi.stubGlobal('fetch', publicFetch(siteTemplate(), '/', {
+    status: 429,
+    body: { schemaVersion: '1.0', traceId: '44444444-4444-4444-8444-444444444444', error: { code: 'RATE_LIMITED', message: 'Too many public chat requests from this client.', retryable: true, retryAfterMs: 60_000 } },
+  }))
+  render(<AppShell />)
+  fireEvent.click(await screen.findByRole('button', { name: '관광 도우미 열기' }))
+  const panel = () => within(screen.getByRole('complementary', { name: '관광 도우미' }))
+  fireEvent.change(panel().getByLabelText('관광 도우미 메시지'), { target: { value: '전주 축제' } })
+  fireEvent.click(panel().getByRole('button', { name: '전송' }))
+
+  expect(await screen.findByText('요청이 많습니다')).toBeInTheDocument()
+  expect(screen.getByText('60초 후 다시 시도해 주세요.')).toBeInTheDocument()
+  // 잠그지 않으면 사용자가 계속 눌러 같은 429를 반복해 받고, 검색과 예산을 나눠 쓰는
+  // 구조라 검색까지 막힌다. 재시도 버튼도 붙이지 않는다.
+  await waitFor(() => expect(panel().getByLabelText('관광 도우미 메시지')).toBeDisabled())
+  expect(panel().getByRole('button', { name: '전송' })).toBeDisabled()
+})
+
+test('the tour helper shows a refusal without an evidence section', async () => {
+  vi.stubGlobal('fetch', publicFetch(siteTemplate(), '/', {
+    body: chatAnswer({ outcome: 'REFUSED', answer: '근거를 찾지 못했습니다.', citations: [] }),
+  }))
+  render(<AppShell />)
+  fireEvent.click(await screen.findByRole('button', { name: '관광 도우미 열기' }))
+  const panel = () => within(screen.getByRole('complementary', { name: '관광 도우미' }))
+  fireEvent.change(panel().getByLabelText('관광 도우미 메시지'), { target: { value: '비트코인 시세 알려줘' } })
+  fireEvent.click(panel().getByRole('button', { name: '전송' }))
+
+  expect(await screen.findByText('근거 문서를 찾지 못했습니다')).toBeInTheDocument()
+  expect(panel().queryByText('답변 근거')).not.toBeInTheDocument()
 })
 
 // 루트 사이트는 관광 포털(I8)이므로 Template Layout은 publicPath가 지정된 부속 사이트에서 확인한다.
@@ -649,9 +736,38 @@ test('a menu URL renders its mapped static content', async () => {
   expect(await screen.findByText('사람과 기술을 연결합니다')).toBeInTheDocument()
 })
 
-function publicFetch(template = siteTemplate(), publicPath = '/') {
-  return vi.fn((input: RequestInfo | URL) => {
+/**
+ * 공개 RAG 응답 한 건. 실호출(9/6)에서 받은 모양 그대로다 — `excerpt`에 `[분류]`·`[주소]`·
+ * `[홈페이지]` 라벨 줄이 그대로 실려 오고, `sourceUrl`은 열리지 않는 합성 주소다.
+ */
+function chatAnswer(overrides: Record<string, unknown> = {}) {
+  return {
+    schemaVersion: '1.0',
+    traceId: '22222222-2222-4222-8222-222222222222',
+    conversationId: '33333333-3333-4333-8333-333333333333',
+    outcome: 'ANSWERED',
+    answer: '전주 한옥마을 인근에 한옥 숙소가 있습니다.',
+    citations: [{
+      title: '더 한옥',
+      excerpt: '[분류] 숙박 > 펜션/민박\n[주소] 전북특별자치도 전주시 완산구 은행로 68-15 (교동)\n[홈페이지] http://thehanok.modoo.at\n[개요]\n한옥마을 최중심지에 위치한다.',
+      sourceUrl: 'https://api-test.local/documents/2531409',
+      categoryLabel: '숙박 > 펜션/민박',
+    }],
+    generatedAt: new Date().toISOString(),
+    ...overrides,
+  }
+}
+
+function publicFetch(template = siteTemplate(), publicPath = '/', chat: { status?: number; body?: unknown } = {}) {
+  return vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
     const path = String(input)
+    if (path === '/api/public/chat/query') {
+      const status = chat.status ?? 200
+      const body = chat.body ?? chatAnswer()
+      // 요청 본문을 스텁이 그대로 들고 있어야 탭→category 전달을 단언할 수 있다.
+      void init
+      return Promise.resolve(status === 200 ? json(body) : { ok: false, status, json: () => Promise.resolve(body) } as unknown as Response)
+    }
     if (path.startsWith('/api/site/context?path=')) return Promise.resolve(json(siteContext(template, publicPath)))
     if (path === '/api/site/menus') return Promise.resolve(json([
       { id: 1, name: '소개', path: '/about', parentId: null, displayOrder: 10, targetType: 'NONE', targetId: null },

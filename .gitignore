@@ -3,3 +3,6 @@ dist/
 .vite/
 coverage/
 *.local
+
+# 로컬 개발 도구 설정. 워크트리마다 경로가 달라 공유 대상이 아니다.
+.claude/

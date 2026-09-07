@@ -1,10 +1,28 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, render as rtlRender, screen, waitFor, within } from '@testing-library/react'
+import { MemoryRouter } from 'react-router-dom'
 import { afterEach, expect, test, vi } from 'vitest'
 import type { OpsRouteId } from '../../app/routes'
 import type { ProfileVersion, ProfileVersionApiClient } from '../orchestration/api'
 import type { SiteTemplate } from '../cms/api'
 import type { CmsSite, CmsSiteSettingsApiClient } from '../site-settings/api'
+import type { KnowledgeAdminApi } from '../knowledge/admin-api'
 import OpsWorkspace from './OpsWorkspace'
+
+/**
+ * `/admin/rag`가 실배선되면서 OpsWorkspace가 세션 역할과 관리자 클라이언트를 받는다.
+ * 이 파일의 테스트는 rag 라우트를 렌더하지 않으므로 호출되지 않는 스텁으로 충분하다.
+ */
+function knowledgeApi() {
+  return { resolveTarget: vi.fn(), listVersions: vi.fn(), getJob: vi.fn() } as unknown as KnowledgeAdminApi
+}
+
+/**
+ * rag가 실배선되면서 선택 상태를 URL 쿼리에 두게 됐다(useSearchParams). 라우터 컨텍스트가
+ * 없으면 그 라우트만 렌더에서 죽으므로 이 파일의 렌더를 한 겹 감싼다.
+ */
+function render(ui: React.ReactElement) {
+  return rtlRender(<MemoryRouter initialEntries={['/admin/rag']}>{ui}</MemoryRouter>)
+}
 
 afterEach(() => vi.unstubAllGlobals())
 
@@ -60,26 +78,29 @@ const screens: [OpsRouteId, string][] = [
 ]
 
 test.each(screens)('the %s mockup renders its heading', (route, heading) => {
-  render(<OpsWorkspace route={route} actorName="일반 관리자" roleLabel="일반관리자" profileApi={profileApi()} siteSettingsApi={siteSettingsApi()} />)
+  render(<OpsWorkspace route={route} actorName="일반 관리자" roleLabel="일반관리자" role="SUPER_ADMIN" knowledgeApi={knowledgeApi()} profileApi={profileApi()} siteSettingsApi={siteSettingsApi()} />)
   expect(screen.getByRole('heading', { name: heading, level: 1 })).toBeInTheDocument()
 })
 
 test('remaining mockups say their data is not real', () => {
-  for (const [route] of screens.filter(([route]) => route !== 'system-settings' && route !== 'sites')) {
-    const view = render(<OpsWorkspace route={route} actorName="일반 관리자" roleLabel="일반관리자" profileApi={profileApi()} siteSettingsApi={siteSettingsApi()} />)
+  // rag는 9/6에 실배선됐다(RagAdminPanel). 목업 고지가 남아 있으면 오히려 거짓이므로
+  // 이 목록에서 뺀다 — 실배선 검증은 features/knowledge/RagAdminPanel.test.tsx가 한다.
+  const wired = ['system-settings', 'sites', 'rag']
+  for (const [route] of screens.filter(([route]) => !wired.includes(route))) {
+    const view = render(<OpsWorkspace route={route} actorName="일반 관리자" roleLabel="일반관리자" role="SUPER_ADMIN" knowledgeApi={knowledgeApi()} profileApi={profileApi()} siteSettingsApi={siteSettingsApi()} />)
     expect(view.container.textContent).toMatch(/데모|Mock|목업/)
     view.unmount()
   }
 })
 
 test('the home mockup greets the signed-in operator, not a fixed name', () => {
-  render(<OpsWorkspace route="home" actorName="최고 관리자" roleLabel="최고관리자" profileApi={profileApi()} siteSettingsApi={siteSettingsApi()} />)
+  render(<OpsWorkspace route="home" actorName="최고 관리자" roleLabel="최고관리자" role="SUPER_ADMIN" knowledgeApi={knowledgeApi()} profileApi={profileApi()} siteSettingsApi={siteSettingsApi()} />)
   expect(screen.getByRole('heading', { name: '안녕하세요, 최고 관리자님', level: 1 })).toBeInTheDocument()
 })
 
 test('system settings derives locked central guardrails from active Profile Versions', async () => {
   const api = profileApi()
-  render(<OpsWorkspace route="system-settings" actorName="최고 관리자" roleLabel="최고관리자" profileApi={api} siteSettingsApi={siteSettingsApi()} />)
+  render(<OpsWorkspace route="system-settings" actorName="최고 관리자" roleLabel="최고관리자" role="SUPER_ADMIN" knowledgeApi={knowledgeApi()} profileApi={api} siteSettingsApi={siteSettingsApi()} />)
 
   const tabs = within(screen.getByRole('tablist', { name: '시스템 설정 영역' })).getAllByRole('tab')
   expect(tabs).toHaveLength(2)
@@ -104,7 +125,7 @@ test('system settings derives locked central guardrails from active Profile Vers
 
 test('central guardrail lookup failures are visible without edit controls', async () => {
   const api = profileApi({ list: vi.fn().mockRejectedValue(new Error('조회 실패 [FORBIDDEN]')) })
-  render(<OpsWorkspace route="system-settings" actorName="최고 관리자" roleLabel="최고관리자" profileApi={api} siteSettingsApi={siteSettingsApi()} />)
+  render(<OpsWorkspace route="system-settings" actorName="최고 관리자" roleLabel="최고관리자" role="SUPER_ADMIN" knowledgeApi={knowledgeApi()} profileApi={api} siteSettingsApi={siteSettingsApi()} />)
   fireEvent.click(screen.getByRole('tab', { name: 'Guardrail Profile' }))
   expect(await screen.findByRole('alert')).toHaveTextContent('조회 실패 [FORBIDDEN]')
   expect(screen.queryByRole('checkbox')).not.toBeInTheDocument()
@@ -118,7 +139,7 @@ test('system settings saves the selected default site and template', async () =>
     templates: vi.fn().mockResolvedValue([template, bold]),
     saveSettings: vi.fn().mockResolvedValue({ defaultSiteKey: 'campaign', defaultTemplateKey: 'BOLD', updatedAt: '2026-08-31T01:00:00Z' }),
   })
-  render(<OpsWorkspace route="system-settings" actorName="최고 관리자" roleLabel="최고관리자" profileApi={profileApi()} siteSettingsApi={api} />)
+  render(<OpsWorkspace route="system-settings" actorName="최고 관리자" roleLabel="최고관리자" role="SUPER_ADMIN" knowledgeApi={knowledgeApi()} profileApi={profileApi()} siteSettingsApi={api} />)
 
   fireEvent.change(await screen.findByLabelText('기본 사이트'), { target: { value: 'campaign' } })
   fireEvent.change(screen.getByLabelText('기본 템플릿'), { target: { value: 'BOLD' } })
@@ -132,7 +153,7 @@ test('site management saves only the selected site settings', async () => {
   const api = siteSettingsApi({
     saveSite: vi.fn().mockResolvedValue({ ...mainSite, name: '새 사이트', publicPath: '/new' }),
   })
-  render(<OpsWorkspace route="sites" actorName="최고 관리자" roleLabel="최고관리자" profileApi={profileApi()} siteSettingsApi={api} />)
+  render(<OpsWorkspace route="sites" actorName="최고 관리자" roleLabel="최고관리자" role="SUPER_ADMIN" knowledgeApi={knowledgeApi()} profileApi={profileApi()} siteSettingsApi={api} />)
 
   fireEvent.change(await screen.findByLabelText('사이트명'), { target: { value: '새 사이트' } })
   fireEvent.change(screen.getByLabelText(/공개 경로/), { target: { value: '/new' } })
@@ -155,7 +176,7 @@ test('site management creates a second Site with its own path and template', asy
   }
   const createSite = vi.fn().mockResolvedValue(created)
   const api = siteSettingsApi({ createSite })
-  render(<OpsWorkspace route="sites" actorName="최고 관리자" roleLabel="최고관리자" profileApi={profileApi()} siteSettingsApi={api} />)
+  render(<OpsWorkspace route="sites" actorName="최고 관리자" roleLabel="최고관리자" role="SUPER_ADMIN" knowledgeApi={knowledgeApi()} profileApi={profileApi()} siteSettingsApi={api} />)
 
   fireEvent.click(await screen.findByRole('button', { name: '새 사이트' }))
   fireEvent.change(screen.getByLabelText('사이트 키'), { target: { value: 'campaign' } })
@@ -173,7 +194,7 @@ test('site management creates a second Site with its own path and template', asy
 test('site creation exposes key and path conflicts without adding the Site', async () => {
   const createSite = vi.fn().mockRejectedValue(new Error('이미 사용 중인 Site 키 또는 공개 경로입니다.'))
   const api = siteSettingsApi({ createSite })
-  render(<OpsWorkspace route="sites" actorName="최고 관리자" roleLabel="최고관리자" profileApi={profileApi()} siteSettingsApi={api} />)
+  render(<OpsWorkspace route="sites" actorName="최고 관리자" roleLabel="최고관리자" role="SUPER_ADMIN" knowledgeApi={knowledgeApi()} profileApi={profileApi()} siteSettingsApi={api} />)
 
   fireEvent.click(await screen.findByRole('button', { name: '새 사이트' }))
   fireEvent.change(screen.getByLabelText('사이트 키'), { target: { value: 'main' } })
@@ -187,14 +208,14 @@ test('site creation exposes key and path conflicts without adding the Site', asy
 
 test('site management exposes a clear save failure', async () => {
   const api = siteSettingsApi({ saveSite: vi.fn().mockRejectedValue(new Error('공개 경로 중복')) })
-  render(<OpsWorkspace route="sites" actorName="최고 관리자" roleLabel="최고관리자" profileApi={profileApi()} siteSettingsApi={api} />)
+  render(<OpsWorkspace route="sites" actorName="최고 관리자" roleLabel="최고관리자" role="SUPER_ADMIN" knowledgeApi={knowledgeApi()} profileApi={profileApi()} siteSettingsApi={api} />)
 
   fireEvent.click(await screen.findByRole('button', { name: '사이트 설정 저장' }))
   expect(await screen.findByText(/사이트 설정을 저장하지 못했습니다.*공개 경로 중복/)).toBeInTheDocument()
 })
 
 test('general settings removes fake organization, key, permission, and alert controls', () => {
-  render(<OpsWorkspace route="settings" actorName="일반 관리자" roleLabel="일반관리자" profileApi={profileApi()} siteSettingsApi={siteSettingsApi()} />)
+  render(<OpsWorkspace route="settings" actorName="일반 관리자" roleLabel="일반관리자" role="SUPER_ADMIN" knowledgeApi={knowledgeApi()} profileApi={profileApi()} siteSettingsApi={siteSettingsApi()} />)
 
   expect(screen.getByText(/조직·권한 정책·API Key·알림 저장 API가 없어/)).toBeInTheDocument()
   expect(screen.getByText('CMS 로그인·역할')).toBeInTheDocument()
@@ -207,7 +228,7 @@ test.each([
   ['approvals' as const, /가짜 요청·건수·처리 버튼을 표시하지 않습니다/, '승인 처리·이력 API'],
   ['runs' as const, /가짜 실행 기록, 로딩 수치, CSV 버튼을 표시하지 않습니다/, '이력 조회·통계 API'],
 ])('%s exposes only current runtime status', (route, notice, missingContract) => {
-  render(<OpsWorkspace route={route} actorName="일반 관리자" roleLabel="일반관리자" profileApi={profileApi()} siteSettingsApi={siteSettingsApi()} />)
+  render(<OpsWorkspace route={route} actorName="일반 관리자" roleLabel="일반관리자" role="SUPER_ADMIN" knowledgeApi={knowledgeApi()} profileApi={profileApi()} siteSettingsApi={siteSettingsApi()} />)
   expect(screen.getByText(notice)).toBeInTheDocument()
   expect(screen.getByText(missingContract)).toBeInTheDocument()
   expect(screen.queryByRole('textbox')).not.toBeInTheDocument()

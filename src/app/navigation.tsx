@@ -9,10 +9,13 @@ export function AppNavigation({
   activeRoute,
   role,
   onNavigate,
+  badges,
 }: {
   activeRoute: RouteId
   role: AdminRole
   onNavigate: (route: RouteId) => void
+  /** 메뉴에 띄울 "볼 게 있다" 표시. 0이나 없음이면 아무것도 그리지 않는다. */
+  badges?: Partial<Record<RouteId, { count: number; title: string }>>
 }) {
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
   let renderedGroup: string | null = null
@@ -29,6 +32,7 @@ export function AppNavigation({
         const foldable = foldableGroups.includes(route.group)
         const open = !collapsed[route.group]
         const active = activeRoute === route.id
+        const badge = badges?.[route.id]
         return (
           <Fragment key={route.id}>
             {groupHeading && (foldable ? (
@@ -54,6 +58,11 @@ export function AppNavigation({
               >
                 <Icon name={route.icon} size={15} />
                 <span className="flex-1 truncate">{route.label}</span>
+                {badge != null && badge.count > 0 && <span
+                  className="shrink-0 rounded-full bg-[#d97706] px-[0.375rem] py-[0.0625rem] text-[0.5625rem] font-bold text-white"
+                  title={badge.title}
+                  aria-label={badge.title}
+                >{badge.count}</span>}
                 {route.mock && <span
                   className="shrink-0 rounded border border-[#49657d] bg-[#233b50] px-[0.3125rem] py-[0.0625rem] text-[0.53125rem] font-semibold text-[#cfe2ef]"
                   title={temporaryMockTitle}
