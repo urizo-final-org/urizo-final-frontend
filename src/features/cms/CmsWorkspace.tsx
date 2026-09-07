@@ -7,7 +7,7 @@ import {
   control, fieldLabel, panel, primaryButton, secondaryButton, smallButton, textarea, type Tone,
 } from '../../shared/ui/primitives'
 import { CmsApi, CMS_CHANGED_EVENT, notifySiteUpdated, type Article, type Board, type Member, type Menu, type MenuTargetType, type Post, type SiteTemplate } from './api'
-import CmsAiAssistant, { NEW_BOARD_TARGET, NEW_MENU_TARGET, postTargetId, type CmsAssistantTarget } from './assistant/CmsAiAssistant'
+import CmsAiAssistant, { NEW_BOARD_TARGET, NEW_CONTENT_TARGET, NEW_MENU_TARGET, postTargetId, type CmsAssistantTarget } from './assistant/CmsAiAssistant'
 import type { NaturalCmsApi } from './assistant/api'
 import type { AssistantMenu } from './assistant/menuTree'
 
@@ -48,7 +48,7 @@ export default function CmsWorkspace({ route, api, assistantApi }: { route: CmsR
   useEffect(() => { setSuccess(null); setAssistantTarget(null); setAssistantCandidates([]); setAssistantMenus([]) }, [route])
   const workspace = route === 'members' ? <Members api={api} />
     : route === 'menus' ? <Menus api={api} onSelect={setAssistantTarget} onCandidates={setAssistantCandidates} onMenus={setAssistantMenus} />
-      : route === 'contents' ? <Contents api={api} onSelect={setAssistantTarget} onCandidates={setAssistantCandidates} />
+      : route === 'contents' ? <Contents api={api} onSelect={setAssistantTarget} onCandidates={setAssistantCandidates} onMenus={setAssistantMenus} />
         : route === 'boards' ? <Boards api={api} onSelect={setAssistantTarget} onCandidates={setAssistantCandidates} onMenus={setAssistantMenus} />
           : <Templates api={api} />
   const assistantRoute = route === 'members' ? null : route
@@ -227,10 +227,12 @@ function Menus({ api, onSelect, onCandidates, onMenus }: {
   </>
 }
 
-function Contents({ api, onSelect, onCandidates }: {
+function Contents({ api, onSelect, onCandidates, onMenus }: {
   api: CmsApi
   onSelect: (target: CmsAssistantTarget | null) => void
   onCandidates: (candidates: CmsAssistantTarget[]) => void
+  /** 컨텐츠 화면에서는 **선택한 컨텐츠를 연결한 메뉴**만 넘긴다. 삭제 확인이 그것을 알린다. */
+  onMenus: (menus: AssistantMenu[]) => void
 }) {
   /** 미리보기가 변경 전으로 쓸 수 있도록 현재 값을 함께 넘긴다. */
   const contentTarget = (item: Article): CmsAssistantTarget => ({
@@ -240,27 +242,78 @@ function Contents({ api, onSelect, onCandidates }: {
     fields: { title: item.title, body: item.body },
   })
   const [items, setItems] = useState<Article[]>([])
+  const [menus, setMenus] = useState<Menu[]>([])
   const [editing, setEditing] = useState<Article | null>(null)
   const [title, setTitle] = useState('')
   const [body, setBody] = useState('')
   const [failure, setFailure] = useState<string | null>(null)
-  const load = () => api.contents().then(setItems).catch((e) => setFailure(`불러오지 못했습니다. ${describeFailure(e)}`))
+  /**
+   * 목록 갱신은 선택한 컨텐츠까지 새 값으로 바꾼다.
+   *
+   * 자연어 반영이 끝나면 이 함수가 다시 불린다. 목록만 다시 읽으면 폼과 패널이 옛 값을 계속
+   * 보여주고, 자연어로 사라진 컨텐츠를 선택한 채로 남는다. 메뉴는 삭제 확인이 쓴다.
+   */
+  const load = async () => {
+    try {
+      const [freshItems, freshMenus] = await Promise.all([api.contents(), api.menus()])
+      setItems(freshItems)
+      setMenus(freshMenus)
+      if (!editing) return
+      const fresh = freshItems.find((item) => item.id === editing.id)
+      if (!fresh) { clear(); return }
+      select(fresh)
+    }
+    catch (e) { setFailure(`불러오지 못했습니다. ${describeFailure(e)}`) }
+  }
   useCmsList(api, load)
+  /**
+   * 컨텐츠를 지우면 그 컨텐츠를 연결한 메뉴가 `연결 없음`이 되어 사이트에서 빈 페이지가 된다.
+   *
+   * 기존 CMS의 `deleteContent`가 이미 연결을 끊으므로 만들 것은 없고 **삭제 전에 알리기만** 한다.
+   * 메뉴 목록은 화면이 들고 있어 서버에 묻지 않는다.
+   */
   useEffect(() => {
-    onCandidates(items.map(contentTarget))
+    if (!editing) { onMenus([]); return }
+    onMenus(menus
+      .filter((menu) => menu.targetType === 'CONTENT' && menu.targetId === editing.id)
+      .map((menu) => ({
+        id: menu.id,
+        name: menuTrail(menu, menus),
+        path: menu.path,
+        parentId: menu.parentId,
+        link: '',
+      })))
+  }, [menus, editing, onMenus])
+  /** 되묻기 후보는 화면이 이미 가진 목록에서 나온다. 등록은 고정 표식으로 고른다. */
+  useEffect(() => {
+    onCandidates([NEW_CONTENT_TARGET, ...items.map(contentTarget)])
   }, [items, onCandidates])
-  function select(item: Article | null) {
+  function select(item: Article) {
     setEditing(item)
-    setTitle(item?.title ?? '')
-    setBody(item?.body ?? '')
-    onSelect(item ? contentTarget(item) : null)
+    setTitle(item.title)
+    setBody(item.body)
+    onSelect(contentTarget(item))
+  }
+  /** 저장·삭제 뒤 폼을 비운다. 대상도 함께 비운다. */
+  function clear() {
+    setEditing(null)
+    setTitle('')
+    setBody('')
+    onSelect(null)
+  }
+  /** `새 컨텐츠`는 등록하겠다는 선언이다. 대상을 새 컨텐츠로 옮긴다. */
+  function startContent() {
+    setEditing(null)
+    setTitle('')
+    setBody('')
+    onSelect(NEW_CONTENT_TARGET)
   }
   function insert(mark: string) { setBody((value) => value ? `${value}\n${mark}` : mark) }
-  async function submit(event: FormEvent) { event.preventDefault(); setFailure(null); const action = editing ? '수정' : '등록'; try { if (editing) await api.updateContent(editing.id, { title, body }); else await api.createContent({ title, body }); select(null); await load(); notifySiteUpdated(); notifyCmsSuccess(`컨텐츠를 ${action}했습니다.`) } catch (e) { setFailure(`컨텐츠를 저장하지 못했습니다. ${describeFailure(e)}`) } }
-  async function remove(id: number) { if (!window.confirm('컨텐츠를 삭제할까요?')) return; setFailure(null); try { await api.deleteContent(id); select(null); await load(); notifySiteUpdated(); notifyCmsSuccess('컨텐츠를 삭제했습니다.') } catch (e) { setFailure(`컨텐츠를 삭제하지 못했습니다. ${describeFailure(e)}`) } }
+  async function submit(event: FormEvent) { event.preventDefault(); setFailure(null); const action = editing ? '수정' : '등록'; try { if (editing) await api.updateContent(editing.id, { title, body }); else await api.createContent({ title, body }); clear(); await load(); notifySiteUpdated(); notifyCmsSuccess(`컨텐츠를 ${action}했습니다.`) } catch (e) { setFailure(`컨텐츠를 저장하지 못했습니다. ${describeFailure(e)}`) } }
+  async function remove(id: number) { if (!window.confirm('컨텐츠를 삭제할까요?')) return; setFailure(null); try { await api.deleteContent(id); clear(); await load(); notifySiteUpdated(); notifyCmsSuccess('컨텐츠를 삭제했습니다.') } catch (e) { setFailure(`컨텐츠를 삭제하지 못했습니다. ${describeFailure(e)}`) } }
   return <>
     <Heading title="컨텐츠 관리" description="메뉴에 연결할 정적 페이지를 가벼운 에디터로 작성합니다.">
-      <button className={primaryButton} onClick={() => select(null)}><Icon name="plus" />새 컨텐츠</button>
+      <button className={primaryButton} onClick={startContent}><Icon name="plus" />새 컨텐츠</button>
     </Heading>
     <Failure value={failure} />
     <div className="grid gap-[0.875rem] 2xl:grid-cols-[minmax(17.5rem,.75fr)_minmax(0,1.5fr)]">
@@ -268,7 +321,7 @@ function Contents({ api, onSelect, onCandidates }: {
         <PanelTitle title="컨텐츠 목록" sub={`총 ${items.length}건`}><Icon name="search" size={15} className="text-muted-3" /></PanelTitle>
         {items.length === 0
           ? <EmptyState icon="file-text" title="등록된 컨텐츠가 없습니다" description="새 컨텐츠 버튼으로 첫 페이지를 만들어 보세요." />
-          : items.map((item) => <button key={item.id} className={recordRow} onClick={() => select(item)}>
+          : items.map((item) => <button key={item.id} className={`${recordRow} ${editing?.id === item.id ? selectedRow : ''}`} onClick={() => select(item)}>
             <Icon name="file-text" className="text-muted-2" />
             <span className="min-w-0 flex-1">
               <b className="block truncate text-[0.78125rem] font-semibold text-ink">{item.title}</b>

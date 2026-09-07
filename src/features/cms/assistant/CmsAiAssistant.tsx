@@ -87,8 +87,8 @@ const profiles: Record<AssistedRoute, AssistantProfile> = {
     section: '컨텐츠 관리',
     title: '컨텐츠 AI',
     description: '정적 페이지의 제목과 본문 초안을 빠르게 다듬어 보세요.',
-    empty: '목록에서 항목을 선택하면 그 대상에 적용합니다.',
-    capabilities: ['컨텐츠 등록·수정', '제목·본문 편집', '문단·목록 서식', '삭제 전 확인'],
+    empty: '목록에서 고르거나, 바로 요청해 새 컨텐츠를 만들 수 있어요.',
+    capabilities: ['컨텐츠 등록·수정·삭제', '제목·본문 편집', '문단·목록 서식', '삭제 전 확인'],
     excluded: '메뉴 구조, 게시판·게시글, 템플릿은 변경하지 않아요.',
     suggestions: ['선택한 컨텐츠를 세 문단으로 정리해 줘', '제목을 더 명확하게 다듬어 줘', '새 안내 페이지 초안을 만들어 줘'],
   },
@@ -143,6 +143,13 @@ export const NEW_BOARD_TARGET: CmsAssistantTarget = {
   label: '새 게시판 만들기',
   /** 등록 미리보기가 빠진 필드를 알아보도록 빈 틀을 담는다. 변경 전 값이 없다는 뜻이기도 하다. */
   fields: { name: '', description: '' },
+}
+
+export const NEW_CONTENT_TARGET: CmsAssistantTarget = {
+  type: 'CONTENT',
+  id: 'new',
+  label: '새 컨텐츠 만들기',
+  fields: { title: '', body: '' },
 }
 
 /** 필드 이름을 사람 말로. 목록에 없으면 원래 이름을 그대로 쓴다. */
@@ -361,9 +368,11 @@ export default function CmsAiAssistant({ route, target, candidates, menus, onTar
           <small className="block text-[0.65625rem] font-semibold text-muted-2">삭제 대상</small>
           <span className="mt-[0.1875rem] block text-[0.8125rem] font-semibold text-body">{target?.label}</span>
         </section>
-        {/* 게시판 화면에서 `menus`는 이 게시판을 연결한 메뉴다. 화면이 걸러 넘긴다. */}
+        {/* 게시판·컨텐츠 화면에서 `menus`는 이 대상을 연결한 메뉴다. 화면이 걸러 넘긴다. */}
         {!isPostTarget(target) && menus.length > 0 && <section>
-          <small className="block text-[0.65625rem] font-semibold text-muted-2">이 게시판을 연결한 메뉴</small>
+          <small className="block text-[0.65625rem] font-semibold text-muted-2">
+            이 {target?.type === 'CONTENT' ? '컨텐츠' : '게시판'}를 연결한 메뉴
+          </small>
           <ul className="m-0 mt-[0.375rem] list-none p-0">
             {menus.map((menu) => <li className="py-[0.1875rem] text-[0.71875rem] text-body" key={menu.id}>
               {menu.name} <span className="text-muted-3">({menu.path})</span>

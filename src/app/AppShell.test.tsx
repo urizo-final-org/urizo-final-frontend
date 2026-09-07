@@ -385,7 +385,7 @@ test('a general administrator is redirected away from site management', async ()
 /** 마지막 값은 대상을 고르지 않았을 때의 안내다. 등록 경로가 열린 화면만 문구가 다르다. */
 test.each([
   ['/admin/menus', '메뉴 관리', '메뉴 AI', '컨텐츠 본문, 게시글, 템플릿은 변경하지 않아요.', '목록에서 고르거나, 바로 요청해 새 메뉴를 만들 수 있어요.'],
-  ['/admin/contents', '컨텐츠 관리', '컨텐츠 AI', '메뉴 구조, 게시판·게시글, 템플릿은 변경하지 않아요.', '목록에서 항목을 선택하면 그 대상에 적용합니다.'],
+  ['/admin/contents', '컨텐츠 관리', '컨텐츠 AI', '메뉴 구조, 게시판·게시글, 템플릿은 변경하지 않아요.', '목록에서 고르거나, 바로 요청해 새 컨텐츠를 만들 수 있어요.'],
   ['/admin/boards', '게시판 관리', '게시판 AI', '메뉴 연결, 정적 컨텐츠, 템플릿은 변경하지 않아요.', '목록에서 고르거나, 바로 요청해 새 게시판·게시글을 만들 수 있어요.'],
   ['/admin/templates', '템플릿 관리', '템플릿 AI', '메뉴, 컨텐츠 본문, 게시판·게시글은 변경하지 않아요.', '목록에서 항목을 선택하면 그 대상에 적용합니다.'],
 ])('%s shows a page-scoped AI panel', async (path, section, assistant, excluded, empty) => {
