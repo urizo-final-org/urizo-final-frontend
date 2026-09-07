@@ -6,7 +6,8 @@ import {
 } from '../../shared/ui/primitives'
 import type {
   AgentSettingsApiClient, ModelProvider, ProfileAuthoringSnapshot, ProfileKey, ProfileVersion,
-  ProfileVersionApiClient, ProviderCredentialState, ProviderCredentialStatus,
+  ObservabilityMetricsResponse, ObservabilityResponse, ObservabilityStatus, ProfileVersionApiClient,
+  ProviderCredentialState, ProviderCredentialStatus,
 } from './api'
 import WorkflowPanel, {
   hydrateToolBindings, normalizeModelBindings, profileToolRequirement, starterSnapshots,
@@ -22,7 +23,7 @@ const tabs: { id: TabId; label: string; temporary?: true }[] = [
   { id: 'workflow', label: 'Agent·Workflow' },
   { id: 'profile', label: '자연어 기능 Profile' },
   { id: 'policy', label: 'Tool·실행 정책' },
-  { id: 'usage', label: '사용량·평가', temporary: true },
+  { id: 'usage', label: '사용량·평가' },
 ]
 
 const profileCatalog: Record<ProfileKey, {
@@ -112,7 +113,7 @@ export default function AgentSettingsWorkspace({ api }: { api: AgentSettingsApiC
       onSelect={setSelectedProfileKey}
     />}
     {activeTab === 'policy' && <PolicyPanel />}
-    {activeTab === 'usage' && <UsagePanel />}
+    {activeTab === 'usage' && <UsagePanel api={api} />}
   </>
 }
 
@@ -512,27 +513,151 @@ function PolicyPanel() {
   </section>
 }
 
-function RuntimeStatusCard({ title, tone, state, description }: {
-  title: string
-  tone: 'ok' | 'wait' | 'idle'
-  state: string
-  description: string
-}) {
-  return <article className={panel}>
-    <PanelTitle title={title}><Badge tone={tone} dot={tone !== 'idle'}>{state}</Badge></PanelTitle>
-    <p className="p-4 text-[0.71875rem] leading-6 text-muted-2">{description}</p>
-  </article>
+type ObservabilityTab = 'node' | 'provider' | 'quality'
+
+function defaultObservabilityRange() {
+  const to = new Date()
+  const from = new Date(to.getTime() - 24 * 60 * 60 * 1000)
+  return { from: from.toISOString().slice(0, 16), to: to.toISOString().slice(0, 16) }
 }
 
-function UsagePanel() {
+function utcInstant(value: string) {
+  const parsed = new Date(`${value}:00.000Z`)
+  if (Number.isNaN(parsed.getTime())) throw new Error('UTC 조회 기간을 확인해 주세요.')
+  return parsed.toISOString()
+}
+
+function shown(value: string | number | null) {
+  return value === null ? '제공되지 않음' : String(value)
+}
+
+function availability(status: ObservabilityStatus, count: number) {
+  if (status === 'DISABLED') return { label: '관측 연결 안 됨', tone: 'idle' as Tone }
+  if (status === 'UNAVAILABLE') return { label: '관측 일시 사용 불가', tone: 'fail' as Tone }
+  if (count === 0) return { label: '관측 대기', tone: 'wait' as Tone }
+  return { label: '연결됨', tone: 'ok' as Tone }
+}
+
+function UsagePanel({ api }: { api: AgentSettingsApiClient }) {
+  const initialRange = useRef(defaultObservabilityRange())
+  const [activeTab, setActiveTab] = useState<ObservabilityTab>('node')
+  const [fromInput, setFromInput] = useState(initialRange.current.from)
+  const [toInput, setToInput] = useState(initialRange.current.to)
+  const [metrics, setMetrics] = useState<ObservabilityMetricsResponse | null>(null)
+  const [observations, setObservations] = useState<ObservabilityResponse | null>(null)
+  const [loadedAt, setLoadedAt] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [failure, setFailure] = useState<string | null>(null)
+
+  async function load() {
+    setLoading(true)
+    setFailure(null)
+    setMetrics(null)
+    setObservations(null)
+    try {
+      const from = utcInstant(fromInput)
+      const to = utcInstant(toInput)
+      if (from >= to) throw new Error('UTC 조회 종료 시각은 시작 시각보다 뒤여야 합니다.')
+      const [nextMetrics, nextObservations] = await Promise.all([
+        api.getObservabilityMetrics(from, to),
+        api.getObservations(from, to),
+      ])
+      if (nextMetrics.from !== nextObservations.from || nextMetrics.to !== nextObservations.to
+        || nextMetrics.environment !== nextObservations.environment || nextMetrics.environment !== 'local') {
+        throw new Error('관측 응답의 UTC 기간 또는 환경이 일치하지 않습니다.')
+      }
+      setMetrics(nextMetrics)
+      setObservations(nextObservations)
+      setLoadedAt(new Date().toISOString())
+    } catch (error) {
+      setFailure(describeFailure(error))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => { void load() }, [])
+
+  const nodeRows = observations?.observations.filter((row) => row.name !== 'axms.model') ?? []
+  const providerRows = observations?.observations.filter((row) => row.name === 'axms.model') ?? []
+  const nodeAvailability = observations && availability(observations.status, nodeRows.length)
+  const providerAvailability = metrics && availability(metrics.status, metrics.rows.length)
+  const providerDetailAvailability = observations && availability(observations.status, providerRows.length)
+  const tabs: { id: ObservabilityTab; label: string }[] = [
+    { id: 'node', label: 'Node 계측' },
+    { id: 'provider', label: 'Provider 계측' },
+    { id: 'quality', label: '품질 평가' },
+  ]
+
   return <section id="agent-settings-panel-usage" role="tabpanel" aria-labelledby="agent-settings-tab-usage">
-    <Callout tone="warn" icon="triangle-alert">
-      현재 사용량·평가·Trace 조회 API가 없어 수치나 품질 점수를 표시하지 않습니다.
-    </Callout>
-    <div className="grid items-start gap-[0.875rem] xl:grid-cols-3">
-      <RuntimeStatusCard title="사용량" tone="idle" state="API 없음" description="Token·호출 횟수 집계 계약이 생기면 실제 Job 기준으로 연결합니다." />
-      <RuntimeStatusCard title="평가" tone="idle" state="API 없음" description="품질 지표와 Gate는 기능 담당 요구가 확정된 뒤 별도 Work로 정의합니다." />
-      <RuntimeStatusCard title="관측" tone="idle" state="API 없음" description="Trace·비용·지연시간 도구는 현재 공통 Runtime 범위에 포함하지 않습니다." />
+    <section className={panel}>
+      <PanelTitle title="총괄 상세 대시보드">
+        <Badge tone={loading ? 'wait' : failure ? 'fail' : 'ok'} dot={false}>
+          {loading ? '조회 중' : failure ? '조회 실패' : 'environment=local'}
+        </Badge>
+      </PanelTitle>
+      <form className="grid gap-3 p-4 md:grid-cols-[1fr_1fr_auto]" onSubmit={(event) => { event.preventDefault(); void load() }}>
+        <label className="text-[0.6875rem] font-semibold text-body">
+          조회 시작 UTC
+          <input aria-label="조회 시작 UTC" className={`${control} mt-1`} type="datetime-local" required disabled={loading} value={fromInput} onChange={(event) => setFromInput(event.target.value)} />
+        </label>
+        <label className="text-[0.6875rem] font-semibold text-body">
+          조회 종료 UTC
+          <input aria-label="조회 종료 UTC" className={`${control} mt-1`} type="datetime-local" required disabled={loading} value={toInput} onChange={(event) => setToInput(event.target.value)} />
+        </label>
+        <button type="submit" className={`${secondaryButton} self-end`} disabled={loading}>{loading ? '조회 중' : '새로고침'}</button>
+      </form>
+      <div className="border-t border-line-soft px-4 py-3 text-[0.6875rem] leading-5 text-muted-2">
+        {metrics && observations
+          ? <>기간 <span className="font-mono text-body">{metrics.from}</span> — <span className="font-mono text-body">{metrics.to}</span> · 환경 <b className="text-body">{metrics.environment}</b>{loadedAt && <> · 조회 완료 <span className="font-mono text-body">{loadedAt}</span></>}</>
+          : 'Metrics와 Observations에 같은 UTC 기간과 environment=local 필터를 적용합니다.'}
+      </div>
+    </section>
+
+    {failure && <div role="alert" className="mt-3 flex flex-wrap items-center gap-2 rounded-md border border-[#f0d5d1] bg-fail-bg px-3 py-2 text-xs text-fail-fg">
+      <span>{failure}</span>
+      <button type="button" className={`${secondaryButton} ml-auto`} disabled={loading} onClick={() => void load()}>다시 조회</button>
+    </div>}
+
+    <div className="mt-4 flex gap-2 border-b border-line" role="tablist" aria-label="사용량·평가 상세 영역">
+      {tabs.map((tab) => <button key={tab.id} type="button" role="tab" aria-selected={activeTab === tab.id}
+        className={`px-3 pb-2 text-[0.75rem] ${activeTab === tab.id ? 'font-semibold text-ink shadow-[inset_0_-2px_var(--primary)]' : 'text-muted'}`}
+        onClick={() => setActiveTab(tab.id)}>{tab.label}</button>)}
     </div>
+
+    {loading && <div className="mt-3"><Callout tone="warn" icon="loader-circle">Node와 Provider 계측을 조회하고 있습니다.</Callout></div>}
+
+    {!loading && activeTab === 'node' && observations && <section className={`${panel} mt-3`} aria-label="Node 계측 결과">
+      <PanelTitle title="Node 계측"><Badge tone={nodeAvailability?.tone ?? 'idle'}>{nodeAvailability?.label ?? '관측 대기'}</Badge></PanelTitle>
+      <p className="border-t border-line-soft px-4 py-2 text-[0.6875rem] text-muted-2">최근 최대 50건의 Observation 조회 결과입니다.</p>
+      {nodeRows.length === 0
+        ? <p className="p-4 text-[0.71875rem] text-muted-2">{observations.status === 'AVAILABLE' ? '이번 조회 결과에 Node·Tool·Check 관측이 없습니다.' : observations.errorCode ?? '관측 연결 상태를 확인해 주세요.'}</p>
+        : <div className="overflow-x-auto"><table className="w-full min-w-[46rem] text-left text-[0.6875rem]"><thead className="bg-sub text-muted-2"><tr><th className="px-3 py-2">관측</th><th className="px-3 py-2">Job / Node</th><th className="px-3 py-2">상태 / Attempt</th><th className="px-3 py-2">지연시간</th><th className="px-3 py-2">시작 UTC</th></tr></thead><tbody>
+          {nodeRows.map((row) => <tr key={row.id} className="border-t border-line-soft"><td className="px-3 py-2 font-mono">{row.name}</td><td className="px-3 py-2"><span className="block">{shown(row.metadata.jobId)}</span><span className="font-mono text-muted-2">{shown(row.metadata.nodeId)}</span></td><td className="px-3 py-2">{shown(row.metadata.nodeStatus ?? row.metadata.toolStatus ?? row.metadata.checkStatus ?? row.level)} / {shown(row.metadata.attempt)}</td><td className="px-3 py-2">{row.latencyMs === null ? '제공되지 않음' : `${row.latencyMs} ms`}</td><td className="px-3 py-2 font-mono">{row.startTime}</td></tr>)}
+        </tbody></table></div>}
+    </section>}
+
+    {!loading && activeTab === 'provider' && metrics && <section className={`${panel} mt-3`} aria-label="Provider 계측 결과">
+      <PanelTitle title="Provider 계측"><Badge tone={providerAvailability?.tone ?? 'idle'}>{providerAvailability?.label ?? '관측 대기'}</Badge></PanelTitle>
+      {metrics.rows.length === 0
+        ? <p className="p-4 text-[0.71875rem] text-muted-2">{metrics.status === 'AVAILABLE' ? '선택한 기간의 실제 Provider 호출 계측이 아직 없습니다.' : metrics.errorCode ?? '관측 연결 상태를 확인해 주세요.'}</p>
+        : <div className="overflow-x-auto"><table className="w-full min-w-[52rem] text-left text-[0.6875rem]"><thead className="bg-sub text-muted-2"><tr><th className="px-3 py-2">Model</th><th className="px-3 py-2">호출</th><th className="px-3 py-2">입력 Token</th><th className="px-3 py-2">출력 Token</th><th className="px-3 py-2">전체 Token</th><th className="px-3 py-2">Langfuse 비용</th><th className="px-3 py-2">P50 / P95</th></tr></thead><tbody>
+          {metrics.rows.map((row, index) => <tr key={`${row.model ?? 'unknown'}-${index}`} className="border-t border-line-soft"><td className="px-3 py-2 font-mono">{shown(row.model)}</td><td className="px-3 py-2">{shown(row.observationCount)}</td><td className="px-3 py-2">{shown(row.inputTokens)}</td><td className="px-3 py-2">{shown(row.outputTokens)}</td><td className="px-3 py-2">{shown(row.totalTokens)}</td><td className="px-3 py-2">{shown(row.totalCost)}</td><td className="px-3 py-2">{row.p50LatencyMs === null ? '제공되지 않음' : `${row.p50LatencyMs} ms`} / {row.p95LatencyMs === null ? '제공되지 않음' : `${row.p95LatencyMs} ms`}</td></tr>)}
+        </tbody></table></div>}
+      {observations && <div className="border-t border-line-soft">
+        <div className="flex items-center justify-between gap-2 bg-sub px-3 py-2"><b className="text-[0.6875rem]">실제 Provider 호출</b><Badge tone={providerDetailAvailability?.tone ?? 'idle'} dot={false}>{providerDetailAvailability?.label ?? '관측 대기'}</Badge></div>
+        <p className="border-t border-line-soft px-4 py-2 text-[0.6875rem] text-muted-2">최근 최대 50건의 Observation 조회 결과입니다.</p>
+        {providerRows.length === 0
+          ? <p className="p-4 text-[0.71875rem] text-muted-2">{observations.status === 'AVAILABLE' ? '이번 조회 결과에 실제 Provider 호출 Observation이 없습니다.' : observations.errorCode ?? '관측 연결 상태를 확인해 주세요.'}</p>
+          : <div className="overflow-x-auto"><table className="w-full min-w-[56rem] text-left text-[0.6875rem]"><thead className="bg-sub text-muted-2"><tr><th className="px-3 py-2">Provider / Model</th><th className="px-3 py-2">Job / Node</th><th className="px-3 py-2">OTel Trace</th><th className="px-3 py-2">입력 / 출력 Token</th><th className="px-3 py-2">지연시간</th></tr></thead><tbody>
+            {providerRows.map((row) => <tr key={row.id} className="border-t border-line-soft"><td className="px-3 py-2"><span className="block">{shown(row.metadata.provider)}</span><span className="font-mono text-muted-2">{shown(row.metadata.model ?? row.model)}</span></td><td className="px-3 py-2"><span className="block">{shown(row.metadata.jobId)}</span><span className="font-mono text-muted-2">{shown(row.metadata.nodeId)}</span></td><td className="px-3 py-2 font-mono">{row.traceId}</td><td className="px-3 py-2">{shown(row.inputTokens)} / {shown(row.outputTokens)}</td><td className="px-3 py-2">{row.latencyMs === null ? '제공되지 않음' : `${row.latencyMs} ms`}</td></tr>)}
+          </tbody></table></div>}
+      </div>}
+    </section>}
+
+    {!loading && activeTab === 'quality' && <section className={`${panel} mt-3`} aria-label="품질 평가 결과">
+      <PanelTitle title="품질 평가"><Badge tone="idle" dot={false}>평가 미설정</Badge></PanelTitle>
+      <p className="p-4 text-[0.71875rem] leading-6 text-muted-2">평가가 아직 설정되지 않았습니다.</p>
+    </section>}
   </section>
 }

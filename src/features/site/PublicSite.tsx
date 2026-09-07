@@ -2,6 +2,8 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type CSSPr
 import { Link, useLocation } from 'react-router-dom'
 import { describeFailure } from '../../shared/api/error'
 import { SITE_UPDATE_EVENT, SiteApi, type Article, type Board, type Menu, type Post, type PublicSiteContext, type SiteTemplate } from '../cms/api'
+import { ChatWidget } from './ChatWidget'
+import { PortalHeader, PortalHome, PortalSearch } from './TourPortal'
 
 export default function PublicSite() {
   const api = useMemo(() => new SiteApi(), [])
@@ -86,6 +88,21 @@ export default function PublicSite() {
   const currentMenu = menus.find((menu) => menu.path === routePath)
   const currentBoard = currentMenu?.targetType === 'BOARD' ? boards.find((board) => board.id === currentMenu.targetId) : null
   const style = { '--brand': template.primaryColor } as CSSProperties
+
+  // 루트 사이트(publicPath '/')는 관광 포털 스킨이다(I8). publicPath가 지정된 부속 사이트는 기존
+  // Template Renderer를 그대로 유지해 템플릿 관리·사이트 관리 데모가 계속 성립한다.
+  if (site.publicPath === '/') {
+    return <div className="flex min-h-screen flex-col overflow-x-hidden bg-panel text-ink" style={style}>
+      {siteFailure && <div className="flex items-center justify-center gap-3 border-b border-[#f2d5d3] bg-[#fdebea] px-5 py-3 text-xs text-[#b4615d]" role="alert"><span>{siteFailure}</span><button type="button" className="rounded border border-current px-3 py-1 font-bold" onClick={loadSite}>다시 시도</button></div>}
+      <PortalHeader />
+      {routePath === '/search'
+        ? <PortalSearch />
+        : routePath === '/'
+          ? <PortalHome />
+          : <SubPage menu={currentMenu} menus={menus} board={currentBoard} content={content} posts={posts} post={post} failure={failure} publicPath={site.publicPath} />}
+      <ChatWidget />
+    </div>
+  }
 
   return <div className={`min-h-screen overflow-x-hidden bg-[#fbfcfa] text-[#263e48] site-${template.layout.toLowerCase()}`} style={style}>
     {siteFailure && <div className="flex items-center justify-center gap-3 border-b border-[#f2d5d3] bg-[#fdebea] px-5 py-3 text-xs text-[#b4615d]" role="alert"><span>{siteFailure}</span><button type="button" className="rounded border border-current px-3 py-1 font-bold" onClick={loadSite}>다시 시도</button></div>}

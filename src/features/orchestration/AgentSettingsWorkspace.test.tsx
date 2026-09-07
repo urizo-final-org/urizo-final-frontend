@@ -177,6 +177,12 @@ function profileApi(overrides: Partial<AgentSettingsApiClient> = {}): AgentSetti
       profileKey: 'LLM_OPS', updatedAt: '2026-09-03T00:00:00Z', snapshot: starterSnapshots.LLM_OPS,
     }),
     listModelCatalog: vi.fn().mockImplementation((profileKey) => Promise.resolve(modelCatalog(profileKey))),
+    getObservabilityMetrics: vi.fn().mockImplementation((from, to) => Promise.resolve({
+      status: 'AVAILABLE', errorCode: null, from, to, environment: 'local', rows: [],
+    })),
+    getObservations: vi.fn().mockImplementation((from, to) => Promise.resolve({
+      status: 'AVAILABLE', errorCode: null, from, to, environment: 'local', observations: [],
+    })),
     listProviderCredentials: vi.fn().mockResolvedValue({
       csrfToken: 'csrf-fixture',
       providers: [
@@ -193,7 +199,7 @@ function profileApi(overrides: Partial<AgentSettingsApiClient> = {}): AgentSetti
   }
 }
 
-test('the five Agent settings tabs expose runtime status without fake controls or metrics', () => {
+test('the five Agent settings tabs expose the Backend observability contract without fake scores', async () => {
   render(<AgentSettingsWorkspace api={profileApi()} />)
 
   expect(screen.getByRole('heading', { name: 'Agent 설정' })).toBeInTheDocument()
@@ -205,7 +211,7 @@ test('the five Agent settings tabs expose runtime status without fake controls o
   expect(tabs[2]).toHaveTextContent('자연어 기능 Profile')
   expect(tabs[2]).not.toHaveTextContent('임시')
   expect(tabs[3]).not.toHaveTextContent('임시')
-  expect(tabs[4]).toHaveTextContent('임시')
+  expect(tabs[4]).not.toHaveTextContent('임시')
   expect(tabs.map((tab) => tab.tabIndex)).toEqual([-1, 0, -1, -1, -1])
   fireEvent.keyDown(tabs[1], { key: 'ArrowRight' })
   expect(tabs[2]).toHaveFocus()
@@ -220,8 +226,102 @@ test('the five Agent settings tabs expose runtime status without fake controls o
   expect(screen.queryByRole('checkbox')).not.toBeInTheDocument()
 
   fireEvent.click(screen.getByRole('tab', { name: /사용량·평가/ }))
-  expect(screen.getAllByText('API 없음')).toHaveLength(3)
+  expect(screen.getByText('Node와 Provider 계측을 조회하고 있습니다.')).toBeInTheDocument()
+  await waitFor(() => expect(screen.getByText('관측 대기')).toBeInTheDocument())
+  expect(screen.getByText('최근 최대 50건의 Observation 조회 결과입니다.')).toBeInTheDocument()
+  expect(screen.getByText('이번 조회 결과에 Node·Tool·Check 관측이 없습니다.')).toBeInTheDocument()
+  fireEvent.click(screen.getByRole('tab', { name: '품질 평가' }))
+  expect(screen.getByText('평가 미설정')).toBeInTheDocument()
   expect(screen.queryByText(/RAGAS|Langfuse|ToolCallAccuracy|AgentGoalAccuracy/)).not.toBeInTheDocument()
+})
+
+test('uses one UTC range for Node and Provider telemetry and preserves nullable Backend values', async () => {
+  const getObservabilityMetrics = vi.fn().mockImplementation((from, to) => Promise.resolve({
+    status: 'AVAILABLE', errorCode: null, from, to, environment: 'local', rows: [{
+      model: 'gpt-5.6-sol', observationCount: 2, inputTokens: 120, outputTokens: null,
+      totalTokens: null, totalCost: 0.0042, p50LatencyMs: 81.5, p95LatencyMs: null,
+    }],
+  }))
+  const getObservations = vi.fn().mockImplementation((from, to) => Promise.resolve({
+    status: 'AVAILABLE', errorCode: null, from, to, environment: 'local', observations: [{
+      id: 'node-observation', traceId: 'otel-trace', parentObservationId: null, type: 'SPAN', name: 'axms.node',
+      level: 'DEFAULT', environment: 'local', startTime: '2026-09-06T00:00:00Z', endTime: '2026-09-06T00:00:01Z',
+      model: null, inputTokens: null, outputTokens: null, latencyMs: 1000,
+      metadata: {
+        jobId: 'job-1', traceId: 'business-trace', profileVersionId: 'version-2', nodeId: 'code',
+        nodeType: 'agent', nodeStatus: 'COMPLETED', attempt: 1, provider: null, model: null,
+        inputTokens: null, outputTokens: null, latencyMs: 1000, errorCode: null, toolStatus: null, checkStatus: null,
+      },
+    }, {
+      id: 'model-observation', traceId: 'otel-trace', parentObservationId: 'node-observation', type: 'GENERATION', name: 'axms.model',
+      level: 'DEFAULT', environment: 'local', startTime: '2026-09-06T00:00:00Z', endTime: '2026-09-06T00:00:00.100Z',
+      model: 'gpt-5.6-sol', inputTokens: 120, outputTokens: null, latencyMs: 100,
+      metadata: {
+        jobId: 'job-1', traceId: 'business-trace', profileVersionId: 'version-2', nodeId: 'code',
+        nodeType: 'agent', nodeStatus: null, attempt: 1, provider: 'OPENAI', model: 'gpt-5.6-sol',
+        inputTokens: 120, outputTokens: null, latencyMs: 100, errorCode: null, toolStatus: null, checkStatus: null,
+      },
+    }],
+  }))
+  render(<AgentSettingsWorkspace api={profileApi({ getObservabilityMetrics, getObservations })} />)
+
+  fireEvent.click(screen.getByRole('tab', { name: /사용량·평가/ }))
+  await waitFor(() => expect(screen.getByRole('region', { name: 'Node 계측 결과' })).toHaveTextContent('job-1'))
+  expect(getObservabilityMetrics).toHaveBeenCalledTimes(1)
+  expect(getObservations).toHaveBeenCalledTimes(1)
+  expect(getObservabilityMetrics.mock.calls[0]).toEqual(getObservations.mock.calls[0])
+  expect(getObservabilityMetrics.mock.calls[0][0]).toMatch(/Z$/)
+  expect(screen.getByText(/environment=local/)).toBeInTheDocument()
+
+  fireEvent.click(screen.getByRole('tab', { name: 'Provider 계측' }))
+  const provider = screen.getByRole('region', { name: 'Provider 계측 결과' })
+  expect(provider).toHaveTextContent('gpt-5.6-sol')
+  expect(provider).toHaveTextContent('0.0042')
+  expect(provider).toHaveTextContent('실제 Provider 호출')
+  expect(provider).toHaveTextContent('최근 최대 50건의 Observation 조회 결과입니다.')
+  expect(provider).toHaveTextContent('OPENAI')
+  expect(provider).toHaveTextContent('job-1')
+  expect(provider).toHaveTextContent('otel-trace')
+  expect(within(provider).getAllByText('제공되지 않음').length).toBeGreaterThan(0)
+})
+
+test('shows disabled, unavailable, and permission failure states without inventing telemetry', async () => {
+  const disabledApi = profileApi({
+    getObservabilityMetrics: vi.fn().mockImplementation((from, to) => Promise.resolve({
+      status: 'DISABLED', errorCode: 'LANGFUSE_DISABLED', from, to, environment: 'local', rows: [],
+    })),
+    getObservations: vi.fn().mockImplementation((from, to) => Promise.resolve({
+      status: 'DISABLED', errorCode: 'LANGFUSE_DISABLED', from, to, environment: 'local', observations: [],
+    })),
+  })
+  const disabledView = render(<AgentSettingsWorkspace api={disabledApi} />)
+  fireEvent.click(screen.getByRole('tab', { name: /사용량·평가/ }))
+  await waitFor(() => expect(screen.getByText('관측 연결 안 됨')).toBeInTheDocument())
+  expect(screen.getByText('LANGFUSE_DISABLED')).toBeInTheDocument()
+  disabledView.unmount()
+
+  const unavailableApi = profileApi({
+    getObservabilityMetrics: vi.fn().mockImplementation((from, to) => Promise.resolve({
+      status: 'UNAVAILABLE', errorCode: 'LANGFUSE_UPSTREAM_UNAVAILABLE', from, to, environment: 'local', rows: [],
+    })),
+    getObservations: vi.fn().mockImplementation((from, to) => Promise.resolve({
+      status: 'UNAVAILABLE', errorCode: 'LANGFUSE_UPSTREAM_UNAVAILABLE', from, to, environment: 'local', observations: [],
+    })),
+  })
+  const unavailableView = render(<AgentSettingsWorkspace api={unavailableApi} />)
+  fireEvent.click(screen.getByRole('tab', { name: /사용량·평가/ }))
+  await waitFor(() => expect(screen.getByText('관측 일시 사용 불가')).toBeInTheDocument())
+  expect(screen.getByText('LANGFUSE_UPSTREAM_UNAVAILABLE')).toBeInTheDocument()
+  unavailableView.unmount()
+
+  const forbidden = new ProductApiError({ status: 403, code: 'FORBIDDEN', message: 'Forbidden', traceId: 'safe-trace' })
+  render(<AgentSettingsWorkspace api={profileApi({
+    getObservabilityMetrics: vi.fn().mockRejectedValue(forbidden),
+    getObservations: vi.fn().mockRejectedValue(forbidden),
+  })} />)
+  fireEvent.click(screen.getByRole('tab', { name: /사용량·평가/ }))
+  await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Forbidden'))
+  expect(screen.queryByText(/0 Token|0\.00/)).not.toBeInTheDocument()
 })
 
 test('provider keys can be stored, tested, and deleted without rendering the secret again', async () => {
