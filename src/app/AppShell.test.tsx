@@ -382,11 +382,11 @@ test('a general administrator is redirected away from site management', async ()
   expect(within(navigation).queryByRole('button', { name: /사이트 관리/ })).not.toBeInTheDocument()
 })
 
-/** 마지막 값은 대상을 고르지 않았을 때의 안내다. 메뉴만 등록 경로가 있어 문구가 다르다. */
+/** 마지막 값은 대상을 고르지 않았을 때의 안내다. 등록 경로가 열린 화면만 문구가 다르다. */
 test.each([
   ['/admin/menus', '메뉴 관리', '메뉴 AI', '컨텐츠 본문, 게시글, 템플릿은 변경하지 않아요.', '목록에서 고르거나, 바로 요청해 새 메뉴를 만들 수 있어요.'],
   ['/admin/contents', '컨텐츠 관리', '컨텐츠 AI', '메뉴 구조, 게시판·게시글, 템플릿은 변경하지 않아요.', '목록에서 항목을 선택하면 그 대상에 적용합니다.'],
-  ['/admin/boards', '게시판 관리', '게시판 AI', '메뉴 연결, 정적 컨텐츠, 템플릿은 변경하지 않아요.', '목록에서 항목을 선택하면 그 대상에 적용합니다.'],
+  ['/admin/boards', '게시판 관리', '게시판 AI', '메뉴 연결, 정적 컨텐츠, 템플릿은 변경하지 않아요.', '목록에서 고르거나, 바로 요청해 새 게시판·게시글을 만들 수 있어요.'],
   ['/admin/templates', '템플릿 관리', '템플릿 AI', '메뉴, 컨텐츠 본문, 게시판·게시글은 변경하지 않아요.', '목록에서 항목을 선택하면 그 대상에 적용합니다.'],
 ])('%s shows a page-scoped AI panel', async (path, section, assistant, excluded, empty) => {
   window.history.pushState({}, '', path)
@@ -436,17 +436,18 @@ test('the assistant asks which item to change when no target is selected', async
   expect(within(panel).queryByRole('button', { name: '문의하기' })).not.toBeInTheDocument()
 })
 
+/** 화면 게이트는 리소스별 작업이 끝난 화면부터 연다. 템플릿은 아직 열지 않았다. */
 test('the assistant only accepts requests on the screens that support them', async () => {
-  window.history.pushState({}, '', '/admin/boards')
+  window.history.pushState({}, '', '/admin/templates')
   vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => {
     if (String(input) === '/api/auth/refresh') return Promise.resolve(json(session()))
     return Promise.resolve(json([]))
   }))
 
   render(<AppShell />)
-  expect(await screen.findByRole('heading', { name: '게시판 관리' })).toBeInTheDocument()
-  const panel = screen.getByRole('complementary', { name: '게시판 관리 자연어 도우미' })
-  expect(within(panel).getByText('게시판 관리 화면은 아직 자연어 변경을 지원하지 않습니다.')).toBeInTheDocument()
+  expect(await screen.findByRole('heading', { name: '템플릿 관리' })).toBeInTheDocument()
+  const panel = screen.getByRole('complementary', { name: '템플릿 관리 자연어 도우미' })
+  expect(within(panel).getByText('템플릿 관리 화면은 아직 자연어 변경을 지원하지 않습니다.')).toBeInTheDocument()
 })
 
 test('the menu assistant opens and offers a new menu beside the existing ones', async () => {
