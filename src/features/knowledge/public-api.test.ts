@@ -67,6 +67,17 @@ test('sends none of the administrator-only request parts', async () => {
   expect(sentBody(fetch)).toEqual({ query: '한옥스테이', conversationId: 'c1' })
 })
 
+// 첫 턴에도 previousQuery가 실리면 자기 질문을 자기 문맥으로 보내게 된다.
+test('sends the previous question only when there is one', async () => {
+  const first = stubFetch()
+  await queryPublicChat({ query: '전주 한옥스테이 추천해줘' })
+  expect('previousQuery' in sentBody(first)).toBe(false)
+
+  const second = stubFetch()
+  await queryPublicChat({ query: '거기 주차 되나요?', previousQuery: '전주 한옥스테이 추천해줘' })
+  expect(sentBody(second).previousQuery).toBe('전주 한옥스테이 추천해줘')
+})
+
 // 무인증 경로다. session.ts를 탔다면 401에서 refresh 요청이 한 번 더 나간다.
 test('does not retry through the session refresh path', async () => {
   const fetch = stubFetch(401, { traceId: 'tr', error: { code: 'AUTHENTICATION_REQUIRED', message: '로그인이 필요합니다.' } })
