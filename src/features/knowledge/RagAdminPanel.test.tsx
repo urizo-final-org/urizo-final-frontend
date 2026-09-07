@@ -161,10 +161,12 @@ test('a blocked target says so instead of waiting forever', async () => {
 })
 
 /**
- * 상태마다 다른 엔드포인트를 부른다. 이 분기가 없으면 보관 버전에서 409
- * KNOWLEDGE_VERSION_NOT_APPROVABLE이 난다 — 9/7 실호출로 확인한 사고다.
+ * 보관 버전은 행 자체를 내지 않는다. 이전에는 행을 내고 상태별로 엔드포인트를 갈랐는데,
+ * 그 분기를 놓치면 보관 버전에서 409 KNOWLEDGE_VERSION_NOT_APPROVABLE이 났다(9/7 실호출로
+ * 확인한 사고다). 행을 없애는 쪽이 더 강한 보장이다 — 누를 수 없으면 틀린 엔드포인트로도
+ * 갈 수 없다. 되돌리기는 목록 위의 전용 버튼 하나로 남는다.
  */
-test('an archived version rolls back while an approval-pending one activates', async () => {
+test('an archived version is never offered while an approval-pending one activates', async () => {
   const rollback = vi.fn().mockResolvedValue({})
   const activate = vi.fn().mockResolvedValue({})
   const calls = api({
@@ -179,14 +181,13 @@ test('an archived version rolls back while an approval-pending one activates', a
   })
   show(<RagAdminPanel api={calls} role="SUPER_ADMIN" />)
 
-  fireEvent.click(await screen.findByTitle('포털이 v11 기준으로 답하게 합니다.'))
-  fireEvent.click(screen.getByRole('button', { name: '되돌리기' }))
-  await waitFor(() => expect(rollback).toHaveBeenCalledWith('kb-1', 'kv-11'))
-  expect(activate).not.toHaveBeenCalled()
+  await screen.findByTitle('포털이 v10 기준으로 답하게 합니다.')
+  expect(screen.queryByTitle('포털이 v11 기준으로 답하게 합니다.')).not.toBeInTheDocument()
 
-  fireEvent.click(await screen.findByTitle('포털이 v10 기준으로 답하게 합니다.'))
+  fireEvent.click(screen.getByTitle('포털이 v10 기준으로 답하게 합니다.'))
   fireEvent.click(screen.getByRole('button', { name: '활성화 (승인)' }))
   await waitFor(() => expect(activate).toHaveBeenCalledWith('kv-10'))
+  expect(rollback).not.toHaveBeenCalled()
 })
 
 test('a failed build cannot be activated — it would make the chatbot see an empty knowledge', async () => {
@@ -199,18 +200,20 @@ test('a failed build cannot be activated — it would make the chatbot see an em
   })
   show(<RagAdminPanel api={calls} role="SUPER_ADMIN" />)
 
-  const denied = await screen.findByTitle('실패한 빌드는 활성화할 수 없습니다.')
-  expect(denied).toBeDisabled()
-  fireEvent.click(denied)
+  // 문서 0건짜리 버전을 활성화하면 챗봇이 아무것도 못 찾는다. 이제는 disabled로 막는 대신
+  // 행을 내지 않는다 — 실패한 빌드는 이력이지 고를 수 있는 대상이 아니다.
+  const table = within((await screen.findByText('RAG 버전')).closest('section') as HTMLElement)
+  expect(table.queryByText('v4')).not.toBeInTheDocument()
+  expect(screen.queryByTitle('실패한 빌드는 활성화할 수 없습니다.')).not.toBeInTheDocument()
   expect(rollback).not.toHaveBeenCalled()
 })
 
 test('the confirmation shows the document count before a switch — an empty version activates silently otherwise', async () => {
   show(<RagAdminPanel api={api({
     listVersions: vi.fn().mockResolvedValue({
-      items: [version({ versionNumber: 11, status: 'ARCHIVED', knowledgeVersionId: 'kv-11', documentCount: 500, chunkCount: 500 }), version()],
+      items: [version({ versionNumber: 11, status: 'APPROVAL_PENDING', knowledgeVersionId: 'kv-11', documentCount: 500, chunkCount: 500, activatedAt: undefined }), version()],
     }),
-    rollback: vi.fn().mockResolvedValue({}),
+    activate: vi.fn().mockResolvedValue({}),
   })} role="SUPER_ADMIN" />)
 
   fireEvent.click(await screen.findByTitle('포털이 v11 기준으로 답하게 합니다.'))
@@ -220,18 +223,18 @@ test('the confirmation shows the document count before a switch — an empty ver
 })
 
 test('cancelling the confirmation calls nothing', async () => {
-  const rollback = vi.fn()
+  const activate = vi.fn()
   show(<RagAdminPanel api={api({
     listVersions: vi.fn().mockResolvedValue({
-      items: [version({ versionNumber: 11, status: 'ARCHIVED', knowledgeVersionId: 'kv-11' }), version()],
+      items: [version({ versionNumber: 11, status: 'APPROVAL_PENDING', knowledgeVersionId: 'kv-11', activatedAt: undefined }), version()],
     }),
-    rollback,
+    activate,
   })} role="SUPER_ADMIN" />)
 
   fireEvent.click(await screen.findByTitle('포털이 v11 기준으로 답하게 합니다.'))
   fireEvent.click(screen.getByRole('button', { name: '취소' }))
   await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
-  expect(rollback).not.toHaveBeenCalled()
+  expect(activate).not.toHaveBeenCalled()
 })
 
 test('the top rollback targets the most recently activated archived version', async () => {
@@ -287,15 +290,15 @@ test('a general admin sees every write disabled and can open no dialog', async (
 
 test('a failing switch surfaces the error and leaves the table refreshed', async () => {
   const listVersions = vi.fn().mockResolvedValue({
-    items: [version({ versionNumber: 11, status: 'ARCHIVED', knowledgeVersionId: 'kv-11' }), version()],
+    items: [version({ versionNumber: 11, status: 'APPROVAL_PENDING', knowledgeVersionId: 'kv-11', activatedAt: undefined }), version()],
   })
   show(<RagAdminPanel api={api({
     listVersions,
-    rollback: vi.fn().mockRejectedValue(new Error('boom')),
+    activate: vi.fn().mockRejectedValue(new Error('boom')),
   })} role="SUPER_ADMIN" />)
 
   fireEvent.click(await screen.findByTitle('포털이 v11 기준으로 답하게 합니다.'))
-  fireEvent.click(screen.getByRole('button', { name: '되돌리기' }))
+  fireEvent.click(screen.getByRole('button', { name: '활성화 (승인)' }))
   // 실패해도 창은 닫히고, 화면이 실제 상태와 어긋나지 않도록 목록을 다시 읽는다.
   await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
   expect(listVersions.mock.calls.length).toBeGreaterThan(1)
@@ -313,32 +316,30 @@ function ladder() {
   ]
 }
 
-/** 11건이 한 번에 깔리면 지금 무엇을 봐야 하는지가 묻힌다. 지우지 않고 접는다. */
-test('the table opens on the versions that matter and folds the rest away', async () => {
+/** 12건이 한 번에 깔리면 지금 무엇을 봐야 하는지가 묻힌다. 끝난 것은 화면에서 뺀다. */
+test('the table lists only the versions still in play', async () => {
   show(<RagAdminPanel api={api({ listVersions: vi.fn().mockResolvedValue({ items: ladder() }) })} role="SUPER_ADMIN" />)
 
   // v8은 요약 카드에도 나오므로 버전 표 안으로 좁혀 단언한다.
   const table = within((await screen.findByText('RAG 버전')).closest('section') as HTMLElement)
-  expect(table.getByText('v11')).toBeInTheDocument()
   expect(table.getByText('v10')).toBeInTheDocument()
-  // 활성 버전은 최신 2건 밖에 있어도 항상 보인다 — 롤백하면 목록 중간으로 내려간다.
+  // 활성 버전은 목록 중간에 있어도 항상 보인다 — 롤백하면 그렇게 된다.
   expect(table.getByText('v8')).toBeInTheDocument()
+  // 보관·실패는 이력이지 지금 고를 대상이 아니다.
+  expect(table.queryByText('v11')).not.toBeInTheDocument()
   expect(table.queryByText('v9')).not.toBeInTheDocument()
   expect(table.queryByText('v4')).not.toBeInTheDocument()
-  // 접었을 뿐 지운 것이 아니라는 사실을 숫자로 남긴다.
-  expect(table.getByText('6건')).toBeInTheDocument()
-  expect(table.getByRole('button', { name: '이전 버전 3건 더 보기' })).toBeInTheDocument()
+  expect(table.queryByText('v3')).not.toBeInTheDocument()
 })
 
-test('the folded versions are still one click away', async () => {
+/** 화면에서 뺀 것이지 지운 것이 아니다. 총 건수가 그 사실을 숫자로 남긴다. */
+test('the hidden versions are still counted in the title', async () => {
   show(<RagAdminPanel api={api({ listVersions: vi.fn().mockResolvedValue({ items: ladder() }) })} role="SUPER_ADMIN" />)
 
-  fireEvent.click(await screen.findByRole('button', { name: '이전 버전 3건 더 보기' }))
-  // 실패한 빌드가 남아 있는 것이 "버전은 고치지 않고 새로 만든다"의 증거다.
-  expect(screen.getByText('v4')).toBeInTheDocument()
-  expect(screen.getByText('v3')).toBeInTheDocument()
-  fireEvent.click(screen.getByRole('button', { name: '접기' }))
-  expect(screen.queryByText('v4')).not.toBeInTheDocument()
+  const table = within((await screen.findByText('RAG 버전')).closest('section') as HTMLElement)
+  // 표에는 2건만 보이지만 제목은 6건을 말한다 — 이력이 사라진 것이 아니다.
+  expect(table.getByText('6건')).toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: /더 보기/ })).not.toBeInTheDocument()
 })
 
 function building() {

@@ -68,24 +68,20 @@ const NOT_SWITCHABLE: Partial<Record<KnowledgeVersionStatus, string>> = {
 }
 
 /**
- * 기본으로 보이는 버전 — **활성 · 승인 대기 · 최신 2건**의 합집합.
+ * 화면에 남기는 버전 — **끝나지 않은 것만.**
  *
- * <p>버전은 지우지 않는다. 실패한 빌드까지 남아 있는 것이 "버전은 고치지 않고 새로
- * 만든다"의 증거다. 다만 11건이 한 번에 깔리면 지금 무엇을 봐야 하는지가 묻힌다 —
- * 지우는 대신 접는다.
+ * <p>보관·실패는 이력이지 지금 볼 것이 아니다. 12건이 한 번에 깔리면 지금 무엇을 봐야
+ * 하는지가 묻힌다. 지우는 것이 아니라 화면에서만 뺀다 — DB에는 그대로 남고, 총 건수는
+ * 제목에 계속 적어 이력이 사라진 것이 아님을 숫자로 남긴다.
  *
- * <p>"최신 N건"만으로는 부족하다. 활성 버전이 목록 중간에 있을 수 있어서(롤백하면 그렇게
- * 된다) 최신순으로 자르면 정작 지금 쓰는 버전이 사라진다.
+ * <p>롤백은 이 필터의 영향을 받지 않는다. `previousActive`가 필터 이전의 전체 목록에서
+ * 직전 활성 버전을 고르기 때문이다. 다만 임의의 옛 버전을 행에서 직접 고르는 길은 닫힌다 —
+ * 되돌릴 곳을 직전 활성 하나로 좁히는 것이 이 변경의 대가다.
  */
-const ALWAYS_VISIBLE_RECENT = 2
+const HIDDEN_STATUSES: ReadonlySet<string> = new Set(['ARCHIVED', 'FAILED'])
 
 function visibleVersions(versions: KnowledgeVersion[]): KnowledgeVersion[] {
-  const keep = new Set<string>()
-  versions.slice(0, ALWAYS_VISIBLE_RECENT).forEach((v) => keep.add(v.knowledgeVersionId))
-  versions
-    .filter((v) => v.status === 'ACTIVE' || v.status === 'APPROVAL_PENDING')
-    .forEach((v) => keep.add(v.knowledgeVersionId))
-  return versions.filter((v) => keep.has(v.knowledgeVersionId))
+  return versions.filter((version) => !HIDDEN_STATUSES.has(version.status))
 }
 
 /** 확인 창 하나로 쓰기 3종을 받는다. 되돌리기 어려운 동작 앞에 사람 손을 한 번 더 둔다. */
@@ -527,9 +523,7 @@ function VersionTable({ versions, mayWrite, blocked, busy, canRollback, onSwitch
   onRollback: () => void
 }) {
   const columns = 'grid-cols-[minmax(0,1fr)_7rem_7rem_9rem_8rem]'
-  const [showAll, setShowAll] = useState(false)
-  const shown = versions == null ? null : showAll ? versions : visibleVersions(versions)
-  const hidden = versions == null || shown == null ? 0 : versions.length - shown.length
+  const shown = versions == null ? null : visibleVersions(versions)
   return <section className={panel}>
     <PanelTitle title="RAG 버전" sub={versions ? `${versions.length}건` : undefined}>
       <button
@@ -569,16 +563,6 @@ function VersionTable({ versions, mayWrite, blocked, busy, canRollback, onSwitch
               </button>}
           </span>
         </div>)}
-        {hidden > 0 && <button
-          type="button"
-          className="w-full border-t border-line bg-transparent px-4 py-[0.625rem] text-left text-[0.6875rem] text-muted-3 hover:text-muted"
-          onClick={() => setShowAll(true)}
-        >이전 버전 {hidden}건 더 보기</button>}
-        {showAll && versions != null && versions.length > ALWAYS_VISIBLE_RECENT && <button
-          type="button"
-          className="w-full border-t border-line bg-transparent px-4 py-[0.625rem] text-left text-[0.6875rem] text-muted-3 hover:text-muted"
-          onClick={() => setShowAll(false)}
-        >접기</button>}
       </div>
     </div>
   </section>
