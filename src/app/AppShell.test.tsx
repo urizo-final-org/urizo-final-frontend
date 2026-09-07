@@ -806,6 +806,57 @@ function session(role: 'SUPER_ADMIN' | 'GENERAL_ADMIN' = 'GENERAL_ADMIN', name =
   return { sessionToken: 'signed-access-jwt-value', expiresAt: new Date(Date.now() + 60_000).toISOString(), actor: { actorId, name, role } }
 }
 
+/**
+ * 뱃지가 세는 둘(승인 대기 빌드 · 갱신 요청)은 모두 최고 관리자가 처리하는 일이다.
+ * 한 숫자로 합치고 툴팁이 축을 나눠 말한다.
+ */
+test('the RAG badge counts approvals and requests together for a super administrator', async () => {
+  window.history.pushState({}, '', '/admin/rag')
+  vi.stubGlobal('fetch', ragBadgeFetch('SUPER_ADMIN'))
+  render(<AppShell />)
+
+  const menu = within(await screen.findByRole('navigation', { name: '관리자 메뉴' }))
+  expect(await menu.findByLabelText('승인 대기 1건 · 갱신 요청 2건')).toHaveTextContent('3')
+})
+
+/**
+ * 일반 관리자에게 같은 숫자를 띄우면 눌러 들어가도 할 수 있는 것이 없다 — 쓰기 3종이 전부
+ * SUPER_ADMIN 전용이기 때문이다. 일반 관리자 몫은 "자동 감지된 갱신 필요" 알림인데 그것을
+ * 만드는 쪽(스케줄러)이 아직 없다. 셀 것이 생길 때까지 0을 띄우지 않고 숨긴다.
+ */
+test('a general administrator gets no RAG badge even when the counts are there to read', async () => {
+  window.history.pushState({}, '', '/admin/rag')
+  vi.stubGlobal('fetch', ragBadgeFetch('GENERAL_ADMIN'))
+  render(<AppShell />)
+
+  const menu = within(await screen.findByRole('navigation', { name: '관리자 메뉴' }))
+  await menu.findByRole('button', { name: /RAG 관리/ })
+  expect(menu.queryByLabelText(/승인 대기|갱신 요청/)).not.toBeInTheDocument()
+})
+
+/** 뱃지가 셀 것을 다 내려주는 스텁. 역할만 바꿔 두 경로를 같은 데이터로 비교한다. */
+function ragBadgeFetch(role: 'SUPER_ADMIN' | 'GENERAL_ADMIN') {
+  return vi.fn((input: RequestInfo | URL) => {
+    const url = String(input)
+    if (url === '/api/auth/refresh') {
+      return Promise.resolve(json(session(role, role === 'SUPER_ADMIN' ? '최고 관리자' : '일반 관리자')))
+    }
+    if (url === '/api/projects') {
+      return Promise.resolve(json({ items: [{ projectId: 'p-1', name: '관광 포털', status: 'ACTIVE' }] }))
+    }
+    if (url.startsWith('/api/knowledge-bases?')) {
+      return Promise.resolve(json({ items: [{ knowledgeBaseId: 'kb-1', projectId: 'p-1', name: '관광 정보 지식베이스' }] }))
+    }
+    if (url.endsWith('/versions')) {
+      return Promise.resolve(json({ items: [{ status: 'APPROVAL_PENDING' }, { status: 'ACTIVE' }] }))
+    }
+    if (url.endsWith('/activation-requests')) {
+      return Promise.resolve(json({ items: [{ requestId: 'r-1' }, { requestId: 'r-2' }] }))
+    }
+    return Promise.resolve(json([]))
+  })
+}
+
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
 }
