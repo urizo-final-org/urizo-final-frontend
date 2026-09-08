@@ -945,6 +945,19 @@ function CandidateApproval({ detail, pending, busy, onDecide }: {
           </li>)}
         </ul>}
 
+      {/*
+        * A failed check and a missing preview are separate facts, and both can be true at
+        * once. Drawn separately for that reason: a Job whose test failed had its preview up
+        * and working, and folding the two together took the link away - the one piece of
+        * evidence this reader has - while leaving the approval button alone.
+        */}
+      {detail.preview?.checkFailure
+        && <div className="mt-[0.875rem]">
+          <Callout tone="warn" icon="triangle-alert">
+            {detail.preview.checkFailure}
+          </Callout>
+        </div>}
+
       <div className="mt-[0.875rem]">
         {detail.preview?.ready && detail.preview.url
           ? <a
