@@ -19,8 +19,10 @@ export const contentStyles = [
   '[&_ul]:my-3 [&_ul]:list-disc [&_ul]:pl-6 [&_ol]:my-3 [&_ol]:list-decimal [&_ol]:pl-6',
   '[&_li]:my-1 [&_li]:pl-1 [&_li]:marker:text-[var(--brand,#2a5f61)]',
   '[&_li>p]:my-0',
-  '[&_strong]:font-semibold [&_strong]:text-[#263e48]',
-  '[&_em]:italic',
+  '[&_strong]:font-bold [&_strong]:text-[#263e48]',
+  // 한글은 기울임 서체가 없는 폰트로 떨어지는데 앱 전체가 `font-synthesis: none`이라 브라우저가
+  // 기울여 주지 않는다. 본문 글자에서만 기울이기를 허용한다. 굵기 합성은 그대로 막아 둔다.
+  '[&_em]:italic [&_em]:[font-synthesis:style]',
   '[&_a]:text-[var(--brand,#2a5f61)] [&_a]:underline [&_a]:underline-offset-2',
   '[&_img]:my-6 [&_img]:h-auto [&_img]:max-w-full [&_img]:rounded',
 ].join(' ')
