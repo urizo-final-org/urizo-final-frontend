@@ -504,6 +504,57 @@ function QualityMetrics() {
   </section>
 }
 
+/**
+ * A5 지표 셀의 값. 최고 관리자가 `R@5 0.981` 같은 원값을 해석할 거라고 가정하지 않는다 —
+ * 활성 대비 델타·건수 환산·기준선 배지로 먼저 말하고 원값은 맨 아래 작게 둔다.
+ *
+ * <p>⚠️ **측정 후 교체 지점은 이 상수 묶음뿐이다.** 빌드의 evaluate 단계가 스텁이라
+ * `knowledge_version.score`는 무조건 100이고(`admin-types.ts`) 서버 값을 지표로 쓸 수 없다.
+ * 출처 라벨(`METRICS_SOURCE`) 없이 숫자만 두면 시스템이 방금 잰 것처럼 보이는 거짓말이
+ * 된다 — 셀은 라벨을 항상 함께 그린다. 버전별 오프라인 재측정이 나오면 아래 표의 값과
+ * 출처 날짜를 같이 바꾼다.
+ *
+ * <p>키는 `versionNumber`라 환경마다 다르다(함정 24) — 지금 키는 데모 DB(활성 v12) 기준
+ * 임시값이고, 표에 없는 버전은 "측정 전"으로 그린다.
+ */
+const VERSION_METRICS: Record<number, { r5: number; mrr: number }> = {
+  12: { r5: 0.975, mrr: 0.970 }, // 2026-08-29 측정 스냅샷 — A4 품질 지표 패널과 같은 값
+  14: { r5: 0.941, mrr: 0.936 }, // 임시값 — 버전별 재측정 후 교체 (기준선 미달 예시)
+  16: { r5: 0.981, mrr: 0.974 }, // 임시값 — 버전별 재측정 후 교체
+}
+/** 오프라인 TC 전건. 건수 환산(`0.975 → 246건`)의 분모다. */
+const METRICS_TOTAL = 252
+const METRICS_BASELINE = 0.95
+const METRICS_SOURCE = '오프라인 측정 · 8/29'
+
+function formatDeltaPp(r5: number, activeR5: number): string {
+  // 0.981-0.975는 부동소수점으로 0.6000000000000005%p가 된다. 소수 1자리로 자른다.
+  const diff = Math.round((r5 - activeR5) * 1000) / 10
+  return diff > 0 ? `▲ +${diff}%p` : diff < 0 ? `▼ ${diff}%p` : '±0.0%p'
+}
+
+function MetricsCell({ version, activeR5 }: { version: KnowledgeVersion; activeR5: number | null }) {
+  // 실패(문서 0건)·빌드 중 버전은 잴 수 있는 색인이 없다 — 상수 키가 우연히 겹쳐도 그리지 않는다.
+  const measurable = version.status === 'ACTIVE' || version.status === 'ARCHIVED' || version.status === 'APPROVAL_PENDING'
+  const metrics = measurable ? VERSION_METRICS[version.versionNumber] : undefined
+  if (!metrics) return <span className="text-[0.6875rem] text-muted-3">측정 전</span>
+  const count = Math.round(metrics.r5 * METRICS_TOTAL)
+  const isActive = version.status === 'ACTIVE'
+  // 활성 행은 비교 기준 자체라 델타가 없고, 활성 버전이 미측정이면 비교할 대상이 없다.
+  const compare = !isActive && activeR5 != null
+  const headline = isActive ? '검색 정확도 기준' : compare ? `검색 정확도 ${formatDeltaPp(metrics.r5, activeR5)}` : '검색 정확도'
+  const pass = metrics.r5 >= METRICS_BASELINE
+  return <span className="flex flex-col items-start gap-[0.1875rem]">
+    <b className="text-[0.71875rem] font-semibold text-ink">{headline}</b>
+    <span className="text-[0.6875rem] text-body">
+      {`${METRICS_TOTAL}문항 중 정답 포함 ${compare ? `${Math.round(activeR5 * METRICS_TOTAL)} → ${count}건` : `${count}건`}`}
+    </span>
+    <Badge tone={pass ? 'ok' : 'fail'}>{`기준선 ≥${METRICS_BASELINE} ${pass ? '통과' : '미달'}`}</Badge>
+    <span className="font-mono text-[0.625rem] text-muted-2">{`R@5 ${metrics.r5.toFixed(3)} · MRR ${metrics.mrr.toFixed(3)}`}</span>
+    <span className="text-[0.625rem] text-muted-3">{METRICS_SOURCE}</span>
+  </span>
+}
+
 /** A5 버전 테이블. 쓰기 버튼은 역할로 미리 판별해 disabled로 둔다 — 눌러서 403을 받지 않는다. */
 function VersionTable({ versions, mayWrite, blocked, busy, canRollback, onSwitch, onRollback }: {
   versions: KnowledgeVersion[] | null
@@ -514,10 +565,12 @@ function VersionTable({ versions, mayWrite, blocked, busy, canRollback, onSwitch
   onSwitch: (version: KnowledgeVersion) => void
   onRollback: () => void
 }) {
-  const columns = 'grid-cols-[minmax(0,1fr)_7rem_7rem_9rem_8rem]'
+  const columns = 'grid-cols-[minmax(0,1fr)_7rem_7rem_13rem_9rem_8rem]'
   const [showAll, setShowAll] = useState(false)
   const shown = versions == null ? null : showAll ? versions : visibleVersions(versions)
   const hidden = versions == null || shown == null ? 0 : versions.length - shown.length
+  const activeVersion = versions?.find((v) => v.status === 'ACTIVE') ?? null
+  const activeR5 = activeVersion ? VERSION_METRICS[activeVersion.versionNumber]?.r5 ?? null : null
   return <section className={panel}>
     <PanelTitle title="RAG 버전" sub={versions ? `${versions.length}건` : undefined}>
       <button
@@ -528,9 +581,9 @@ function VersionTable({ versions, mayWrite, blocked, busy, canRollback, onSwitch
       >이전 활성 버전으로 롤백</button>
     </PanelTitle>
     <div className="overflow-x-auto">
-      <div className="min-w-[43.75rem]">
+      <div className="min-w-[56.75rem]">
         <div className={`${headRow} ${columns}`}>
-          <span>버전</span><span>상태</span><span>문서/청크</span><span>활성화</span><span className="text-right">동작</span>
+          <span>버전</span><span>상태</span><span>문서/청크</span><span>지표</span><span>활성화</span><span className="text-right">동작</span>
         </div>
         {versions == null && <div className="px-4 py-6 text-xs text-muted-3">
           {blocked ? '위 안내를 해결해야 버전을 불러올 수 있습니다.' : '버전을 불러오는 중…'}
@@ -543,6 +596,7 @@ function VersionTable({ versions, mayWrite, blocked, busy, canRollback, onSwitch
           </span>
           <span><Badge tone={STATUS_TONE[version.status]}>{STATUS_LABEL[version.status]}</Badge></span>
           <span className="font-mono">{version.documentCount}/{version.chunkCount}</span>
+          <MetricsCell version={version} activeR5={activeR5} />
           <span className="font-mono text-[0.6875rem]">{version.activatedAt ? new Date(version.activatedAt).toLocaleDateString('ko-KR') : '—'}</span>
           <span className="flex justify-end">
             {version.status === 'ACTIVE'

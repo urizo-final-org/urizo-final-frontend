@@ -300,6 +300,52 @@ test('a failing switch surfaces the error and leaves the table refreshed', async
   expect(listVersions.mock.calls.length).toBeGreaterThan(1)
 })
 
+test('the metrics cell speaks in deltas, counts, a baseline badge and a source label — not raw scores', async () => {
+  show(<RagAdminPanel api={api({
+    listVersions: vi.fn().mockResolvedValue({
+      items: [
+        version({ versionNumber: 16, status: 'APPROVAL_PENDING', knowledgeVersionId: 'kv-16', activatedAt: undefined }),
+        version({ versionNumber: 14, status: 'ARCHIVED', knowledgeVersionId: 'kv-14' }),
+        version({ versionNumber: 12, knowledgeVersionId: 'kv-12' }),
+      ],
+    }),
+  })} role="SUPER_ADMIN" />)
+  const table = within((await screen.findByText('RAG 버전')).closest('section') as HTMLElement)
+
+  // 활성 v12는 비교 기준이라 델타 대신 "기준"과 단일 건수(0.975 × 252 ≈ 246).
+  expect(table.getByText('검색 정확도 기준')).toBeInTheDocument()
+  expect(table.getByText('252문항 중 정답 포함 246건')).toBeInTheDocument()
+  // 승인 대기 v16은 활성 대비 상승 — 원값 0.981이 아니라 %p 델타와 건수 환산으로 말한다.
+  expect(table.getByText('검색 정확도 ▲ +0.6%p')).toBeInTheDocument()
+  expect(table.getByText('252문항 중 정답 포함 246 → 247건')).toBeInTheDocument()
+  // 보관 v14는 하락이고 기준선 미달 배지를 단다.
+  expect(table.getByText('검색 정확도 ▼ -3.4%p')).toBeInTheDocument()
+  expect(table.getByText('기준선 ≥0.95 미달')).toBeInTheDocument()
+  expect(table.getAllByText('기준선 ≥0.95 통과')).toHaveLength(2)
+  // 원값은 맨 아래 작게만 남는다.
+  expect(table.getByText('R@5 0.981 · MRR 0.974')).toBeInTheDocument()
+  // 출처 라벨은 숫자가 있는 셀 전부에 붙는다 — evaluate가 스텁(score=100 고정)이라
+  // 이 라벨이 없으면 방금 잰 값처럼 보이는 거짓말이 된다.
+  expect(table.getAllByText('오프라인 측정 · 8/29')).toHaveLength(3)
+})
+
+test('a version without an offline measurement says so instead of inventing numbers', async () => {
+  show(<RagAdminPanel api={api({
+    listVersions: vi.fn().mockResolvedValue({
+      items: [
+        // v14는 측정 상수에 키가 있지만 FAILED다 — 문서 0건 빌드에 측정값이 떠 있으면 거짓이다.
+        version({ versionNumber: 14, status: 'FAILED', knowledgeVersionId: 'kv-14', documentCount: 0, chunkCount: 0, activatedAt: undefined }),
+        version({ versionNumber: 15, status: 'FAILED', knowledgeVersionId: 'kv-15', documentCount: 0, chunkCount: 0, activatedAt: undefined }),
+        version({ versionNumber: 12, knowledgeVersionId: 'kv-12' }),
+      ],
+    }),
+  })} role="SUPER_ADMIN" />)
+  const table = within((await screen.findByText('RAG 버전')).closest('section') as HTMLElement)
+  expect(table.getAllByText('측정 전')).toHaveLength(2)
+  // 미측정 셀에는 출처 라벨도 붙지 않는다 — 붙일 숫자가 없다.
+  expect(table.getAllByText('오프라인 측정 · 8/29')).toHaveLength(1)
+})
+
 function ladder() {
   // 실제 로컬 상태와 같은 모양 — 활성이 중간에 있고(롤백 흔적) 실패 버전이 섞여 있다.
   return [
