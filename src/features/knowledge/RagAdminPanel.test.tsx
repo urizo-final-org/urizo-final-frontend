@@ -346,6 +346,22 @@ test('a version without an offline measurement says so instead of inventing numb
   expect(table.getAllByText('오프라인 측정 · 8/29')).toHaveLength(1)
 })
 
+test('the switch button label is just 전환 while the endpoint split stays elsewhere', async () => {
+  show(<RagAdminPanel api={api({
+    listVersions: vi.fn().mockResolvedValue({
+      items: [
+        version({ versionNumber: 11, status: 'ARCHIVED', knowledgeVersionId: 'kv-11' }),
+        version({ versionNumber: 10, status: 'APPROVAL_PENDING', knowledgeVersionId: 'kv-10', activatedAt: undefined }),
+        version(),
+      ],
+    }),
+  })} role="SUPER_ADMIN" />)
+  // 상태가 달라도 표의 라벨은 하나다. 엔드포인트 분기는 switchPath가 그대로 든다
+  // (아래 'an archived version rolls back…' 테스트가 계속 지킨다).
+  expect(await screen.findAllByRole('button', { name: '전환' })).toHaveLength(2)
+  expect(screen.queryByRole('button', { name: /활성화\(승인\)/ })).not.toBeInTheDocument()
+})
+
 function ladder() {
   // 실제 로컬 상태와 같은 모양 — 활성이 중간에 있고(롤백 흔적) 실패 버전이 섞여 있다.
   return [
