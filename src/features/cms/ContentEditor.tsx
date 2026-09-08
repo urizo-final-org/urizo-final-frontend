@@ -79,21 +79,64 @@ export default function ContentEditor({ value, onChange, api, onFailure }: {
   }
 
   return <div className="mt-[0.375rem] rounded-[0.3125rem] border border-field-line">
-    <div className="flex flex-wrap gap-2 rounded-t-[0.3125rem] border-b border-field-line bg-sub p-2">
-      <Tool editor={editor} active="heading" attrs={{ level: 2 }}
-        onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}>제목</Tool>
-      <Tool editor={editor} active="heading" attrs={{ level: 3 }}
-        onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}>작은 제목</Tool>
-      <Tool editor={editor} active="bold"
-        onClick={() => editor.chain().focus().toggleBold().run()}>굵게</Tool>
-      <Tool editor={editor} active="italic"
-        onClick={() => editor.chain().focus().toggleItalic().run()}>기울임</Tool>
-      <Tool editor={editor} active="bulletList"
-        onClick={() => editor.chain().focus().toggleBulletList().run()}>목록</Tool>
-      <Tool editor={editor} active="orderedList"
-        onClick={() => editor.chain().focus().toggleOrderedList().run()}>번호 목록</Tool>
-      <Tool editor={editor} active="link" onClick={setLink}>링크</Tool>
-      <Tool editor={editor} onClick={() => file.current?.click()}>사진</Tool>
+    <div className="flex flex-wrap items-center gap-[0.125rem] rounded-t-[0.3125rem] border-b border-field-line bg-white px-2 py-[0.375rem] text-muted">
+      <Tool editor={editor} label="되돌리기" disabled={!editor.can().undo()}
+        onClick={() => editor.chain().focus().undo().run()}>
+        <path d="M3 7v6h6" /><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13" />
+      </Tool>
+      <Tool editor={editor} label="다시 실행" disabled={!editor.can().redo()}
+        onClick={() => editor.chain().focus().redo().run()}>
+        <path d="M21 7v6h-6" /><path d="M3 17a9 9 0 0 1 9-9 9 9 0 0 1 6 2.3L21 13" />
+      </Tool>
+
+      <Divider />
+
+      <Tool editor={editor} label="제목" active="heading" attrs={{ level: 2 }}
+        onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}>
+        <path d="M4 12h8" /><path d="M4 18V6" /><path d="M12 18V6" />
+        <path d="M21 18h-4c0-4 4-3 4-6 0-1.5-2-2.5-4-1" />
+      </Tool>
+      <Tool editor={editor} label="작은 제목" active="heading" attrs={{ level: 3 }}
+        onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}>
+        <path d="M4 12h8" /><path d="M4 18V6" /><path d="M12 18V6" />
+        <path d="M17.5 10.5c1.7-1 3.5 0 3.5 1.5a2 2 0 0 1-2 2" />
+        <path d="M17 17.5c2 1.5 4 .3 4-1.5a2 2 0 0 0-2-2" />
+      </Tool>
+
+      <Divider />
+
+      <Tool editor={editor} label="굵게" active="bold"
+        onClick={() => editor.chain().focus().toggleBold().run()}>
+        <path d="M6 12h9a4 4 0 0 1 0 8H7a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h7a4 4 0 0 1 0 8" />
+      </Tool>
+      <Tool editor={editor} label="기울임" active="italic"
+        onClick={() => editor.chain().focus().toggleItalic().run()}>
+        <path d="M19 4h-9" /><path d="M14 20H5" /><path d="m15 4-4 16" />
+      </Tool>
+      <Tool editor={editor} label="링크" active="link" onClick={setLink}>
+        <path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.8 1.7" />
+        <path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7" />
+      </Tool>
+
+      <Divider />
+
+      <Tool editor={editor} label="목록" active="bulletList"
+        onClick={() => editor.chain().focus().toggleBulletList().run()}>
+        <path d="M3 6h.01" /><path d="M3 12h.01" /><path d="M3 18h.01" />
+        <path d="M8 6h13" /><path d="M8 12h13" /><path d="M8 18h13" />
+      </Tool>
+      <Tool editor={editor} label="번호 목록" active="orderedList"
+        onClick={() => editor.chain().focus().toggleOrderedList().run()}>
+        <path d="M10 6h11" /><path d="M10 12h11" /><path d="M10 18h11" />
+        <path d="M4 6h1v4" /><path d="M4 10h2" /><path d="M6 18H4c0-1 2-2 2-3s-1-1.5-2-1" />
+      </Tool>
+
+      <Divider />
+
+      <Tool editor={editor} label="사진" onClick={() => file.current?.click()}>
+        <rect width="18" height="18" x="3" y="3" rx="2" /><circle cx="9" cy="9" r="1.6" />
+        <path d="m21 15-4.5-4.5a2 2 0 0 0-3 0L3.5 20" />
+      </Tool>
       <input
         className="hidden"
         ref={file}
@@ -106,27 +149,43 @@ export default function ContentEditor({ value, onChange, api, onFailure }: {
   </div>
 }
 
+function Divider() {
+  return <span className="mx-[0.3125rem] h-4 w-px bg-[#e4ebea]" aria-hidden="true" />
+}
+
 /**
- * 툴바 버튼.
+ * 툴바 버튼. 아이콘 하나에 이름은 읽어 주는 쪽에만 준다.
  *
  * `admin-theme.css`의 `.admin-app button`이 레이어 밖이라 테두리와 글자색 유틸리티를 이긴다.
- * 눌린 상태는 테두리가 아니라 배경과 그림자로 표시한다. AI05-014의 선택 표시와 같은 우회다.
+ * 그래서 눌린 상태의 색은 인라인 스타일로 준다 — 인라인은 그 규칙보다 우선한다.
+ * 테두리 대신 배경으로 표시하는 것은 AI05-014의 선택 표시와 같은 우회다.
  */
-function Tool({ editor, active, attrs, onClick, children }: {
+function Tool({ editor, label, active, attrs, disabled, onClick, children }: {
   editor: Editor
+  label: string
   active?: string
   attrs?: Record<string, unknown>
+  disabled?: boolean
   onClick: () => void
   children: ReactNode
 }) {
   const on = active ? editor.isActive(active, attrs) : false
   return <button
     type="button"
+    title={label}
+    aria-label={label}
     aria-pressed={active ? on : undefined}
-    className={`h-7 rounded-[0.25rem] px-[0.5rem] text-[0.71875rem] font-semibold ${
-      on ? 'bg-white shadow-[inset_0_0_0_1px_var(--primary)]' : 'bg-white shadow-[inset_0_0_0_1px_#dfe7e6]'}`}
+    disabled={disabled}
+    style={on ? { color: 'var(--primary)' } : undefined}
+    className={`grid h-7 w-7 place-items-center rounded-[0.25rem] disabled:opacity-35 ${
+      on ? 'bg-[#e3efed]' : 'hover:bg-sub'}`}
     onClick={onClick}
-  >{children}</button>
+  >
+    <svg
+      width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"
+    >{children}</svg>
+  </button>
 }
 
 /** 저장된 값이 문서가 아니면 편집기가 빈 문서로 연다. 서버가 변환해 주므로 드문 경우다. */
