@@ -32,7 +32,8 @@ export default function ContentEditor({ value, onChange, api, onFailure }: {
         strike: false,
         underline: false,
         heading: { levels: [2, 3] },
-        link: { openOnClick: false, autolink: false, protocols: ['http', 'https'] },
+        // 건 링크를 눌러 확인할 수 있게 연다. 기본값이 새 탭이라 쓰던 글이 날아가지 않는다.
+        link: { openOnClick: true, autolink: false, protocols: ['http', 'https'] },
       }),
       OwnImage,
     ],

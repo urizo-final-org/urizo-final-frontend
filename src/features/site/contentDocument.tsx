@@ -12,7 +12,9 @@ import { Fragment, type ReactNode } from 'react'
  * 함께 적지 않으면 관리자 편집기에서 링크와 목록 기호가 본문색 그대로 나온다.
  */
 export const contentStyles = [
-  'text-[1rem] leading-8 text-[#4a6167]',
+  // 앱 전체가 `font-synthesis: none`이라 UI 글자는 또렷하지만, 한글은 굵은 서체나 기울임 서체가
+  // 없는 폰트로 떨어져 굵게와 기울임이 화면에 나타나지 않았다. 본문에서만 합성을 허용한다.
+  'text-[1rem] leading-8 text-[#4a6167] [font-synthesis:style_weight]',
   '[&_h2]:mb-4 [&_h2]:mt-9 [&_h2]:text-[1.5625rem] [&_h2]:font-medium [&_h2]:tracking-[-.05em] [&_h2]:text-[#263e48]',
   '[&_h3]:mb-3 [&_h3]:mt-7 [&_h3]:text-[1.1875rem] [&_h3]:font-semibold [&_h3]:tracking-[-.04em] [&_h3]:text-[#263e48]',
   '[&_p]:my-3',
@@ -20,9 +22,7 @@ export const contentStyles = [
   '[&_li]:my-1 [&_li]:pl-1 [&_li]:marker:text-[var(--brand,#2a5f61)]',
   '[&_li>p]:my-0',
   '[&_strong]:font-bold [&_strong]:text-[#263e48]',
-  // 한글은 기울임 서체가 없는 폰트로 떨어지는데 앱 전체가 `font-synthesis: none`이라 브라우저가
-  // 기울여 주지 않는다. 본문 글자에서만 기울이기를 허용한다. 굵기 합성은 그대로 막아 둔다.
-  '[&_em]:italic [&_em]:[font-synthesis:style]',
+  '[&_em]:italic',
   '[&_a]:text-[var(--brand,#2a5f61)] [&_a]:underline [&_a]:underline-offset-2',
   '[&_img]:my-6 [&_img]:h-auto [&_img]:max-w-full [&_img]:rounded',
 ].join(' ')
