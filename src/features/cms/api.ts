@@ -45,6 +45,18 @@ export type SiteTemplate = {
 }
 export type PublicSiteContext = { key: string; name: string; publicPath: string; template: SiteTemplate }
 
+/** 업로드 응답. 바이트는 담기지 않는다. */
+export type ContentImage = { id: number; contentType: string; byteSize: number }
+
+/**
+ * 본문에 넣을 이미지 주소.
+ *
+ * 방문자도 봐야 하므로 `/api/site` 아래다. 서버가 이 형태만 본문에 허용한다.
+ */
+export function contentImageUrl(id: number) {
+  return `/api/site/images/${id}`
+}
+
 async function responseBody<T>(response: Response): Promise<T> {
   if (!response.ok) {
     const body = await response.json().catch(() => ({})) as { message?: string; detail?: string; error?: { message?: string } }
@@ -65,7 +77,10 @@ export class CmsApi {
     const headers = new Headers(init.headers)
     headers.set('Accept', 'application/json')
     headers.set('X-Trace-Id', crypto.randomUUID())
-    if (init.body !== undefined) headers.set('Content-Type', 'application/json')
+    // FormData는 브라우저가 경계 문자열을 붙여 스스로 Content-Type을 정한다. 여기서 정하면 깨진다.
+    if (init.body !== undefined && !(init.body instanceof FormData)) {
+      headers.set('Content-Type', 'application/json')
+    }
     const response = await fetchWithSessionRefresh(path, { ...init, headers }, this.token, {
       onSessionRefreshed: (session) => { this.token = session.sessionToken; this.onRefreshed(session) },
       onSessionExpired: this.onExpired,
@@ -82,6 +97,12 @@ export class CmsApi {
   createContent = (value: Pick<Article, 'title' | 'body'>) => this.request<Article>('/api/cms/contents', { method: 'POST', body: JSON.stringify(value) })
   updateContent = (id: number, value: Pick<Article, 'title' | 'body'>) => this.request<Article>(`/api/cms/contents/${id}`, { method: 'PUT', body: JSON.stringify(value) })
   deleteContent = (id: number) => this.request<void>(`/api/cms/contents/${id}`, { method: 'DELETE' })
+  /** 본문에 넣을 이미지를 올린다. 본문에는 바이트가 아니라 {@link contentImageUrl} 주소만 들어간다. */
+  uploadImage = (file: File) => {
+    const form = new FormData()
+    form.append('file', file)
+    return this.request<ContentImage>('/api/cms/images', { method: 'POST', body: form })
+  }
   boards = () => this.request<Board[]>('/api/cms/boards')
   createBoard = (value: Pick<Board, 'name' | 'description'>) => this.request<Board>('/api/cms/boards', { method: 'POST', body: JSON.stringify(value) })
   updateBoard = (id: number, value: Pick<Board, 'name' | 'description'>) => this.request<Board>(`/api/cms/boards/${id}`, { method: 'PUT', body: JSON.stringify(value) })

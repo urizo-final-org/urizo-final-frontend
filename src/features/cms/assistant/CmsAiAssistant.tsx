@@ -4,6 +4,8 @@ import { describeFailure } from '../../../shared/api/error'
 import { notifyCmsChanged, notifySiteUpdated } from '../api'
 // 게시물 미리보기는 사용자 화면과 같은 렌더러를 쓴다. `AI05-001`이 이 재사용을 위해 export를 뽑았다.
 import { RichText } from '../../site/PublicSite'
+import { ContentDocument } from '../../site/contentDocument'
+import { contentImageUrl, type ContentImage } from '../api'
 import { Icon } from '../../../shared/ui/icons'
 import { Badge, control, panel, primaryButton, secondaryButton, textarea } from '../../../shared/ui/primitives'
 import AssistantPreviewModal from './AssistantPreviewModal'
@@ -188,13 +190,18 @@ function removalSubject(target: CmsAssistantTarget | null) {
   return isPostTarget(target) ? '게시물은' : '게시판은'
 }
 
-export default function CmsAiAssistant({ route, target, candidates, menus, onTarget, api, collapsed, onToggle }: {
+/** 요청 하나에 붙일 수 있는 사진. 더 늘리면 프롬프트에 주소만 길게 실린다. */
+const MAX_ATTACHMENTS = 3
+
+export default function CmsAiAssistant({ route, target, candidates, menus, onTarget, api, onUploadImage, collapsed, onToggle }: {
   route: AssistedRoute
   target: CmsAssistantTarget | null
   candidates: CmsAssistantTarget[]
   menus: AssistantMenu[]
   onTarget: (target: CmsAssistantTarget) => void
   api: NaturalCmsApi
+  /** 사진 첨부를 여는 화면만 넘긴다. 지금은 컨텐츠 화면뿐이다. */
+  onUploadImage?: (file: File) => Promise<ContentImage>
   collapsed: boolean
   onToggle: () => void
 }) {
@@ -205,11 +212,37 @@ export default function CmsAiAssistant({ route, target, candidates, menus, onTar
   const [phase, setPhase] = useState<Phase>({ kind: 'input' })
   const [feedback, setFeedback] = useState('')
   const [detail, setDetail] = useState(false)
+  /**
+   * 요청에 붙일 사진. 업로드는 **Job을 만들기 전에** 화면이 끝낸다.
+   *
+   * 그래서 파일이 파이프라인을 지나가지 않고 요청에는 주소만 실린다. `CreateJobRequest`는
+   * 글자 네 칸뿐이라 파일을 담을 자리가 없고, 이 방식이면 공유 계약을 건드리지 않는다.
+   */
+  const [attached, setAttached] = useState<ContentImage[]>([])
+  const [attaching, setAttaching] = useState(false)
+  const [attachFailure, setAttachFailure] = useState<string | null>(null)
+  /** 끌어다 놓는 동안의 표시. 자식 위를 지날 때마다 leave가 나므로 깊이로 센다. */
+  const [dragDepth, setDragDepth] = useState(0)
+  const attachInput = useRef<HTMLInputElement>(null)
   /** 지금 유효한 대기 세대. 새 요청이나 초기화가 이전 대기를 무효로 만든다. */
   const poll = useRef(0)
   useEffect(() => () => { poll.current += 1 }, [])
   const routeSupported = SUPPORTED_ROUTES.has(route)
   const supported = target !== null && SUPPORTED.has(target.type)
+  const canAttach = onUploadImage !== undefined && routeSupported
+  const dropping = dragDepth > 0
+
+  /**
+   * 올려둔 사진 주소를 요청 끝에 붙인다.
+   *
+   * 파일이 아니라 주소만 실리므로 공유 계약이 그대로다. 모델은 여기 적힌 주소만 쓸 수 있고
+   * 지어낸 주소는 저장 단계에서 거부된다.
+   */
+  function withAttachments(requestText: string) {
+    if (attached.length === 0) return requestText
+    const urls = attached.map((image) => contentImageUrl(image.id)).join(', ')
+    return `${requestText}\n\n[이 요청에 첨부한 사진 주소: ${urls}]`
+  }
 
   /** 말에 대상이 없으면 이름이 겹치는 후보를 고르게 한다. 선택지는 코드가 만든다. */
   function narrow(requestText: string) {
@@ -277,6 +310,30 @@ export default function CmsAiAssistant({ route, target, candidates, menus, onTar
     setPhase({ kind: 'failed', message: '반영 결과를 받지 못했습니다. 목록을 새로고침해 확인해 주세요.' })
   }
 
+  /** 사진을 먼저 올린다. 세 입구(버튼·붙여넣기·드래그)가 이 함수 하나로 모인다. */
+  async function attach(files: FileList | null | undefined) {
+    if (!onUploadImage || !files) return
+    const room = MAX_ATTACHMENTS - attached.length
+    const chosen = [...files].filter((file) => file.type.startsWith('image/')).slice(0, room)
+    if (chosen.length === 0) {
+      setAttachFailure(room === 0
+        ? `사진은 요청당 ${MAX_ATTACHMENTS}장까지 붙일 수 있습니다.`
+        : '이미지 파일만 붙일 수 있습니다. 웹 페이지에서 끌어온 사진은 파일이 아니라 주소입니다.')
+      return
+    }
+    setAttachFailure(null)
+    setAttaching(true)
+    try {
+      const saved: ContentImage[] = []
+      for (const file of chosen) saved.push(await onUploadImage(file))
+      setAttached((now) => [...now, ...saved])
+    }
+    catch {
+      setAttachFailure('사진을 올리지 못했습니다. JPG, PNG, WebP만 8MB까지 올릴 수 있습니다.')
+    }
+    finally { setAttaching(false) }
+  }
+
   async function start(requestText: string, chosen: CmsAssistantTarget) {
     const generation = poll.current + 1
     poll.current = generation
@@ -285,10 +342,12 @@ export default function CmsAiAssistant({ route, target, candidates, menus, onTar
       const profileVersionId = await api.activeProfileVersionId()
       const job = await api.createJob({
         profileVersionId,
-        requestText,
+        requestText: withAttachments(requestText),
         resource: { type: chosen.type, id: chosen.id },
       })
       setDraft('')
+      setAttached([])
+      setAttachFailure(null)
       await awaitPreview(job.jobId, generation)
     }
     catch (failure) {
@@ -389,12 +448,18 @@ export default function CmsAiAssistant({ route, target, candidates, menus, onTar
       return <p className="m-0 text-[0.71875rem] text-muted-2">아직 변경 내용을 받지 못했습니다.</p>
     }
     const post = isPostTarget(target)
+    const content = target?.type === 'CONTENT'
     return <>
       {!(post && operation === 'CREATE') && fields.map(([name, value]) => <section key={name}>
         <small className="block text-[0.65625rem] font-semibold text-muted-2">{fieldLabel(name)}</small>
         {value === null
           ? <p className="m-0 mt-[0.1875rem] text-[0.71875rem] text-muted-3">(비어 있음)</p>
-          : <FieldDiff before={target?.fields[name] ?? ''} after={value} />}
+          : content && name === 'body'
+            // 컨텐츠 본문은 편집기 문서다. 글자를 줄 단위로 견주면 부품 이름만 잔뜩 보인다.
+            ? <div className="mt-[0.375rem] rounded-[0.3125rem] border border-line-soft bg-white px-4 py-3">
+              <ContentDocument body={value} />
+            </div>
+            : <FieldDiff before={target?.fields[name] ?? ''} after={value} />}
       </section>)}
       {post && postRender(job)}
     </>
@@ -521,13 +586,64 @@ export default function CmsAiAssistant({ route, target, candidates, menus, onTar
       </div>
 
       <label className="mt-[0.875rem] block text-[0.71875rem] font-semibold text-body" htmlFor={inputId}>자연어 요청</label>
-      <textarea
-        id={inputId}
-        className={`${textarea} min-h-[4.75rem]`}
-        value={draft}
-        onChange={(event) => setDraft(event.target.value)}
-        placeholder="CMS 변경 요청을 입력하세요"
-      />
+      <div
+        className={`rounded-[0.3125rem] ${dropping ? 'shadow-[inset_0_0_0_2px_var(--primary)]' : ''}`}
+        onDragEnter={(event) => { if (canAttach) { event.preventDefault(); setDragDepth((depth) => depth + 1) } }}
+        onDragOver={(event) => { if (canAttach) event.preventDefault() }}
+        onDragLeave={() => { if (canAttach) setDragDepth((depth) => Math.max(0, depth - 1)) }}
+        onDrop={(event) => {
+          if (!canAttach) return
+          // 막지 않으면 브라우저가 파일을 새 탭에서 열어 화면이 통째로 바뀐다.
+          event.preventDefault()
+          setDragDepth(0)
+          void attach(event.dataTransfer.files)
+        }}
+      >
+        <textarea
+          id={inputId}
+          className={`${textarea} min-h-[4.75rem]`}
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+          onPaste={(event) => { if (canAttach && event.clipboardData.files.length > 0) void attach(event.clipboardData.files) }}
+          placeholder="CMS 변경 요청을 입력하세요"
+        />
+      </div>
+
+      {canAttach && <div className="mt-[0.375rem] flex flex-wrap items-center gap-[0.375rem]">
+        <button
+          type="button"
+          className="grid h-8 w-8 place-items-center rounded-[0.3125rem] bg-white text-base font-semibold text-muted shadow-[inset_0_0_0_1px_#dfe7e6] hover:bg-sub"
+          onClick={() => attachInput.current?.click()}
+          disabled={attaching}
+          aria-label="사진 첨부"
+        >+</button>
+        {attached.map((image) => <span
+          key={image.id}
+          className="flex items-center gap-1 rounded-[0.3125rem] bg-sub py-[0.1875rem] pl-[0.1875rem] pr-[0.375rem] shadow-[inset_0_0_0_1px_#dfe7e6]"
+        >
+          <img className="h-6 w-6 rounded-[0.1875rem] object-cover" src={contentImageUrl(image.id)} alt="" />
+          <button
+            type="button"
+            className="text-[0.6875rem] font-semibold text-muted-2 hover:text-fail-fg"
+            onClick={() => setAttached((now) => now.filter((item) => item.id !== image.id))}
+            aria-label="첨부한 사진 빼기"
+          >✕</button>
+        </span>)}
+        {attaching
+          ? <span className="text-[0.65625rem] text-muted-3">올리는 중…</span>
+          : attached.length === 0 && <span className="text-[0.65625rem] leading-[1.4] text-muted-3">
+            사진을 붙여넣거나 끌어다 놓아도 됩니다
+          </span>}
+        <input
+          className="hidden"
+          ref={attachInput}
+          type="file"
+          accept="image/jpeg,image/png,image/webp"
+          multiple
+          onChange={(event) => { void attach(event.target.files); event.target.value = '' }}
+        />
+      </div>}
+      {attachFailure && <p className="mt-[0.375rem] text-[0.65625rem] leading-[1.5] text-fail-fg" role="alert">{attachFailure}</p>}
 
       <div className="mt-[0.5625rem] grid gap-[0.375rem]">
         {profile.suggestions.map((suggestion) => <button

@@ -733,7 +733,8 @@ test('a menu URL renders its mapped static content', async () => {
   vi.stubGlobal('fetch', publicFetch())
   render(<AppShell />)
   expect(await screen.findByRole('heading', { name: '회사 소개', level: 1 })).toBeInTheDocument()
-  expect(await screen.findByText('사람과 기술을 연결합니다')).toBeInTheDocument()
+  expect(await screen.findByRole('heading', { name: '사람과 기술을 연결합니다', level: 2 }))
+      .toBeInTheDocument()
 })
 
 /**
@@ -774,8 +775,13 @@ function publicFetch(template = siteTemplate(), publicPath = '/', chat: { status
       { id: 2, name: '회사 소개', path: '/about/company', parentId: 1, displayOrder: 11, targetType: 'CONTENT', targetId: 10 },
     ]))
     if (path === '/api/site/boards') return Promise.resolve(json([]))
+    // 컨텐츠 본문은 편집기 문서다. 서버가 읽는 입구에서 옛 마크다운을 이 모양으로 바꿔 준다.
     if (path === '/api/site/contents/10') return Promise.resolve(json({
-      id: 10, authorId: actorId, authorName: '최고 관리자', title: '회사 소개', body: '## 사람과 기술을 연결합니다', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+      id: 10, authorId: actorId, authorName: '최고 관리자', title: '회사 소개',
+      body: JSON.stringify({ type: 'doc', content: [
+        { type: 'heading', attrs: { level: 2 }, content: [{ type: 'text', text: '사람과 기술을 연결합니다' }] },
+      ] }),
+      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
     }))
     return Promise.resolve(json([]))
   })

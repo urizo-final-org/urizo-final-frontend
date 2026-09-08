@@ -8,6 +8,7 @@ import {
 } from '../../shared/ui/primitives'
 import { CmsApi, CMS_CHANGED_EVENT, notifySiteUpdated, type Article, type Board, type Member, type Menu, type MenuTargetType, type Post, type SiteTemplate } from './api'
 import CmsAiAssistant, { NEW_BOARD_TARGET, NEW_CONTENT_TARGET, NEW_MENU_TARGET, postTargetId, type CmsAssistantTarget } from './assistant/CmsAiAssistant'
+import ContentEditor from './ContentEditor'
 import type { NaturalCmsApi } from './assistant/api'
 import type { AssistantMenu } from './assistant/menuTree'
 
@@ -57,7 +58,7 @@ export default function CmsWorkspace({ route, api, assistantApi }: { route: CmsR
     {assistantRoute
       ? <div className={`grid items-start gap-[0.875rem] ${assistantCollapsed ? 'min-[1240px]:grid-cols-[minmax(0,1fr)_4rem]' : 'min-[1240px]:grid-cols-[minmax(0,1fr)_22rem]'}`}>
         <div className="min-w-0">{workspace}</div>
-        <CmsAiAssistant key={assistantRoute} route={assistantRoute} target={assistantTarget} candidates={assistantCandidates} menus={assistantMenus} onTarget={setAssistantTarget} api={assistantApi} collapsed={assistantCollapsed} onToggle={() => setAssistantCollapsed((value) => !value)} />
+        <CmsAiAssistant key={assistantRoute} route={assistantRoute} target={assistantTarget} candidates={assistantCandidates} menus={assistantMenus} onTarget={setAssistantTarget} api={assistantApi} onUploadImage={assistantRoute === 'contents' ? api.uploadImage : undefined} collapsed={assistantCollapsed} onToggle={() => setAssistantCollapsed((value) => !value)} />
       </div>
       : workspace}
   </>
@@ -308,7 +309,6 @@ function Contents({ api, onSelect, onCandidates, onMenus }: {
     setBody('')
     onSelect(NEW_CONTENT_TARGET)
   }
-  function insert(mark: string) { setBody((value) => value ? `${value}\n${mark}` : mark) }
   async function submit(event: FormEvent) { event.preventDefault(); setFailure(null); const action = editing ? '수정' : '등록'; try { if (editing) await api.updateContent(editing.id, { title, body }); else await api.createContent({ title, body }); clear(); await load(); notifySiteUpdated(); notifyCmsSuccess(`컨텐츠를 ${action}했습니다.`) } catch (e) { setFailure(`컨텐츠를 저장하지 못했습니다. ${describeFailure(e)}`) } }
   async function remove(id: number) { if (!window.confirm('컨텐츠를 삭제할까요?')) return; setFailure(null); try { await api.deleteContent(id); clear(); await load(); notifySiteUpdated(); notifyCmsSuccess('컨텐츠를 삭제했습니다.') } catch (e) { setFailure(`컨텐츠를 삭제하지 못했습니다. ${describeFailure(e)}`) } }
   return <>
@@ -331,18 +331,11 @@ function Contents({ api, onSelect, onCandidates, onMenus }: {
           </button>)}
       </section>
       <form className={panel} onSubmit={submit}>
-        <PanelTitle title={editing ? '컨텐츠 수정' : '컨텐츠 등록'} sub="제목(##), 강조(**문구**), 목록(-) 형식을 지원합니다." />
+        <PanelTitle title={editing ? '컨텐츠 수정' : '컨텐츠 등록'} sub="제목·굵게·목록·링크·사진을 쓸 수 있습니다. 보이는 그대로 저장됩니다." />
         <div className="p-4">
           <label className={fieldLabel}>제목<input className={control} placeholder="제목을 입력하세요" value={title} onChange={(e) => setTitle(e.target.value)} required /></label>
           <div className={`${fieldLabel} mt-[0.875rem]`}>본문
-            <div className="mt-[0.375rem]">
-              <div className="flex flex-wrap gap-2 rounded-t-[0.3125rem] border border-b-0 border-field-line bg-sub p-2">
-                <button type="button" className={smallButton} onClick={() => insert('## 제목')}>제목</button>
-                <button type="button" className={smallButton} onClick={() => insert('**강조 문구**')}>강조</button>
-                <button type="button" className={smallButton} onClick={() => insert('- 목록 항목')}>목록</button>
-              </div>
-              <textarea className={`${textarea} mt-0 min-h-[21.25rem] rounded-t-none font-mono leading-[1.9]`} placeholder="내용을 입력하세요" value={body} onChange={(e) => setBody(e.target.value)} required />
-            </div>
+            <ContentEditor value={body} onChange={setBody} api={api} onFailure={setFailure} />
           </div>
           <div className="mt-4 flex justify-end gap-2">
             {editing && <button type="button" className={dangerButton} onClick={() => void remove(editing.id)}>삭제</button>}
