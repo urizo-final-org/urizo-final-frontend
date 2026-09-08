@@ -68,20 +68,34 @@ const NOT_SWITCHABLE: Partial<Record<KnowledgeVersionStatus, string>> = {
 }
 
 /**
- * 화면에 남기는 버전 — **끝나지 않은 것만.**
+ * 화면에 남기는 버전 — **살아 있는 것 전부 + 되돌릴 수 있는 최근 몇 건.**
  *
- * <p>보관·실패는 이력이지 지금 볼 것이 아니다. 12건이 한 번에 깔리면 지금 무엇을 봐야
- * 하는지가 묻힌다. 지우는 것이 아니라 화면에서만 뺀다 — DB에는 그대로 남고, 총 건수는
- * 제목에 계속 적어 이력이 사라진 것이 아님을 숫자로 남긴다.
+ * <p>16건이 한 번에 깔리면 지금 무엇을 봐야 하는지가 묻힌다. 그렇다고 보관 버전을 통째로
+ * 감추면 **되돌릴 대상을 고를 수가 없다** — 롤백 API는 `targetKnowledgeVersionId`로 임의의
+ * 보관 버전을 받는데, 화면에 행이 없으면 그 계약에 손이 닿지 않는다. 그래서 감추는 대신
+ * 최근 것만 남긴다.
  *
- * <p>롤백은 이 필터의 영향을 받지 않는다. `previousActive`가 필터 이전의 전체 목록에서
- * 직전 활성 버전을 고르기 때문이다. 다만 임의의 옛 버전을 행에서 직접 고르는 길은 닫힌다 —
- * 되돌릴 곳을 직전 활성 하나로 좁히는 것이 이 변경의 대가다.
+ * <p><b>FAILED는 계속 감춘다.</b> 되돌릴 수 없기 때문이다 — 저장소가 `ARCHIVED`와 `ACTIVE`만
+ * 롤백 대상으로 받고 그 외에는 409를 던진다. 누를 수 없는 행을 띄우면 "왜 안 되지"가 된다.
+ *
+ * <p>지우는 것이 아니라 화면에서만 줄인다. DB에는 전부 남고, 총 건수는 제목에 계속 적어
+ * 이력이 사라진 것이 아님을 숫자로 남긴다.
  */
-const HIDDEN_STATUSES: ReadonlySet<string> = new Set(['ARCHIVED', 'FAILED'])
+const ROLLBACK_CANDIDATES = 3
 
 function visibleVersions(versions: KnowledgeVersion[]): KnowledgeVersion[] {
-  return versions.filter((version) => !HIDDEN_STATUSES.has(version.status))
+  let archived = 0
+  // 목록은 서버가 version_number DESC로 준다. 앞에서부터 세면 최근 보관 버전이 남는다.
+  return versions.filter((version) => {
+    if (version.status === 'FAILED') {
+      return false
+    }
+    if (version.status !== 'ARCHIVED') {
+      return true
+    }
+    archived += 1
+    return archived <= ROLLBACK_CANDIDATES
+  })
 }
 
 /** 확인 창 하나로 쓰기 3종을 받는다. 되돌리기 어려운 동작 앞에 사람 손을 한 번 더 둔다. */
