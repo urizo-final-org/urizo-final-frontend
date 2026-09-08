@@ -179,6 +179,34 @@ test('the tour helper answers a question with its citations', async () => {
   expect(screen.queryByText(/api-test\.local/)).not.toBeInTheDocument()
 })
 
+test('the tour helper carries the previous question into the next turn', async () => {
+  const fetcher = publicFetch()
+  vi.stubGlobal('fetch', fetcher)
+  render(<AppShell />)
+  fireEvent.click(await screen.findByRole('button', { name: '관광 도우미 열기' }))
+  const panel = () => within(screen.getByRole('complementary', { name: '관광 도우미' }))
+
+  fireEvent.change(panel().getByLabelText('관광 도우미 메시지'), { target: { value: '전주 한옥스테이 추천해줘' } })
+  fireEvent.click(panel().getByRole('button', { name: '전송' }))
+  await screen.findByText('전주 한옥마을 인근에 한옥 숙소가 있습니다.')
+
+  fireEvent.change(panel().getByLabelText('관광 도우미 메시지'), { target: { value: '거기 주차 되나요?' } })
+  fireEvent.click(panel().getByRole('button', { name: '전송' }))
+
+  await waitFor(() => {
+    const bodies = fetcher.mock.calls
+      .filter(([input]) => String(input) === '/api/public/chat/query')
+      .map(([, init]) => JSON.parse(String((init as RequestInit).body)))
+    expect(bodies).toHaveLength(2)
+    // 첫 턴에는 문맥이 없다. 여기에 값이 실리면 자기 질문을 자기 문맥으로 보낸 것이다.
+    expect('previousQuery' in bodies[0]).toBe(false)
+    // 대명사만 남은 후속 질문이 직전 주제를 찾으려면 이 값이 서버까지 가야 한다.
+    expect(bodies[1]).toMatchObject({ query: '거기 주차 되나요?', previousQuery: '전주 한옥스테이 추천해줘' })
+    // 문맥은 클라이언트가 들고 온다 — 서버가 대화를 기억하는 것처럼 보이면 안 된다.
+    expect(bodies[1].conversationId).toBeNull()
+  }, { timeout: 3000 })
+})
+
 test('the tour helper locks its input while the rate limit holds', async () => {
   // 실서버 실측(9/6): 30회 통과 → 31번째 429 · retryAfterMs 60000. 그 봉투를 그대로 쓴다.
   vi.stubGlobal('fetch', publicFetch(siteTemplate(), '/', {
