@@ -25,6 +25,12 @@ export type PublicChatRequest = {
   query: string
   conversationId?: string
   /**
+   * 같은 대화의 직전 사용자 질문. 서버가 대화를 저장하지 않으므로 클라이언트가 들고 온다.
+   * 백엔드는 이 값을 검색 임베딩에만 얹고 근거 필터·문장 추출에는 쓰지 않는다.
+   * 한 건만 보낸다 — 대명사를 푸는 데 필요한 것은 직전 턴이다.
+   */
+  previousQuery?: string
+  /**
    * `category_id` 접두 목록. 탭 하나가 접두 둘 이상인 경우(체험·레저 = LS + EX,
    * 관광지 = NA + HS + VE)가 있어 단일 값으로는 표현되지 않는다. "전체" 탭은 보내지 않는다.
    */
