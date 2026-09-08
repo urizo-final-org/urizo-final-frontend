@@ -7,6 +7,7 @@ import type {
 } from './api'
 
 const POLL_MS = 1_000
+const JOB_LIST_POLL_MS = 5_000
 const NODE_WIDTH = 176
 const NODE_HEIGHT = 92
 
@@ -31,37 +32,60 @@ export default function ActiveJobMonitoringPanel({ api }: { api: AgentSettingsAp
   const [listFailure, setListFailure] = useState<string | null>(null)
   const [snapshotFailure, setSnapshotFailure] = useState<string | null>(null)
   const [profileFailure, setProfileFailure] = useState<string | null>(null)
-  const listRequest = useRef(0)
+  const [listReload, setListReload] = useState(0)
   const latestSnapshot = useRef<MonitoringJobSnapshotResponse | null>(null)
 
-  async function loadJobs(signal?: AbortSignal) {
-    const request = ++listRequest.current
-    setLoadingJobs(true)
-    setListFailure(null)
-    try {
-      const response = await api.listMonitoringJobs(signal)
-      if (request !== listRequest.current) return
-      const active = response.jobs.filter((job) => !job.domainTerminal)
-      setJobs(active)
-      setSelectedJobId((current) => active.some((job) => job.jobId === current)
-        ? current
-        : active.length === 1 ? active[0].jobId : '')
-    } catch (error) {
-      if (signal?.aborted || request !== listRequest.current) return
-      setListFailure(describeFailure(error))
-    } finally {
-      if (request === listRequest.current) setLoadingJobs(false)
-    }
-  }
-
   useEffect(() => {
-    const controller = new AbortController()
-    void loadJobs(controller.signal)
-    return () => { controller.abort(); listRequest.current += 1 }
-  }, [api])
+    let disposed = false
+    let timer: number | undefined
+    let controller: AbortController | undefined
+    const poll = async () => {
+      if (disposed || document.hidden || controller) return
+      const localController = new AbortController()
+      controller = localController
+      setLoadingJobs(true)
+      try {
+        const response = await api.listMonitoringJobs(localController.signal)
+        if (disposed || localController.signal.aborted || document.hidden) return
+        setJobs(response.jobs)
+        const active = response.jobs.filter((job) => !job.domainTerminal)
+        // Keep an explicit selection, including its terminal history. Only one active Job is unambiguous.
+        setSelectedJobId((current) => current || (active.length === 1 ? active[0].jobId : ''))
+        setListFailure(null)
+      } catch (error) {
+        if (!disposed && !localController.signal.aborted) setListFailure(describeFailure(error))
+      } finally {
+        if (!disposed && controller === localController) {
+          controller = undefined
+          setLoadingJobs(false)
+          if (!document.hidden) timer = window.setTimeout(() => void poll(), JOB_LIST_POLL_MS)
+        }
+      }
+    }
+    const visibilityChanged = () => {
+      if (timer !== undefined) window.clearTimeout(timer)
+      if (document.hidden) {
+        controller?.abort()
+        controller = undefined
+        setLoadingJobs(false)
+      } else void poll()
+    }
+    document.addEventListener('visibilitychange', visibilityChanged)
+    void poll()
+    return () => {
+      disposed = true
+      if (timer !== undefined) window.clearTimeout(timer)
+      controller?.abort()
+      document.removeEventListener('visibilitychange', visibilityChanged)
+    }
+  }, [api, listReload])
 
-  const selectedJob = jobs.find((job) => job.jobId === selectedJobId) ?? null
-  const shownJob = snapshot?.job ?? selectedJob
+  const selectedSnapshot = snapshot?.job.jobId === selectedJobId ? snapshot : null
+  const selectedJob = jobs.find((job) => job.jobId === selectedJobId) ?? selectedSnapshot?.job ?? null
+  const shownJob = selectedSnapshot?.job ?? selectedJob
+  const listedJobs = selectedJob && !jobs.some((job) => job.jobId === selectedJobId) ? [...jobs, selectedJob] : jobs
+  const selectedProfileKey = selectedJob?.profileKey
+  const selectedProfileVersionId = selectedJob?.profileVersionId
 
   useEffect(() => {
     setSnapshot(null)
@@ -129,21 +153,22 @@ export default function ActiveJobMonitoringPanel({ api }: { api: AgentSettingsAp
     setProfile(null)
     setLayout(null)
     setProfileFailure(null)
-    if (!selectedJob) return
-    if (selectedJob.profileKey !== 'LLM_OPS' && selectedJob.profileKey !== 'NATURAL_CMS') {
-      setProfileFailure(`지원하지 않는 Profile입니다: ${selectedJob.profileKey}`)
+    setLoadingProfile(false)
+    if (!selectedProfileKey || !selectedProfileVersionId) return
+    if (selectedProfileKey !== 'LLM_OPS' && selectedProfileKey !== 'NATURAL_CMS') {
+      setProfileFailure(`지원하지 않는 Profile입니다: ${selectedProfileKey}`)
       return
     }
     let active = true
     setLoadingProfile(true)
     void Promise.all([
-      api.list(selectedJob.profileKey as ProfileKey),
-      api.getEditorLayout(selectedJob.profileVersionId),
+      api.list(selectedProfileKey as ProfileKey),
+      api.getEditorLayout(selectedProfileVersionId),
     ]).then(([versions, nextLayout]) => {
       if (!active) return
-      const fixed = versions.find((version) => version.profileVersionId === selectedJob.profileVersionId)
+      const fixed = versions.find((version) => version.profileVersionId === selectedProfileVersionId)
       if (!fixed) throw new Error('Job이 고정한 Profile Version을 찾을 수 없습니다.')
-      if (nextLayout.profileVersionId !== selectedJob.profileVersionId) {
+      if (nextLayout.profileVersionId !== selectedProfileVersionId) {
         throw new Error('Job Profile Version과 저장 Layout이 일치하지 않습니다.')
       }
       setProfile(fixed)
@@ -152,23 +177,24 @@ export default function ActiveJobMonitoringPanel({ api }: { api: AgentSettingsAp
       if (active) setProfileFailure(describeFailure(error))
     }).finally(() => { if (active) setLoadingProfile(false) })
     return () => { active = false }
-  }, [api, selectedJob])
+  }, [api, selectedProfileKey, selectedProfileVersionId])
 
   return <section id="agent-settings-panel-monitoring" role="tabpanel" aria-labelledby="agent-settings-tab-monitoring">
     <Callout tone="ok" icon="activity">Spring Monitoring 상태와 Job이 고정한 Profile Version을 읽기 전용으로 표시합니다.</Callout>
-    <section className={`${panel} mt-3 p-4`} aria-label="활성 Job 선택">
+    <section className={`${panel} mt-3 p-4`} aria-label="모니터링 Job 선택">
       <div className="flex flex-wrap items-end gap-3">
-        <label className="min-w-64 flex-1 text-[0.71875rem] font-semibold text-body">활성 Job
-          <select aria-label="실행 모니터링 Job" className={control} value={selectedJobId} disabled={loadingJobs || jobs.length === 0}
+        <label className="min-w-64 flex-1 text-[0.71875rem] font-semibold text-body">활성·최근 종료 Job
+          <select aria-label="실행 모니터링 Job" className={control} value={selectedJobId} disabled={listedJobs.length === 0}
             onChange={(event) => setSelectedJobId(event.target.value)}>
-            {jobs.length === 0 && <option value="">선택할 활성 Job 없음</option>}
-            {jobs.map((job) => <option key={job.jobId} value={job.jobId}>{job.profileKey} · {job.domainJobStatus} · {job.jobId}</option>)}
+            <option value="" disabled>{listedJobs.length === 0 ? '선택할 Job 없음' : '모니터링할 Job을 선택하세요'}</option>
+            {listedJobs.map((job) => <option key={job.jobId} value={job.jobId}>{job.domainTerminal ? '[종료] ' : '[활성] '}{job.profileKey} · {job.domainJobStatus} · {job.jobId}</option>)}
           </select>
         </label>
-        <button type="button" className={secondaryButton} disabled={loadingJobs} onClick={() => void loadJobs()}>{loadingJobs ? '조회 중' : '목록 새로고침'}</button>
+        <button type="button" className={secondaryButton} disabled={loadingJobs} onClick={() => setListReload((value) => value + 1)}>{loadingJobs ? '조회 중' : '목록 새로고침'}</button>
       </div>
       {listFailure && <p role="alert" className="mt-3 text-xs text-fail-fg">{listFailure}</p>}
-      {!loadingJobs && !listFailure && jobs.length === 0 && <p className="mt-3 text-xs text-muted-2">현재 표시할 미종료 Job이 없습니다.</p>}
+      <p className="mt-3 text-xs text-muted-2">목록은 화면이 보이는 동안 5초마다 갱신됩니다. 종료된 Job도 선택해 마지막 실행 상태를 확인할 수 있습니다.</p>
+      {!loadingJobs && !listFailure && listedJobs.length === 0 && <p className="mt-3 text-xs text-muted-2">현재 표시할 Job이 없습니다.</p>}
     </section>
 
     {selectedJob && <section className="mt-3 grid min-h-[38rem] gap-3 xl:grid-cols-[minmax(0,1fr)_20rem]" aria-label="실행 모니터링 상세">
@@ -179,10 +205,10 @@ export default function ActiveJobMonitoringPanel({ api }: { api: AgentSettingsAp
         {snapshotFailure && <p role="alert" className="border-b border-line-soft px-4 py-2 text-xs text-fail-fg">마지막 정상 상태를 유지합니다. {snapshotFailure}</p>}
         {profileFailure && <p role="alert" className="border-b border-line-soft px-4 py-2 text-xs text-fail-fg">{profileFailure}</p>}
         {loadingProfile && <p className="p-4 text-xs text-muted-2">Job 고정 Profile과 저장 Layout을 조회하고 있습니다.</p>}
-        {snapshot && profile && layout && <ReadOnlyMonitoringCanvas snapshot={snapshot} profile={profile} layout={layout}
+        {selectedSnapshot && profile && layout && <ReadOnlyMonitoringCanvas snapshot={selectedSnapshot} profile={profile} layout={layout}
           selectedNodeId={selectedNodeId} selectedProviderLabel={selectedProviderLabel} onSelectNode={setSelectedNodeId} />}
       </article>
-      <NodeMonitoringDetail api={api} snapshot={snapshot} selectedNodeId={selectedNodeId} onProviderLabel={setSelectedProviderLabel} />
+      <NodeMonitoringDetail api={api} snapshot={selectedSnapshot} selectedNodeId={selectedNodeId} onProviderLabel={setSelectedProviderLabel} />
     </section>}
   </section>
 }
@@ -227,6 +253,7 @@ function ReadOnlyMonitoringCanvas({ snapshot, profile, layout, selectedNodeId, s
           className="workflow-node-card absolute rounded-lg border bg-field p-3 text-left shadow-[0_8px_22px_#070a0e59]"
           style={{ left: position.x, top: position.y, width: NODE_WIDTH, minHeight: NODE_HEIGHT, borderColor: view.line, borderWidth: selected ? 3 : 2 }}
           onClick={() => onSelectNode(node.id)}>
+          {state?.status === 'RUNNING' && <span aria-hidden="true" className="pointer-events-none absolute inset-0 rounded-lg border-2 border-sky-400 motion-safe:animate-pulse" />}
           <span className="block truncate text-[0.75rem] font-semibold">{node.id}</span>
           <span className="mt-1 block truncate font-mono text-[0.5625rem] text-muted-2">{node.handlerKey}</span>
           <span className="mt-2 flex flex-wrap items-center gap-1 text-[0.5625rem]">
