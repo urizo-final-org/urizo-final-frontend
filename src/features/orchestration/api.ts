@@ -9,6 +9,99 @@ export type ProfileNodeType = 'start' | 'agent' | 'tool' | 'approval' | 'check' 
 export type ToolBindingMode = 'MODEL_OPTIONAL' | 'MODEL_REQUIRED' | 'SYSTEM_REQUIRED'
 export type ProfileToolBindings = Record<string, Record<string, ToolBindingMode>>
 export type ObservabilityStatus = 'AVAILABLE' | 'DISABLED' | 'UNAVAILABLE'
+export type SelectedObservabilityStatus = ObservabilityStatus | 'UNCONNECTED'
+export type MonitoringNodeStatus = 'RUNNING' | 'WAITING_APPROVAL' | 'COMPLETED' | 'FAILED'
+export type MonitoringNodeDisplayStatus = 'NOT_STARTED' | MonitoringNodeStatus
+
+export interface MonitoringCurrentNode {
+  nodeId: string
+  nodeSequence: number
+  nodeType: string
+  handlerKey: string
+  status: MonitoringNodeStatus
+}
+
+export interface MonitoringJobSummary {
+  jobId: string
+  traceId: string
+  profileVersionId: string
+  profileKey: string
+  profileVersion: number
+  domainJobStatus: string
+  domainTerminal: boolean
+  stateVersion: number
+  pipelineAttempt: number
+  executionAttempt: number
+  monitorStatus: MonitoringNodeStatus
+  monitorRevision: number
+  currentNode: MonitoringCurrentNode | null
+  profileSnapshotPath: string
+  profileLayoutPath: string
+  lastUpdatedAt: string
+}
+
+export interface MonitoringLatestNodeState {
+  nodeId: string
+  nodeType: string
+  handlerKey: string
+  status: MonitoringNodeDisplayStatus
+  pipelineAttempt: number | null
+  executionAttempt: number | null
+  nodeSequence: number | null
+  lastUpdatedAt: string | null
+}
+
+export interface MonitoringNodeOccurrence {
+  jobId: string
+  profileVersionId: string
+  pipelineAttempt: number
+  executionAttempt: number
+  nodeId: string
+  nodeSequence: number
+  traceId: string
+  observationTraceId: string | null
+  nodeType: string
+  handlerKey: string
+  status: MonitoringNodeStatus
+  startedAt: string | null
+  waitingAt: string | null
+  completedAt: string | null
+  failedAt: string | null
+  errorCode: string | null
+  observationsPath: string
+  lastUpdatedAt: string
+}
+
+export interface MonitoringJobListResponse {
+  schemaVersion: string
+  observedAt: string
+  jobs: MonitoringJobSummary[]
+}
+
+export interface MonitoringJobSnapshotResponse {
+  schemaVersion: string
+  observedAt: string
+  job: MonitoringJobSummary
+  latestNodeStates: MonitoringLatestNodeState[]
+  occurrences: MonitoringNodeOccurrence[]
+  truncated: boolean
+}
+
+export interface SelectedObservationsResponse {
+  status: SelectedObservabilityStatus
+  errorCode: string | null
+  jobId: string
+  profileVersionId: string
+  pipelineAttempt: number
+  executionAttempt: number
+  nodeId: string
+  nodeSequence: number
+  from: string
+  to: string
+  environment: string
+  observations: ObservabilityRow[]
+  truncated: boolean
+}
 
 export interface ObservabilityMetricRow {
   model: string | null
@@ -38,6 +131,9 @@ export interface ObservabilityMetadata {
   nodeType: string | null
   nodeStatus: string | null
   attempt: number | null
+  pipelineAttempt?: number | null
+  executionAttempt?: number | null
+  nodeSequence?: number | null
   provider: string | null
   model: string | null
   inputTokens: number | null
@@ -225,6 +321,9 @@ export interface ModelCatalogApiClient {
 }
 
 export interface AgentSettingsApiClient extends ProfileVersionApiClient, ProfileEditorLayoutApiClient, ProfileDefaultTemplateApiClient, ModelCatalogApiClient {
+  listMonitoringJobs(signal?: AbortSignal): Promise<MonitoringJobListResponse>
+  getMonitoringJobSnapshot(jobId: string, signal?: AbortSignal): Promise<MonitoringJobSnapshotResponse>
+  getMonitoringOccurrenceObservations(path: string, signal?: AbortSignal): Promise<SelectedObservationsResponse>
   getObservabilityMetrics(from: string, to: string): Promise<ObservabilityMetricsResponse>
   getObservations(from: string, to: string): Promise<ObservabilityResponse>
   listProviderCredentials(): Promise<ProviderCredentialOverview>
@@ -305,6 +404,21 @@ export class ProfileVersionApi implements AgentSettingsApiClient {
   listModelCatalog = (profileKey: ProfileKey) => this.request<ModelCatalog>(
     `/api/admin/ai/model-catalog?profileKey=${encodeURIComponent(profileKey)}`,
   )
+
+  listMonitoringJobs = (signal?: AbortSignal) => this.request<MonitoringJobListResponse>(
+    '/api/admin/ai/monitoring/jobs', { signal },
+  )
+
+  getMonitoringJobSnapshot = (jobId: string, signal?: AbortSignal) => this.request<MonitoringJobSnapshotResponse>(
+    `/api/admin/ai/monitoring/jobs/${encodeURIComponent(jobId)}`, { signal },
+  )
+
+  getMonitoringOccurrenceObservations = (path: string, signal?: AbortSignal) => {
+    if (!path.startsWith('/api/admin/ai/monitoring/jobs/') || !path.endsWith('/observations')) {
+      return Promise.reject(new Error('Invalid monitoring observations path.'))
+    }
+    return this.request<SelectedObservationsResponse>(path, { signal })
+  }
 
   getObservabilityMetrics = (from: string, to: string) => this.request<ObservabilityMetricsResponse>(
     `/api/admin/ai/observability/metrics?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,

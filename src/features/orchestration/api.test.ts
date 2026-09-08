@@ -121,6 +121,31 @@ test('loads Metrics and Observations with the same encoded UTC range', async () 
   expect(new Headers(fetcher.mock.calls[1][1].headers).get('X-Trace-Id')).toBe('trace-id')
 })
 
+test('reads monitoring jobs, one full snapshot, and only a server-provided occurrence observation path', async () => {
+  const list = { schemaVersion: '1.0', observedAt: '2026-09-07T00:00:00Z', jobs: [] }
+  const detail = { schemaVersion: '1.0', observedAt: '2026-09-07T00:00:01Z', job: { jobId: 'job-1' }, latestNodeStates: [], occurrences: [], truncated: false }
+  const observations = { status: 'UNCONNECTED', errorCode: 'OBSERVATION_NOT_CONNECTED', jobId: 'job-1', profileVersionId: 'version-1', pipelineAttempt: 1, executionAttempt: 1, nodeId: 'code', nodeSequence: 2, from: '2026-09-07T00:00:00Z', to: '2026-09-07T00:00:01Z', environment: 'local', observations: [], truncated: false }
+  const path = '/api/admin/ai/monitoring/jobs/job-1/occurrences/1/1/2/observations'
+  const fetcher = vi.fn()
+    .mockResolvedValueOnce(new Response(JSON.stringify(list)))
+    .mockResolvedValueOnce(new Response(JSON.stringify(detail)))
+    .mockResolvedValueOnce(new Response(JSON.stringify(observations)))
+  vi.stubGlobal('fetch', fetcher)
+  vi.stubGlobal('crypto', { randomUUID: () => 'trace-id' })
+  const api = new ProfileVersionApi('token', vi.fn(), vi.fn())
+
+  await expect(api.listMonitoringJobs()).resolves.toEqual(list)
+  await expect(api.getMonitoringJobSnapshot('job-1')).resolves.toEqual(detail)
+  await expect(api.getMonitoringOccurrenceObservations(path)).resolves.toEqual(observations)
+  await expect(api.getMonitoringOccurrenceObservations('/api/not-monitoring')).rejects.toThrow('Invalid monitoring observations path.')
+
+  expect(fetcher.mock.calls.map(([url]) => url)).toEqual([
+    '/api/admin/ai/monitoring/jobs',
+    '/api/admin/ai/monitoring/jobs/job-1',
+    path,
+  ])
+})
+
 test('manages local provider credentials with the one-time CSRF token and never expects a returned secret', async () => {
   const overview = {
     csrfToken: 'csrf-fixture',
