@@ -23,7 +23,9 @@ export const contentStyles = [
   '[&_li>p]:my-0',
   '[&_strong]:font-bold [&_strong]:text-[#263e48]',
   '[&_em]:italic',
-  '[&_a]:text-[var(--brand,#2a5f61)] [&_a]:underline [&_a]:underline-offset-2',
+  // 링크는 템플릿 대표색을 따르지 않고 파란색으로 고정한다. 본문 안에서 눌러서 나가는 곳임을
+  // 알아보는 표시라 대표색과 섞이면 그냥 강조한 글자로 읽힌다.
+  '[&_a]:text-[#0b63ce] [&_a]:underline [&_a]:underline-offset-2',
   '[&_img]:my-6 [&_img]:h-auto [&_img]:max-w-full [&_img]:rounded',
 ].join(' ')
 

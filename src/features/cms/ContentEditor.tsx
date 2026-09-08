@@ -1,5 +1,5 @@
 import Image from '@tiptap/extension-image'
-import { EditorContent, useEditor, type Editor } from '@tiptap/react'
+import { EditorContent, useEditor, type ChainedCommands, type Editor } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import { useEffect, useRef, type ReactNode } from 'react'
 import { contentStyles } from '../site/contentDocument'
@@ -38,6 +38,9 @@ export default function ContentEditor({ value, onChange, api, onFailure }: {
       OwnImage,
     ],
     content: parse(value),
+    // 기본값은 문서가 바뀔 때만 다시 그린다. 그러면 글자를 고르거나 서식만 바뀐 순간에는 툴바가
+    // 그대로라 눌린 표시가 늦게 나타난다. 제목은 문서가 바뀌어 바로 보이고 굵게는 안 보였다.
+    shouldRerenderOnTransaction: true,
     onUpdate: ({ editor: changed }) => onChange(JSON.stringify(changed.getJSON())),
     // 편집기 안의 태그에 사이트와 같은 스타일을 건다. 렌더러와 같은 문자열을 쓰므로 두 화면이
     // 저절로 같아진다. 이것이 `관리자에서 본 모양 = 사이트에서 본 모양`의 실제 구현이다.
@@ -104,26 +107,32 @@ export default function ContentEditor({ value, onChange, api, onFailure }: {
   }
 
   /**
-   * 고른 글자에 링크를 건다.
+   * 툴바 명령은 고른 범위를 되돌린 뒤 실행한다.
    *
-   * 창을 띄우면 편집기에서 포커스가 빠지면서 고른 범위가 풀린다. 그래서 띄우기 전에 범위를
-   * 적어 두고 돌아와서 되돌린다. 이것을 안 하면 주소를 넣어도 아무 일이 없다.
+   * 버튼을 누르는 사이 편집기에서 포커스가 빠지면서 고른 범위가 풀린다. 그러면 굵게가 고른
+   * 글자가 아니라 다음에 칠 글자에만 걸려, 눌러도 아무 일이 없다가 글씨를 쳐야 굵어졌다.
+   */
+  function command(run: (chain: ChainedCommands) => ChainedCommands) {
+    if (!editor) return
+    const { from, to } = editor.state.selection
+    run(editor.chain().focus().setTextSelection({ from, to })).run()
+  }
+
+  /**
+   * 고른 글자에 링크를 건다.
    *
    * 고른 글자가 없으면 걸 자리가 없다. 조용히 넘어가면 버튼이 고장 난 것처럼 보이므로 알린다.
    */
   function setLink() {
     if (!editor) return
-    const { from, to } = editor.state.selection
-    if (from === to) {
+    if (editor.state.selection.empty) {
       onFailure('링크를 걸 글자를 먼저 고른 뒤 링크 버튼을 눌러 주세요.')
       return
     }
     const current = editor.getAttributes('link').href as string | undefined
     const href = window.prompt('링크 주소를 입력하세요. 비우면 링크를 없앱니다.', current ?? 'https://')
     if (href === null) return
-    const chain = editor.chain().focus().setTextSelection({ from, to })
-    if (!href.trim()) { chain.unsetLink().run(); return }
-    chain.setLink({ href: href.trim() }).run()
+    command((chain) => (href.trim() ? chain.setLink({ href: href.trim() }) : chain.unsetLink()))
   }
 
   return <div className="mt-[0.375rem] rounded-[0.3125rem] border border-field-line">
@@ -140,12 +149,12 @@ export default function ContentEditor({ value, onChange, api, onFailure }: {
       <Divider />
 
       <Tool editor={editor} label="제목" active="heading" attrs={{ level: 2 }}
-        onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}>
+        onClick={() => command((chain) => chain.toggleHeading({ level: 2 }))}>
         <path d="M4 12h8" /><path d="M4 18V6" /><path d="M12 18V6" />
         <path d="M21 18h-4c0-4 4-3 4-6 0-1.5-2-2.5-4-1" />
       </Tool>
       <Tool editor={editor} label="작은 제목" active="heading" attrs={{ level: 3 }}
-        onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}>
+        onClick={() => command((chain) => chain.toggleHeading({ level: 3 }))}>
         <path d="M4 12h8" /><path d="M4 18V6" /><path d="M12 18V6" />
         <path d="M17.5 10.5c1.7-1 3.5 0 3.5 1.5a2 2 0 0 1-2 2" />
         <path d="M17 17.5c2 1.5 4 .3 4-1.5a2 2 0 0 0-2-2" />
@@ -154,11 +163,11 @@ export default function ContentEditor({ value, onChange, api, onFailure }: {
       <Divider />
 
       <Tool editor={editor} label="굵게" active="bold"
-        onClick={() => editor.chain().focus().toggleBold().run()}>
+        onClick={() => command((chain) => chain.toggleBold())}>
         <path d="M6 12h9a4 4 0 0 1 0 8H7a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h7a4 4 0 0 1 0 8" />
       </Tool>
       <Tool editor={editor} label="기울임" active="italic"
-        onClick={() => editor.chain().focus().toggleItalic().run()}>
+        onClick={() => command((chain) => chain.toggleItalic())}>
         <path d="M19 4h-9" /><path d="M14 20H5" /><path d="m15 4-4 16" />
       </Tool>
       <Tool editor={editor} label="링크" active="link" onClick={setLink}>
@@ -169,12 +178,12 @@ export default function ContentEditor({ value, onChange, api, onFailure }: {
       <Divider />
 
       <Tool editor={editor} label="목록" active="bulletList"
-        onClick={() => editor.chain().focus().toggleBulletList().run()}>
+        onClick={() => command((chain) => chain.toggleBulletList())}>
         <path d="M3 6h.01" /><path d="M3 12h.01" /><path d="M3 18h.01" />
         <path d="M8 6h13" /><path d="M8 12h13" /><path d="M8 18h13" />
       </Tool>
       <Tool editor={editor} label="번호 목록" active="orderedList"
-        onClick={() => editor.chain().focus().toggleOrderedList().run()}>
+        onClick={() => command((chain) => chain.toggleOrderedList())}>
         <path d="M10 6h11" /><path d="M10 12h11" /><path d="M10 18h11" />
         <path d="M4 6h1v4" /><path d="M4 10h2" /><path d="M6 18H4c0-1 2-2 2-3s-1-1.5-2-1" />
       </Tool>
