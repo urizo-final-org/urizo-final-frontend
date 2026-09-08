@@ -34,13 +34,39 @@ export default function ContentEditor({ value, onChange, api, onFailure }: {
         heading: { levels: [2, 3] },
         link: { openOnClick: false, autolink: false, protocols: ['http', 'https'] },
       }),
-      Image.configure({ inline: false, allowBase64: false }),
+      OwnImage,
     ],
     content: parse(value),
     onUpdate: ({ editor: changed }) => onChange(JSON.stringify(changed.getJSON())),
     // 편집기 안의 태그에 사이트와 같은 스타일을 건다. 렌더러와 같은 문자열을 쓰므로 두 화면이
     // 저절로 같아진다. 이것이 `관리자에서 본 모양 = 사이트에서 본 모양`의 실제 구현이다.
-    editorProps: { attributes: { class: `${contentStyles} min-h-[18rem] p-4 outline-none` } },
+    editorProps: {
+      attributes: { class: `${contentStyles} min-h-[18rem] p-4 outline-none` },
+      /**
+       * 붙여넣기로 들어오는 사진을 가로챈다.
+       *
+       * 파일이면 올려서 넣고, 웹 페이지에서 복사한 사진이면 주소만 오므로 안내하고 버린다.
+       * 남의 서버 주소를 본문에 두면 방문자 접속 기록이 그쪽으로 새어 나가고, 그 페이지가
+       * 사진을 내리면 우리 화면이 깨진다.
+       */
+      handlePaste: (_view, event) => {
+        const files = [...(event.clipboardData?.files ?? [])]
+        if (files.length > 0) { void insertFiles(files); return true }
+        if (droppedExternalImage(event.clipboardData?.getData('text/html'))) {
+          onFailure('웹 페이지에서 복사한 사진은 넣을 수 없습니다. 파일로 저장한 뒤 사진 버튼으로 올려 주세요.')
+        }
+        return false
+      },
+      handleDrop: (_view, event) => {
+        const files = [...((event as DragEvent).dataTransfer?.files ?? [])]
+        if (files.length > 0) { void insertFiles(files); return true }
+        if (droppedExternalImage((event as DragEvent).dataTransfer?.getData('text/html'))) {
+          onFailure('웹 페이지에서 끌어온 사진은 넣을 수 없습니다. 파일로 저장한 뒤 사진 버튼으로 올려 주세요.')
+          return true
+        }
+        return false
+      },
+    },
   })
 
   /**
@@ -57,14 +83,19 @@ export default function ContentEditor({ value, onChange, api, onFailure }: {
 
   if (!editor) return null
 
-  async function insertImage(chosen: File | null | undefined) {
-    if (!editor || !chosen) return
+  /** 사진 버튼·붙여넣기·드래그가 모두 이 함수로 모인다. 올린 뒤에만 본문에 들어간다. */
+  async function insertFiles(chosen: File[]) {
+    if (!editor) return
+    const images = chosen.filter((file) => file.type.startsWith('image/'))
+    if (images.length === 0) return
     try {
-      const saved = await api.uploadImage(chosen)
-      // 대체 텍스트는 사진이 안 뜰 때 대신 보이고 화면 낭독기가 읽는다. 나중에 붙이려면
-      // 이미 넣은 사진이 전부 설명 없는 상태가 되므로 넣을 때 받는다.
-      const alt = window.prompt('사진 설명을 입력하세요. 사진이 보이지 않을 때 대신 표시됩니다.') ?? ''
-      editor.chain().focus().setImage({ src: contentImageUrl(saved.id), alt }).run()
+      for (const file of images) {
+        const saved = await api.uploadImage(file)
+        // 대체 텍스트는 사진이 안 뜰 때 대신 보이고 화면 낭독기가 읽는다. 나중에 붙이려면
+        // 이미 넣은 사진이 전부 설명 없는 상태가 되므로 넣을 때 받는다.
+        const alt = window.prompt('사진 설명을 입력하세요. 사진이 보이지 않을 때 대신 표시됩니다.') ?? ''
+        editor.chain().focus().setImage({ src: contentImageUrl(saved.id), alt }).run()
+      }
     }
     catch {
       onFailure('사진을 올리지 못했습니다. JPG, PNG, WebP만 8MB까지 올릴 수 있습니다.')
@@ -144,7 +175,7 @@ export default function ContentEditor({ value, onChange, api, onFailure }: {
         ref={file}
         type="file"
         accept="image/jpeg,image/png,image/webp"
-        onChange={(event) => { void insertImage(event.target.files?.[0]); event.target.value = '' }}
+        onChange={(event) => { void insertFiles([...(event.target.files ?? [])]); event.target.value = '' }}
       />
     </div>
     <EditorContent editor={editor} />
@@ -188,6 +219,22 @@ function Tool({ editor, label, active, attrs, disabled, onClick, children }: {
       strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"
     >{children}</svg>
   </button>
+}
+
+/**
+ * 우리가 올린 사진만 본문에 들어온다.
+ *
+ * <p>기본 설정은 어떤 `<img>`든 받아들여서, 웹 페이지에서 복사하거나 끌어다 놓으면 남의 서버
+ * 주소가 그대로 본문에 박힌다. 저장할 때 서버가 거부하지만 그때는 이미 글을 다 쓴 뒤다.
+ * 아예 들어오지 못하게 해서 서버 화이트리스트와 같은 선을 편집기에도 둔다.
+ */
+const OwnImage = Image.extend({
+  parseHTML: () => [{ tag: 'img[src^="/api/site/images/"]' }],
+}).configure({ inline: false, allowBase64: false })
+
+/** 붙여넣거나 끌어온 것에 남의 사진이 섞여 있는지. 안내를 띄울지 판단한다. */
+function droppedExternalImage(html: string | undefined) {
+  return typeof html === 'string' && /<img\b/i.test(html)
 }
 
 /** 저장된 값이 문서가 아니면 편집기가 빈 문서로 연다. 서버가 변환해 주므로 드문 경우다. */
