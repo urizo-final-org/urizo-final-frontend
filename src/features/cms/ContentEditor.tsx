@@ -38,7 +38,9 @@ export default function ContentEditor({ value, onChange, api, onFailure }: {
     ],
     content: parse(value),
     onUpdate: ({ editor: changed }) => onChange(JSON.stringify(changed.getJSON())),
-    editorProps: { attributes: { class: `${contentStyles.root} min-h-[18rem] p-4 outline-none` } },
+    // 편집기 안의 태그에 사이트와 같은 스타일을 건다. 렌더러와 같은 문자열을 쓰므로 두 화면이
+    // 저절로 같아진다. 이것이 `관리자에서 본 모양 = 사이트에서 본 모양`의 실제 구현이다.
+    editorProps: { attributes: { class: `${contentStyles} min-h-[18rem] p-4 outline-none` } },
   })
 
   /**

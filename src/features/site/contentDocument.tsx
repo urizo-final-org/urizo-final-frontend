@@ -8,17 +8,19 @@ import { Fragment, type ReactNode } from 'react'
  *
  * <p>폭은 맞추지 않는다. 사이트 본문은 850px이고 관리자 폼은 그보다 좁아 줄바꿈 위치가 다르다.
  */
-export const contentStyles = {
-  root: 'text-[1rem] leading-8 text-[#4a6167]',
-  heading2: 'mb-4 mt-9 text-[1.5625rem] tracking-[-.05em] text-[#263e48]',
-  heading3: 'mb-3 mt-7 text-[1.1875rem] font-semibold tracking-[-.04em] text-[#263e48]',
-  paragraph: 'my-3',
-  list: 'my-3 flex flex-col gap-2',
-  listRow: 'flex gap-3',
-  marker: 'shrink-0 text-[var(--brand)]',
-  link: 'text-[var(--brand)] underline underline-offset-2',
-  image: 'my-6 h-auto max-w-full rounded',
-}
+export const contentStyles = [
+  'text-[1rem] leading-8 text-[#4a6167]',
+  '[&_h2]:mb-4 [&_h2]:mt-9 [&_h2]:text-[1.5625rem] [&_h2]:font-medium [&_h2]:tracking-[-.05em] [&_h2]:text-[#263e48]',
+  '[&_h3]:mb-3 [&_h3]:mt-7 [&_h3]:text-[1.1875rem] [&_h3]:font-semibold [&_h3]:tracking-[-.04em] [&_h3]:text-[#263e48]',
+  '[&_p]:my-3',
+  '[&_ul]:my-3 [&_ul]:list-disc [&_ul]:pl-6 [&_ol]:my-3 [&_ol]:list-decimal [&_ol]:pl-6',
+  '[&_li]:my-1 [&_li]:pl-1 [&_li]:marker:text-[var(--brand)]',
+  '[&_li>p]:my-0',
+  '[&_strong]:font-semibold [&_strong]:text-[#263e48]',
+  '[&_em]:italic',
+  '[&_a]:text-[var(--brand)] [&_a]:underline [&_a]:underline-offset-2',
+  '[&_img]:my-6 [&_img]:h-auto [&_img]:max-w-full [&_img]:rounded',
+].join(' ')
 
 /** 편집기가 만드는 문서의 부품. 렌더러가 아는 것만 그린다. */
 type DocumentNode = {
@@ -42,9 +44,9 @@ export function ContentDocument({ body }: { body: string }) {
   const document = parse(body)
   if (!document) {
     // 서버가 읽는 입구에서 문서로 바꿔 주므로 여기까지 오지 않는다. 그래도 빈 화면은 만들지 않는다.
-    return <div className={contentStyles.root}>{body}</div>
+    return <div className={contentStyles}>{body}</div>
   }
-  return <div className={contentStyles.root}>{children(document)}</div>
+  return <div className={contentStyles}>{children(document)}</div>
 }
 
 function parse(body: string): DocumentNode | null {
@@ -68,23 +70,18 @@ function render(node: DocumentNode): ReactNode {
     case 'hardBreak':
       return <br />
     case 'paragraph':
-      return <p className={contentStyles.paragraph}>{children(node)}</p>
+      return <p>{children(node)}</p>
     case 'heading':
-      return node.attrs?.level === 3
-        ? <h3 className={contentStyles.heading3}>{children(node)}</h3>
-        : <h2 className={contentStyles.heading2}>{children(node)}</h2>
+      return node.attrs?.level === 3 ? <h3>{children(node)}</h3> : <h2>{children(node)}</h2>
+    // 편집기가 만드는 것과 같은 태그를 쓴다. 그래야 한 벌의 스타일이 양쪽에 똑같이 걸린다.
     case 'bulletList':
+      return <ul>{children(node)}</ul>
     case 'orderedList':
-      return <div className={contentStyles.list}>
-        {(node.content ?? []).map((item, order) => <div className={contentStyles.listRow} key={order}>
-          <span className={contentStyles.marker} aria-hidden="true">
-            {node.type === 'orderedList' ? `${order + 1}.` : '●'}
-          </span>
-          <span className="min-w-0 flex-1">{children(item)}</span>
-        </div>)}
-      </div>
+      return <ol>{children(node)}</ol>
+    case 'listItem':
+      return <li>{children(node)}</li>
     case 'image':
-      return <img className={contentStyles.image} src={text(node.attrs?.src)} alt={text(node.attrs?.alt)} />
+      return <img src={text(node.attrs?.src)} alt={text(node.attrs?.alt)} />
     default:
       // 모르는 부품은 그리지 않는다. 읽는 쪽의 가드레일이다.
       return null
@@ -101,8 +98,8 @@ function marked(node: DocumentNode): ReactNode {
       const href = text(mark.attrs?.href)
       // 바깥으로 나가는 링크는 새 창으로 열고 참조자를 넘기지 않는다.
       content = href.startsWith('/')
-        ? <a className={contentStyles.link} href={href}>{content}</a>
-        : <a className={contentStyles.link} href={href} target="_blank" rel="noreferrer noopener">{content}</a>
+        ? <a href={href}>{content}</a>
+        : <a href={href} target="_blank" rel="noreferrer noopener">{content}</a>
     }
   }
   return content
