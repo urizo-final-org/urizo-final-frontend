@@ -102,13 +102,27 @@ export default function ContentEditor({ value, onChange, api, onFailure }: {
     }
   }
 
+  /**
+   * 고른 글자에 링크를 건다.
+   *
+   * 창을 띄우면 편집기에서 포커스가 빠지면서 고른 범위가 풀린다. 그래서 띄우기 전에 범위를
+   * 적어 두고 돌아와서 되돌린다. 이것을 안 하면 주소를 넣어도 아무 일이 없다.
+   *
+   * 고른 글자가 없으면 걸 자리가 없다. 조용히 넘어가면 버튼이 고장 난 것처럼 보이므로 알린다.
+   */
   function setLink() {
     if (!editor) return
+    const { from, to } = editor.state.selection
+    if (from === to) {
+      onFailure('링크를 걸 글자를 먼저 고른 뒤 링크 버튼을 눌러 주세요.')
+      return
+    }
     const current = editor.getAttributes('link').href as string | undefined
     const href = window.prompt('링크 주소를 입력하세요. 비우면 링크를 없앱니다.', current ?? 'https://')
     if (href === null) return
-    if (!href.trim()) { editor.chain().focus().unsetLink().run(); return }
-    editor.chain().focus().setLink({ href: href.trim() }).run()
+    const chain = editor.chain().focus().setTextSelection({ from, to })
+    if (!href.trim()) { chain.unsetLink().run(); return }
+    chain.setLink({ href: href.trim() }).run()
   }
 
   return <div className="mt-[0.375rem] rounded-[0.3125rem] border border-field-line">
@@ -192,6 +206,9 @@ function Divider() {
  * `admin-theme.css`의 `.admin-app button`이 레이어 밖이라 테두리와 글자색 유틸리티를 이긴다.
  * 그래서 눌린 상태의 색은 인라인 스타일로 준다 — 인라인은 그 규칙보다 우선한다.
  * 테두리 대신 배경으로 표시하는 것은 AI05-014의 선택 표시와 같은 우회다.
+ *
+ * 버튼을 누르는 순간 편집기에서 포커스가 빠지면 고른 범위가 풀려 서식이 걸리지 않는다.
+ * `mousedown`의 기본 동작을 막아 포커스를 편집기에 둔 채로 명령만 보낸다.
  */
 function Tool({ editor, label, active, attrs, disabled, onClick, children }: {
   editor: Editor
@@ -212,6 +229,7 @@ function Tool({ editor, label, active, attrs, disabled, onClick, children }: {
     style={on ? { color: 'var(--primary)' } : undefined}
     className={`grid h-7 w-7 place-items-center rounded-[0.25rem] disabled:opacity-35 ${
       on ? 'bg-[#e3efed]' : 'hover:bg-sub'}`}
+    onMouseDown={(event) => event.preventDefault()}
     onClick={onClick}
   >
     <svg

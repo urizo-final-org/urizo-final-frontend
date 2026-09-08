@@ -7,6 +7,9 @@ import { Fragment, type ReactNode } from 'react'
  * 지금까지 `RichText` 안에 인라인으로 박혀 있어 나눠 쓸 수가 없었다.
  *
  * <p>폭은 맞추지 않는다. 사이트 본문은 850px이고 관리자 폼은 그보다 좁아 줄바꿈 위치가 다르다.
+ *
+ * <p>`--brand`는 사용자 사이트가 템플릿 대표색으로 세우는 값이라 관리자 화면에는 없다. 기본값을
+ * 함께 적지 않으면 관리자 편집기에서 링크와 목록 기호가 본문색 그대로 나온다.
  */
 export const contentStyles = [
   'text-[1rem] leading-8 text-[#4a6167]',
@@ -14,11 +17,11 @@ export const contentStyles = [
   '[&_h3]:mb-3 [&_h3]:mt-7 [&_h3]:text-[1.1875rem] [&_h3]:font-semibold [&_h3]:tracking-[-.04em] [&_h3]:text-[#263e48]',
   '[&_p]:my-3',
   '[&_ul]:my-3 [&_ul]:list-disc [&_ul]:pl-6 [&_ol]:my-3 [&_ol]:list-decimal [&_ol]:pl-6',
-  '[&_li]:my-1 [&_li]:pl-1 [&_li]:marker:text-[var(--brand)]',
+  '[&_li]:my-1 [&_li]:pl-1 [&_li]:marker:text-[var(--brand,#2a5f61)]',
   '[&_li>p]:my-0',
   '[&_strong]:font-semibold [&_strong]:text-[#263e48]',
   '[&_em]:italic',
-  '[&_a]:text-[var(--brand)] [&_a]:underline [&_a]:underline-offset-2',
+  '[&_a]:text-[var(--brand,#2a5f61)] [&_a]:underline [&_a]:underline-offset-2',
   '[&_img]:my-6 [&_img]:h-auto [&_img]:max-w-full [&_img]:rounded',
 ].join(' ')
 
