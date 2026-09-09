@@ -9,6 +9,7 @@ import type {
   ApprovalDecision, ApprovalStage, CodingConsoleApiClient, CodingJobStatus, CodingNotification,
   CodingRepository, Handover, JobDetail, JobSummary, PendingApproval, RunnerStatus,
 } from './api'
+import { diffLines } from './diffLines'
 import { lastSeenAt, markSeen, notificationSentence, sinceLabel, unseen } from './notifications'
 
 /**
@@ -1030,6 +1031,29 @@ function CandidateApproval({ detail, pending, busy, onDecide }: {
 }
 
 /**
+ * 변경 내용을 줄 종류별로 색을 달리해 보여준다.
+ *
+ * 한 가지 색으로 흘려두면 무엇이 들어오고 무엇이 빠졌는지 `+`·`-` 한 글자로만 갈린다.
+ * 이 화면은 코드를 읽지 못하는 관리자가 승인을 누르는 자리다.
+ *
+ * 색만으로 뜻을 전하지는 않는다. `+`와 `-`는 통합 diff 원문에 이미 들어 있어 그대로 남고,
+ * 색은 그 위에 덧붙는 것이라 색을 못 보는 사람도 잃는 정보가 없다.
+ */
+function DiffView({ diff }: { diff: string }) {
+  return <div className="mt-[0.375rem] max-h-[24rem] overflow-auto rounded-[0.3125rem] border border-line bg-sub font-mono text-[0.6875rem] leading-[1.7]">
+    {diffLines(diff).map((line, index) => <div
+      key={index}
+      className={`whitespace-pre-wrap break-words px-3 ${
+        line.kind === 'added' ? 'bg-ok-bg text-ok-fg'
+          : line.kind === 'removed' ? 'bg-fail-bg text-fail-fg'
+            : line.kind === 'hunk' ? 'text-link'
+              : line.kind === 'meta' ? 'text-muted-2'
+                : 'text-body'}`}
+    >{line.text || ' '}</div>)}
+  </div>
+}
+
+/**
  * E4, the approvals that follow the preview: GITHUB, then CMS, then DEPLOY.
  *
  * The guide draws these as one screen with [merge & deploy] [merge only] [reject], but the
@@ -1115,7 +1139,7 @@ function FinalApproval({ detail, pending, busy, role, onDecide }: {
           {technical.diff
             ? <div className="mt-[0.875rem]">
               <b className={`${fieldLabel} block`}>변경 내용</b>
-              <pre className="mt-[0.375rem] max-h-[24rem] overflow-auto rounded-[0.3125rem] border border-line bg-sub p-3 font-mono text-[0.6875rem] leading-[1.7] text-body">{technical.diff}</pre>
+              <DiffView diff={technical.diff} />
             </div>
             : <div className="mt-[0.875rem]">
               <Callout tone="warn" icon="triangle-alert">
