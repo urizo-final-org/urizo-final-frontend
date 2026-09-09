@@ -105,6 +105,28 @@ test('a resolved request disappears when the panel bumps the refresh key', async
   expect(await screen.findByText('열린 요청이 없습니다.')).toBeInTheDocument()
 })
 
+/**
+ * PR #55 리뷰 1 — 지식 베이스를 바꾸면 이전 베이스에서 고른 버전 UUID가 상태에 남았다.
+ * select는 일치 옵션이 없어 "대상 버전 없음"으로 보이는데 전송값은 그 UUID라, 보이는 것과
+ * 보내는 것이 갈라졌다. 서버가 404로 막긴 하지만 사용자는 영문 모를 오류를 받는다.
+ */
+test('switching the knowledge base drops the previously chosen target', async () => {
+  const calls = api()
+  const { rerender } = show(calls)
+  fireEvent.change(await screen.findByLabelText('요청 대상'), { target: { value: 'kv-9' } })
+  rerender(<ActivationRequests
+    api={calls}
+    knowledgeBaseId="kb-2"
+    mayWrite={false}
+    versions={[version({ knowledgeVersionId: 'kv-20', knowledgeBaseId: 'kb-2', versionNumber: 20 })]}
+    refreshKey={0}
+  />)
+  fireEvent.click(await screen.findByRole('button', { name: '갱신 요청' }))
+  await waitFor(() => expect(calls.createActivationRequest).toHaveBeenCalledWith('kb-2', {
+    knowledgeVersionId: undefined, reason: undefined,
+  }))
+})
+
 /** 요청 목록 하나가 실패해도 RAG 화면 전체가 오류로 덮이면 안 된다. */
 test('a failing list leaves the panel standing', async () => {
   show(api({ listActivationRequests: vi.fn().mockRejectedValue(new Error('down')) }))

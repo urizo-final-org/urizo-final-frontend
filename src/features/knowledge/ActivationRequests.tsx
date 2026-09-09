@@ -49,6 +49,17 @@ export function ActivationRequests({ api, knowledgeBaseId, mayWrite, versions, r
     return () => { alive.current = false }
   }, [])
 
+  // 지식 베이스가 바뀌면 폼·목록 상태를 처음으로 되돌린다. 이전 베이스에서 고른 버전
+  // UUID가 남으면 select는 일치 옵션이 없어 "대상 버전 없음"으로 그리는데 전송값은 그
+  // UUID라, 보이는 것과 보내는 것이 갈라진다(PR #55 리뷰 1). 성공·실패 표시와 목록도
+  // 이전 베이스의 것이므로 함께 비운다 — 새 베이스는 로딩부터 다시 시작한다.
+  useEffect(() => {
+    setTargetId(NEW_BUILD)
+    setSent(false)
+    setFailure(null)
+    setRequests(null)
+  }, [knowledgeBaseId])
+
   const load = useCallback(async () => {
     if (!knowledgeBaseId) return
     try {
