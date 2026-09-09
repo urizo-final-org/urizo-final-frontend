@@ -25,9 +25,11 @@ export const contentStyles = [
   '[&_strong]:font-bold [&_strong]:text-[#263e48]',
   '[&_em]:italic',
   '[&_s]:line-through [&_u]:underline [&_u]:underline-offset-2',
-  '[&_blockquote]:my-6 [&_blockquote]:border-l-[3px] [&_blockquote]:border-[var(--brand,#2a5f61)]',
-  '[&_blockquote]:bg-[#f4f8f8] [&_blockquote]:py-3 [&_blockquote]:pl-5 [&_blockquote]:pr-4',
-  '[&_blockquote>p]:my-1',
+  // 인용선은 옅게 둔다. 인용은 본문을 밀어내는 것이 아니라 옆으로 물러난 덩어리라,
+  // 선이 진하면 시선을 뺏는다. 대표색을 쓰면 링크 파랑에 색이 하나 더 늘어난다.
+  '[&_blockquote]:my-6 [&_blockquote]:border-l-[3px] [&_blockquote]:border-[#d5dee0]',
+  '[&_blockquote]:pl-5 [&_blockquote]:text-[#5a7178]',
+  '[&_blockquote>p]:my-2',
   '[&_hr]:my-8 [&_hr]:border-0 [&_hr]:border-t [&_hr]:border-[#dde5e6]',
   // 형광펜 안에서도 글자색이 살아 있어야 한다. 브라우저 기본값이 검정이라 덮어쓴다.
   '[&_mark]:rounded-[0.15em] [&_mark]:px-[0.15em]',

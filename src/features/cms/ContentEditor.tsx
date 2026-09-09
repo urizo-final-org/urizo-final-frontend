@@ -222,7 +222,8 @@ export default function ContentEditor({ value, onChange, api, onFailure }: {
         <path d="M4 6h16" /><path d="M4 18h16" />
         <path d="M8 10v4" /><path d="M12 10h8" /><path d="M12 14h5" />
       </Tool>
-      <Tool editor={editor} label="구분선"
+      {/* 인용문 안에는 넣지 못하게 막는다. 넣고 나면 지울 방법이 마땅치 않아 커서가 갇힌다. */}
+      <Tool editor={editor} label="구분선" disabled={editor.isActive('blockquote')}
         onClick={() => command((chain) => chain.setHorizontalRule())}>
         <path d="M3 12h18" /><path d="M6 7h12" opacity="0.4" />
         <path d="M6 17h12" opacity="0.4" />
