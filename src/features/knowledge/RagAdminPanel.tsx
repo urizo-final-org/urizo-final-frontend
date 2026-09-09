@@ -88,6 +88,16 @@ function visibleVersions(versions: KnowledgeVersion[]): KnowledgeVersion[] {
   return versions.filter((v) => keep.has(v.knowledgeVersionId))
 }
 
+/**
+ * 표 안의 액션 버튼. 공용 `smallButton`은 배경이 패널과 같아 링크처럼 보였다 —
+ * 배경·여백·모서리를 주고 hover에서 색이 바뀌게 해 「누를 수 있는 것」으로 읽히게 한다.
+ *
+ * <p>채움에 `line` 토큰을 쓴다. 이름은 선이지만 값이 라이트 #dfe6ed · 다크 #294156이라
+ * **양쪽 테마에서 패널과 확실히 구분되는 유일한 기존 토큰**이다. `sub`(#f8fafc)는 흰 패널과
+ * 붙어 보여 링크처럼 읽혔다. 공용 테마 CSS를 건드리지 않으려고 기존 값을 재사용한다.
+ */
+const tableButton = 'inline-flex h-8 items-center justify-center gap-1 rounded-md border border-field-line bg-line px-4 text-[0.71875rem] font-semibold text-strong shadow-[0_1px_1px_#10203410] transition-colors enabled:hover:border-primary enabled:hover:bg-primary enabled:hover:text-white disabled:opacity-45'
+
 /** 확인 창 하나로 쓰기 3종을 받는다. 되돌리기 어려운 동작 앞에 사람 손을 한 번 더 둔다. */
 type Confirmation = { title: string; lines: string[]; label: string; run: () => Promise<unknown> }
 
@@ -632,22 +642,22 @@ function VersionTable({ versions, mayWrite, blocked, busy, canRollback, onSwitch
   // 보이는 버전 중 하나라도 측정치가 있을 때만 열을 만든다. 이 환경의 버전을 하나도 모르면
   // "측정 전"만 늘어놓는 빈 열이 되므로 아예 없는 편이 낫다.
   const hasMetrics = (shown ?? []).some((version) => offlineMetrics(version) != null)
-  // 유동 폭은 내용이 가장 긴 '지표'가 갖는다. 버전은 이제 'v18' 한 토막이라 4rem이면 충분하다.
+  // 전체 100%를 비율로 나눈다 — 지표에 1fr을 주면 남는 폭을 전부 먹어 텅 비어 보인다.
   const columns = hasMetrics
-    ? 'grid-cols-[4rem_6.5rem_6rem_minmax(0,1fr)_7rem_6.5rem]'
-    : 'grid-cols-[4rem_6.5rem_6rem_minmax(0,1fr)_6.5rem]'
+    ? 'grid-cols-[10fr_15fr_15fr_35fr_15fr_10fr]'
+    : 'grid-cols-[12fr_18fr_18fr_40fr_12fr]'
   const hidden = versions == null || shown == null ? 0 : versions.length - shown.length
   return <section className={panel}>
     <PanelTitle title="RAG 버전" sub={versions ? `${versions.length}건` : undefined}>
       <button
-        className={smallButton}
+        className={tableButton}
         disabled={busy || !canRollback}
         onClick={onRollback}
         title={!mayWrite ? WRITE_DENIED : canRollback ? '마지막으로 활성화됐던 버전으로 되돌립니다.' : '되돌릴 이전 활성 버전이 없습니다.'}
       >이전 버전 롤백</button>
     </PanelTitle>
     <div className="overflow-x-auto">
-      <div className="min-w-[40rem]">
+      <div className="min-w-[44rem]">
         <div className={`${headRow} ${columns}`}>
           <span>버전</span><span>상태</span><span>문서/청크</span>{hasMetrics && <span>지표</span>}<span>활성화</span><span className="text-right">동작</span>
         </div>
@@ -665,7 +675,7 @@ function VersionTable({ versions, mayWrite, blocked, busy, canRollback, onSwitch
             {version.status === 'ACTIVE'
               ? <small className="text-[0.6875rem] text-ok-fg">현재 활성</small>
               : <button
-                className={smallButton}
+                className={tableButton}
                 disabled={busy || switchPath(version.status) == null}
                 onClick={() => onSwitch(version)}
                 title={!mayWrite ? WRITE_DENIED : NOT_SWITCHABLE[version.status] ?? `포털이 v${version.versionNumber} 기준으로 답하게 합니다.`}
