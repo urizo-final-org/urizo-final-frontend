@@ -22,10 +22,11 @@ export const contentStyles = [
   '[&_ul]:my-3 [&_ul]:list-disc [&_ul]:pl-6 [&_ol]:my-3 [&_ol]:list-decimal [&_ol]:pl-6',
   '[&_li]:my-1 [&_li]:pl-1 [&_li]:marker:text-[var(--brand,#2a5f61)]',
   '[&_li>p]:my-0',
-  // 굵게에 색을 정하지 않는다. 색 마크가 만든 `<span style=color>` 안에 `<strong>`이 들어가면
-  // 여기서 정한 색이 부모의 인라인 색을 덮어, 굵게를 걸 때마다 고른 색이 사라진다.
-  // 굵기만으로 충분히 구분되고, 색은 사람이 고른 것이 이겨야 한다.
-  '[&_strong]:font-bold',
+  // 굵게는 본문보다 진하게 둔다. 굵기만으로는 한글에서 차이가 잘 안 보인다.
+  // 다만 색을 고른 글자 안에서는 그 색이 이겨야 한다. 색 마크가 만든 `<span style=color>` 안의
+  // `<strong>`만 골라 색을 물려받게 한다. 편집기와 렌더러가 같은 모양을 만들어 양쪽에 걸린다.
+  '[&_strong]:font-bold [&_strong]:text-[#263e48]',
+  '[&_[style*=color]_strong]:text-inherit',
   '[&_em]:italic',
   '[&_s]:line-through [&_u]:underline [&_u]:underline-offset-2',
   // 인용선은 옅게 둔다. 인용은 본문을 밀어내는 것이 아니라 옆으로 물러난 덩어리라,
