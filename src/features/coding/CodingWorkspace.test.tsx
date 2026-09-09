@@ -771,6 +771,29 @@ test('the runner reason reaches the reader who can act on it', async () => {
   expect(screen.getByText(/실행기가 이 후보에서 멈췄습니다/)).toBeInTheDocument()
 })
 
+// The approver here cannot read code. One colour for the whole block left the difference
+// between what came in and what went out to a single leading character.
+test('the diff shows added and removed lines apart rather than as one grey block', async () => {
+  render(<CodingWorkspace role="SUPER_ADMIN" api={finalApi({
+    ...githubDetail,
+    technical: {
+      ...githubDetail.technical!,
+      diff: 'diff --git a/README.md b/README.md\n-지운 줄\n+넣은 줄',
+    },
+  })} />)
+
+  const added = await screen.findByText('+넣은 줄')
+  const removed = await screen.findByText('-지운 줄')
+  const header = await screen.findByText('diff --git a/README.md b/README.md')
+
+  expect(added.className).toContain('ok')
+  expect(removed.className).toContain('fail')
+  expect(added.className).not.toEqual(removed.className)
+  // The header is neither, or a file that only moved reads as a change.
+  expect(header.className).not.toContain('ok')
+  expect(header.className).not.toContain('fail')
+})
+
 test('a missing diff warns the approver instead of leaving a silent gap', async () => {
   render(<CodingWorkspace role="SUPER_ADMIN" api={finalApi({
     ...githubDetail,
