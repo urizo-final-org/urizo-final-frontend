@@ -195,9 +195,14 @@ export default function ContentEditor({ value, onChange, api, onFailure }: {
 
       <Divider />
 
+      {/*
+        링크 글자에는 색을 칠하지 않는다. 파란 밑줄 자체가 눌러서 나가는 곳이라는 표시라,
+        다른 색을 얹으면 그 신호가 흐려진다. 밑줄은 링크에, 글자색은 그 안쪽에 걸려 서로 어긋나기도 한다.
+      */}
       <Swatches
         label="글자색"
         colors={TEXT_COLORS}
+        disabled={editor.isActive('link')}
         current={editor.getAttributes('textStyle').color as string | undefined}
         onPick={(color) => command((chain) => (color ? chain.setColor(color) : chain.unsetColor()))}
       >
@@ -206,6 +211,7 @@ export default function ContentEditor({ value, onChange, api, onFailure }: {
       <Swatches
         label="형광펜"
         colors={HIGHLIGHT_COLORS}
+        disabled={editor.isActive('link')}
         current={editor.getAttributes('highlight').color as string | undefined}
         onPick={(color) => command((chain) => (color
           ? chain.setHighlight({ color })
@@ -276,12 +282,13 @@ function Divider() {
  *
  * <p>지금 걸린 색을 아래쪽 띠로 보여준다. 아이콘만으로는 무엇이 걸려 있는지 알 수 없다.
  */
-function Swatches({ label, colors, current, onPick, clearable, children }: {
+function Swatches({ label, colors, current, onPick, clearable, disabled, children }: {
   label: string
   colors: readonly { name: string; value: string | null }[]
   current?: string
   onPick: (color: string | null) => void
   clearable?: boolean
+  disabled?: boolean
   children: ReactNode
 }) {
   const [open, setOpen] = useState(false)
@@ -290,8 +297,9 @@ function Swatches({ label, colors, current, onPick, clearable, children }: {
       type="button"
       title={label}
       aria-label={label}
-      aria-expanded={open}
-      className="grid h-7 w-7 place-items-center rounded-[0.25rem] hover:bg-sub"
+      aria-expanded={open && !disabled}
+      disabled={disabled}
+      className="grid h-7 w-7 place-items-center rounded-[0.25rem] hover:bg-sub disabled:opacity-35"
       onMouseDown={(event) => event.preventDefault()}
       onClick={() => setOpen((was) => !was)}
     >
@@ -307,7 +315,7 @@ function Swatches({ label, colors, current, onPick, clearable, children }: {
         />
       </span>
     </button>
-    {open && <span
+    {open && !disabled && <span
       className="absolute left-0 top-[1.875rem] z-20 flex gap-[0.1875rem] rounded-[0.3125rem] border border-line-soft bg-white p-[0.3125rem] shadow-[0_4px_12px_#1020341f]"
       role="group"
       aria-label={`${label} 고르기`}

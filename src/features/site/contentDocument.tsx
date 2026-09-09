@@ -26,7 +26,10 @@ export const contentStyles = [
   // 다만 색을 고른 글자 안에서는 그 색이 이겨야 한다. 색 마크가 만든 `<span style=color>` 안의
   // `<strong>`만 골라 색을 물려받게 한다. 편집기와 렌더러가 같은 모양을 만들어 양쪽에 걸린다.
   '[&_strong]:font-bold [&_strong]:text-[#263e48]',
+  // 색을 고른 글자 안에서는 진하게 할 수 없으니 획을 조금 두껍게 해서 굵기를 보이게 한다.
+  // 한글은 굵기 차이만으로는 잘 드러나지 않아 진하기가 실제 신호였다.
   '[&_[style*=color]_strong]:text-inherit',
+  '[&_[style*=color]_strong]:[-webkit-text-stroke:0.03em_currentColor]',
   '[&_em]:italic',
   '[&_s]:line-through [&_u]:underline [&_u]:underline-offset-2',
   // 인용선은 옅게 둔다. 인용은 본문을 밀어내는 것이 아니라 옆으로 물러난 덩어리라,
