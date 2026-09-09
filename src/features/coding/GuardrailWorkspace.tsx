@@ -37,6 +37,12 @@ const SHORT_PREFIXES: Record<GuardrailRepository, string> = {
  * Labels for the folders we know. The two cms entries come from the guide (6-울타리.md 6-2);
  * the rest follow its naming shape. An unknown folder falls back to its short path, exactly as
  * the guide prescribes for a missing label.
+ *
+ * The fallback is not only what this screen shows. The label chosen here is stored with the
+ * selection and copied into a job's guardrail snapshot, and the analyst is shown those labels
+ * to word its refusal with - while its instruction forbids naming a folder path. A missing
+ * label therefore puts "features/ops" in front of a general administrator through a stage that
+ * was told never to do that, so every scanned folder is named here.
  */
 const LABELS: Record<string, string> = {
   'backend:cms': 'CMS 기능',
@@ -44,8 +50,16 @@ const LABELS: Record<string, string> = {
   'backend:health': '상태 점검',
   'backend:integration': '외부 연동',
   'frontend:features/cms': 'CMS 화면',
+  // The end-user site rather than the administrator's screens - the product spec's own
+  // "사용자 화면", the half at `/` that the CMS publishes to.
+  'frontend:features/site': '사용자 화면',
+  // Agent 관리 and LLM DevOps, which the navigation groups under "AI 운영".
+  'frontend:features/ops': 'AI 운영 화면',
+  'frontend:features/site-settings': '사이트 설정',
   'frontend:app': '앱 뼈대',
   'frontend:shared/api': '서버 통신 공통',
+  // Paired with shared/ui below: parts are what a screen is built from, hooks are what it does.
+  'frontend:shared/hooks': '공통 화면 동작',
   'frontend:shared/ui': '공통 화면 부품',
   'frontend:styles': '화면 스타일',
 }

@@ -8,7 +8,13 @@ import type {
 
 const SCAN_ID = '33333333-4444-4555-8666-777777777777'
 
-const FRONTEND_FOLDERS = ['src/app', 'src/features/cms', 'src/shared/api', 'src/styles']
+// The folders the repository actually scans today, not a sample. A folder added without a
+// label is the failure this list exists to catch, and a short sample cannot catch it.
+const FRONTEND_FOLDERS = [
+  'src/app', 'src/features/cms', 'src/features/ops', 'src/features/site',
+  'src/features/site-settings', 'src/shared/api', 'src/shared/hooks', 'src/shared/ui',
+  'src/styles',
+]
 const BACKEND_FOLDERS = [
   'src/main/java/org/urizo/axmodulestudio/backend/cms',
   'src/main/java/org/urizo/axmodulestudio/backend/core',
@@ -76,6 +82,24 @@ test('both repositories are offered, labeled for a person rather than a develope
   // The guide's own label examples: features/cms → "CMS 화면", backend/cms → "CMS 기능".
   expect(await screen.findByRole('checkbox', { name: /CMS 화면/ })).toBeInTheDocument()
   expect(screen.getByRole('checkbox', { name: /CMS 기능/ })).toBeInTheDocument()
+})
+
+// The label is stored with the selection and shown to the analyst, whose refusal must name
+// areas and never a path. A folder that falls back to its short path therefore surfaces
+// "features/ops" on an administrator's screen through a stage forbidden from doing so.
+test('every scanned folder has a label that is a name, not a path', async () => {
+  render(<GuardrailWorkspace api={guardrailApi()} />)
+
+  await screen.findByRole('checkbox', { name: /CMS 화면/ })
+  // A folder row is [checkbox][label][short path]. The label is the first span; the short
+  // path beside it is a path on purpose, so it is not what is judged here.
+  const rows = Array.from(document.querySelectorAll('li > label'))
+  const names = rows.map((row) => (row.querySelector('span')?.textContent ?? '').replace(/^⚠\s*/, ''))
+
+  expect(names).toHaveLength(FRONTEND_FOLDERS.length + BACKEND_FOLDERS.length)
+  for (const name of names) {
+    expect(name, `label reads as a path: ${name}`).not.toMatch(/^[a-z][a-z0-9-]*(\/|$)/)
+  }
 })
 
 test('a scan ticks the folders already allowed', async () => {
