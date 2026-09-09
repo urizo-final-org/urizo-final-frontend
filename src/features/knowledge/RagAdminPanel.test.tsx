@@ -484,9 +484,9 @@ test('known versions are told apart by the metric column, not by anything else o
   // hit@5 — 정답이 상위 5에 하나라도 포함된 문항 수(부분점수 합이 아니다). v12·v18은 같은 250.
   expect(table.getAllByText('정답을 찾은 문항 250 / 252')).toHaveLength(2)
   expect(table.getByText('정답을 찾은 문항 249 / 252')).toBeInTheDocument()
-  // v17은 R@5 기준 하락이고 미달 사유가 배지에 그대로 보인다 — 접지 않는다.
+  // v17은 R@5 기준 하락이고 배지는 판정만 말한다 — 사유(C유형 0.7990)는 접힌 원값에 있다.
   expect(table.getByText('검색 정확도 ▼ -2.01%p')).toBeInTheDocument()
-  expect(table.getByText('기준선 미달 · C유형 0.7990 < 0.85')).toBeInTheDocument()
+  expect(table.getByText('기준선 미달')).toBeInTheDocument()
   // v18은 활성과 동률이고 통과 — v17과 나란히 갈리는 것이 시연 컷 3의 핵심이다.
   expect(table.getByText('검색 정확도 ±0.00%p')).toBeInTheDocument()
   expect(table.getAllByText('기준선 통과')).toHaveLength(2)

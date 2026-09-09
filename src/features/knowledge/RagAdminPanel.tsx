@@ -547,12 +547,13 @@ function formatDeltaPp(r5: number, activeR5: number): string {
   return diff > 0 ? `▲ +${diff.toFixed(2)}%p` : diff < 0 ? `▼ ${diff.toFixed(2)}%p` : '±0.00%p'
 }
 
-/** 기준선을 못 넘은 지표를 사유 문자열로 만든다. 통과면 빈 배열. */
-function baselineFailures(metrics: OfflineMetrics): string[] {
-  const fails: string[] = []
-  if (metrics.r5 < BASELINE_R5) fails.push(`R@5 ${metrics.r5.toFixed(4)} < ${BASELINE_R5}`)
-  if (metrics.cType < BASELINE_C_TYPE) fails.push(`C유형 ${metrics.cType.toFixed(4)} < ${BASELINE_C_TYPE}`)
-  return fails
+/**
+ * 기준선을 넘었는가. **어느 지표가 왜 걸렸는지는 배지에 쓰지 않는다** —
+ * `C유형 0.7990 < 0.85`는 이 프로젝트 밖의 사람에게 읽히지 않는 표기이고,
+ * 원값은 바로 아래 접힘(`METRICS_SOURCE` 토글)에 그대로 있다.
+ */
+function meetsBaseline(metrics: OfflineMetrics): boolean {
+  return metrics.r5 >= BASELINE_R5 && metrics.cType >= BASELINE_C_TYPE
 }
 
 function MetricsCell({ version, activeR5 }: { version: KnowledgeVersion; activeR5: number | null }) {
@@ -562,14 +563,11 @@ function MetricsCell({ version, activeR5 }: { version: KnowledgeVersion; activeR
   // 활성 행은 비교 기준 자체라 델타가 없고, 활성 버전이 미측정이면 비교할 대상이 없다.
   const compare = !isActive && activeR5 != null
   const headline = isActive ? '검색 정확도 기준' : compare ? `검색 정확도 ${formatDeltaPp(metrics.r5, activeR5)}` : '검색 정확도'
-  const fails = baselineFailures(metrics)
+  const passes = meetsBaseline(metrics)
   return <span className="flex flex-col items-start gap-[0.1875rem]">
     <b className="text-[0.71875rem] font-semibold text-ink">{headline}</b>
     <span className="text-[0.6875rem] text-body">{`정답을 찾은 문항 ${metrics.hit5} / ${METRICS_TOTAL}`}</span>
-    {/* 미달 사유는 접지 않는다 — 어느 지표가 왜 걸렸는지가 승인 판단의 근거다. */}
-    <Badge tone={fails.length === 0 ? 'ok' : 'fail'}>
-      {fails.length === 0 ? '기준선 통과' : `기준선 미달 · ${fails.join(' · ')}`}
-    </Badge>
+    <Badge tone={passes ? 'ok' : 'fail'}>{passes ? '기준선 통과' : '기준선 미달'}</Badge>
     {/* 출처 라벨이 토글 손잡이다. 접히는 것은 원값뿐 — 라벨 자체는 절대 접히지 않는다. */}
     <details>
       <summary className="cursor-pointer list-none text-[0.625rem] text-muted-3 [&::-webkit-details-marker]:hidden">
@@ -623,10 +621,7 @@ function VersionTable({ versions, mayWrite, blocked, busy, canRollback, onSwitch
         </div>}
         {shown?.length === 0 && <div className="px-4 py-6 text-xs text-muted-3">버전이 없습니다.</div>}
         {shown?.map((version) => <div key={version.knowledgeVersionId} className={`${bodyRow} ${columns}`}>
-          <span className="flex items-center gap-2">
-            <b className="text-[0.78125rem] font-semibold text-ink">v{version.versionNumber}</b>
-            {version.label && <small className="truncate text-[0.6875rem] text-muted-3">{version.label}</small>}
-          </span>
+          <span><b className="text-[0.78125rem] font-semibold text-ink">v{version.versionNumber}</b></span>
           <span><Badge tone={STATUS_TONE[version.status]}>{STATUS_LABEL[version.status]}</Badge></span>
           <span className="font-mono">{version.documentCount}/{version.chunkCount}</span>
           {hasMetrics && <MetricsCell version={version} activeR5={activeR5} />}
