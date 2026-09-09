@@ -1,4 +1,5 @@
-import { Fragment, type ReactNode } from 'react'
+import { Fragment, type CSSProperties, type ReactNode } from 'react'
+import { highlightColor, textColor } from './contentPalette'
 
 /**
  * 컨텐츠 본문의 생김새. 편집기·미리보기·사용자 사이트가 이 하나를 함께 쓴다.
@@ -21,9 +22,27 @@ export const contentStyles = [
   '[&_ul]:my-3 [&_ul]:list-disc [&_ul]:pl-6 [&_ol]:my-3 [&_ol]:list-decimal [&_ol]:pl-6',
   '[&_li]:my-1 [&_li]:pl-1 [&_li]:marker:text-[var(--brand,#2a5f61)]',
   '[&_li>p]:my-0',
+  // 굵게는 본문보다 진하게 둔다. 굵기만으로는 한글에서 차이가 잘 안 보인다.
+  // 다만 색을 고른 글자 안에서는 그 색이 이겨야 한다. 색 마크가 만든 `<span style=color>` 안의
+  // `<strong>`만 골라 색을 물려받게 한다. 편집기와 렌더러가 같은 모양을 만들어 양쪽에 걸린다.
   '[&_strong]:font-bold [&_strong]:text-[#263e48]',
+  // 색을 고른 글자의 굵게는 그 색을 물려받아 한 단계 진하게 한다. 한글은 굵기 차이만으로 잘
+  // 드러나지 않아 진하기가 실제 신호다. 획을 두껍게 하는 방법은 자소가 뭉개졌다.
+  //
+  // 색 값으로 규칙을 나누지 않는다. 편집기는 인라인 색을 hex로 두는데 렌더러는 React가
+  // `rgb(...)`로 바꿔 적어, 값을 대조하면 두 화면이 서로 다르게 걸린다.
+  // 글자색만 손댄다. `filter`로 어둡게 하면 형광펜 배경까지 함께 어두워진다.
+  '[&_[style*=color]_strong]:[color:color-mix(in_srgb,currentColor_78%,black)]',
   '[&_em]:italic',
   '[&_s]:line-through [&_u]:underline [&_u]:underline-offset-2',
+  // 인용선은 옅게 둔다. 인용은 본문을 밀어내는 것이 아니라 옆으로 물러난 덩어리라,
+  // 선이 진하면 시선을 뺏는다. 대표색을 쓰면 링크 파랑에 색이 하나 더 늘어난다.
+  '[&_blockquote]:my-6 [&_blockquote]:border-l-[3px] [&_blockquote]:border-[#d5dee0]',
+  '[&_blockquote]:pl-5 [&_blockquote]:text-[#5a7178]',
+  '[&_blockquote>p]:my-2',
+  '[&_hr]:my-8 [&_hr]:border-0 [&_hr]:border-t [&_hr]:border-[#dde5e6]',
+  // 형광펜 안에서도 글자색이 살아 있어야 한다. 브라우저 기본값이 검정이라 덮어쓴다.
+  '[&_mark]:rounded-[0.15em] [&_mark]:px-[0.15em]',
   // 링크는 템플릿 대표색을 따르지 않고 파란색으로 고정한다. 본문 안에서 눌러서 나가는 곳임을
   // 알아보는 표시라 대표색과 섞이면 그냥 강조한 글자로 읽힌다.
   '[&_a]:text-[#0b63ce] [&_a]:underline [&_a]:underline-offset-2',
@@ -88,6 +107,10 @@ function render(node: DocumentNode): ReactNode {
       return <ol>{children(node)}</ol>
     case 'listItem':
       return <li>{children(node)}</li>
+    case 'blockquote':
+      return <blockquote>{children(node)}</blockquote>
+    case 'horizontalRule':
+      return <hr />
     case 'image':
       return <img src={text(node.attrs?.src)} alt={text(node.attrs?.alt)} />
     default:
@@ -104,6 +127,15 @@ function marked(node: DocumentNode): ReactNode {
     else if (mark.type === 'italic') content = <em>{content}</em>
     else if (mark.type === 'strike') content = <s>{content}</s>
     else if (mark.type === 'underline') content = <u>{content}</u>
+    // 색은 팔레트에 있는 값만 쓴다. 값이 목록 밖이면 색 없이 글자만 남긴다.
+    else if (mark.type === 'textStyle') {
+      const color = textColor(mark.attrs?.color)
+      if (color) content = <span style={{ color }}>{content}</span>
+    }
+    else if (mark.type === 'highlight') {
+      const background = highlightColor(mark.attrs?.color)
+      if (background) content = <mark style={highlightStyle(background)}>{content}</mark>
+    }
     else if (mark.type === 'link') {
       const href = text(mark.attrs?.href)
       // 바깥으로 나가는 링크는 새 창으로 열고 참조자를 넘기지 않는다.
@@ -117,4 +149,9 @@ function marked(node: DocumentNode): ReactNode {
 
 function text(value: unknown) {
   return typeof value === 'string' ? value : ''
+}
+
+/** 형광펜의 기본 글자색은 검정이다. 본문 색을 물려받게 해서 형광만 얹는다. */
+function highlightStyle(background: string): CSSProperties {
+  return { background, color: 'inherit' }
 }
