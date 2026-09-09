@@ -505,32 +505,46 @@ function QualityMetrics() {
 }
 
 /**
- * A5 지표 셀의 값. 최고 관리자가 `R@5 0.981` 같은 원값을 해석할 거라고 가정하지 않는다 —
- * 활성 대비 델타·건수 환산·기준선 배지로 먼저 말하고 원값은 맨 아래 작게 둔다.
+ * A5 지표 셀의 값. 최고 관리자가 `R@5 0.9747` 같은 원값을 해석할 거라고 가정하지 않는다 —
+ * 활성 대비 R@5 델타·hit@5 건수·기준선 배지로 먼저 말하고 원값은 접어 둔다.
+ *
+ * <p>`hit5`는 **정답이 상위 5에 하나라도 포함된 문항 수**다(부분점수 합이 아니다). 델타 %p는
+ * R@5 기준이라 hit@5 건수와는 서로 다른 양이다 — 건수로 델타를 다시 계산하지 않는다.
  *
  * <p>⚠️ **측정 후 교체 지점은 이 상수 묶음뿐이다.** 빌드의 evaluate 단계가 스텁이라
  * `knowledge_version.score`는 무조건 100이고(`admin-types.ts`) 서버 값을 지표로 쓸 수 없다.
- * 출처 라벨(`METRICS_SOURCE`) 없이 숫자만 두면 시스템이 방금 잰 것처럼 보이는 거짓말이
- * 된다 — 셀은 라벨을 항상 함께 그린다. 버전별 오프라인 재측정이 나오면 아래 표의 값과
- * 출처 날짜를 같이 바꾼다.
+ * 출처 라벨(`METRICS_SOURCE`)은 접힘 토글의 손잡이로 항상 보이게 둔다 — 라벨 없이 숫자만
+ * 있으면 시스템이 방금 잰 것처럼 보이는 거짓말이 된다. 재측정이 나오면 아래 표와 출처
+ * 날짜를 같이 바꾼다.
  *
- * <p>키는 `versionNumber`라 환경마다 다르다(함정 24) — 지금 키는 데모 DB(활성 v12) 기준
- * 임시값이고, 표에 없는 버전은 "측정 전"으로 그린다.
+ * <p>키는 `versionNumber`라 환경마다 다르다(함정 24) — 지금 값은 데모 DB(활성 v12) 기준
+ * 2026-09-09 오프라인 실측이고, 표에 없는 버전은 "측정 전"으로 그린다.
  */
-const VERSION_METRICS: Record<number, { r5: number; mrr: number }> = {
-  12: { r5: 0.975, mrr: 0.970 }, // 2026-08-29 측정 스냅샷 — A4 품질 지표 패널과 같은 값
-  14: { r5: 0.941, mrr: 0.936 }, // 임시값 — 버전별 재측정 후 교체 (기준선 미달 예시)
-  16: { r5: 0.981, mrr: 0.974 }, // 임시값 — 버전별 재측정 후 교체
+type OfflineMetrics = { r5: number; cType: number; mrr: number; hit5: number; appliedTo: string }
+
+const VERSION_METRICS: Record<number, OfflineMetrics> = {
+  12: { r5: 0.9747, cType: 0.8968, mrr: 0.9704, hit5: 250, appliedTo: 'v12 색인 실측' },
+  17: { r5: 0.9546, cType: 0.7990, mrr: 0.9697, hit5: 249, appliedTo: 'v17 색인 실측' },
+  18: { r5: 0.9747, cType: 0.8968, mrr: 0.9704, hit5: 250, appliedTo: 'v18 색인 실측' },
 }
-/** 오프라인 TC 전건. 건수 환산(`0.975 → 246건`)의 분모다. */
+/** 오프라인 TC 전건. hit@5 건수의 분모다. */
 const METRICS_TOTAL = 252
-const METRICS_BASELINE = 0.95
-const METRICS_SOURCE = '오프라인 측정 · 8/29'
+const BASELINE_R5 = 0.95
+const BASELINE_C_TYPE = 0.85
+const METRICS_SOURCE = '오프라인 측정 · 9/9'
 
 function formatDeltaPp(r5: number, activeR5: number): string {
-  // 0.981-0.975는 부동소수점으로 0.6000000000000005%p가 된다. 소수 1자리로 자른다.
-  const diff = Math.round((r5 - activeR5) * 1000) / 10
-  return diff > 0 ? `▲ +${diff}%p` : diff < 0 ? `▼ ${diff}%p` : '±0.0%p'
+  // 0.9546-0.9747은 부동소수점 꼬리가 붙는다. 소수 2자리 %p로 자른다.
+  const diff = Math.round((r5 - activeR5) * 10000) / 100
+  return diff > 0 ? `▲ +${diff.toFixed(2)}%p` : diff < 0 ? `▼ ${diff.toFixed(2)}%p` : '±0.00%p'
+}
+
+/** 기준선을 못 넘은 지표를 사유 문자열로 만든다. 통과면 빈 배열. */
+function baselineFailures(metrics: OfflineMetrics): string[] {
+  const fails: string[] = []
+  if (metrics.r5 < BASELINE_R5) fails.push(`R@5 ${metrics.r5.toFixed(4)} < ${BASELINE_R5}`)
+  if (metrics.cType < BASELINE_C_TYPE) fails.push(`C유형 ${metrics.cType.toFixed(4)} < ${BASELINE_C_TYPE}`)
+  return fails
 }
 
 function MetricsCell({ version, activeR5 }: { version: KnowledgeVersion; activeR5: number | null }) {
@@ -538,20 +552,28 @@ function MetricsCell({ version, activeR5 }: { version: KnowledgeVersion; activeR
   const measurable = version.status === 'ACTIVE' || version.status === 'ARCHIVED' || version.status === 'APPROVAL_PENDING'
   const metrics = measurable ? VERSION_METRICS[version.versionNumber] : undefined
   if (!metrics) return <span className="text-[0.6875rem] text-muted-3">측정 전</span>
-  const count = Math.round(metrics.r5 * METRICS_TOTAL)
   const isActive = version.status === 'ACTIVE'
   // 활성 행은 비교 기준 자체라 델타가 없고, 활성 버전이 미측정이면 비교할 대상이 없다.
   const compare = !isActive && activeR5 != null
   const headline = isActive ? '검색 정확도 기준' : compare ? `검색 정확도 ${formatDeltaPp(metrics.r5, activeR5)}` : '검색 정확도'
-  const pass = metrics.r5 >= METRICS_BASELINE
+  const fails = baselineFailures(metrics)
   return <span className="flex flex-col items-start gap-[0.1875rem]">
     <b className="text-[0.71875rem] font-semibold text-ink">{headline}</b>
-    <span className="text-[0.6875rem] text-body">
-      {`${METRICS_TOTAL}문항 중 정답 포함 ${compare ? `${Math.round(activeR5 * METRICS_TOTAL)} → ${count}건` : `${count}건`}`}
-    </span>
-    <Badge tone={pass ? 'ok' : 'fail'}>{`기준선 ≥${METRICS_BASELINE} ${pass ? '통과' : '미달'}`}</Badge>
-    <span className="font-mono text-[0.625rem] text-muted-2">{`R@5 ${metrics.r5.toFixed(3)} · MRR ${metrics.mrr.toFixed(3)}`}</span>
-    <span className="text-[0.625rem] text-muted-3">{METRICS_SOURCE}</span>
+    <span className="text-[0.6875rem] text-body">{`정답을 찾은 문항 ${metrics.hit5} / ${METRICS_TOTAL}`}</span>
+    {/* 미달 사유는 접지 않는다 — 어느 지표가 왜 걸렸는지가 승인 판단의 근거다. */}
+    <Badge tone={fails.length === 0 ? 'ok' : 'fail'}>
+      {fails.length === 0 ? '기준선 통과' : `기준선 미달 · ${fails.join(' · ')}`}
+    </Badge>
+    {/* 출처 라벨이 토글 손잡이다. 접히는 것은 원값뿐 — 라벨 자체는 절대 접히지 않는다. */}
+    <details>
+      <summary className="cursor-pointer list-none text-[0.625rem] text-muted-3 [&::-webkit-details-marker]:hidden">
+        {`${METRICS_SOURCE} ▾`}
+      </summary>
+      <span className="block font-mono text-[0.625rem] text-muted-2">
+        {`R@5 ${metrics.r5.toFixed(4)} · C유형 ${metrics.cType.toFixed(4)} · MRR ${metrics.mrr.toFixed(4)}`}
+      </span>
+      <span className="block text-[0.625rem] text-muted-3">{`${METRICS_TOTAL} TC · ${metrics.appliedTo}`}</span>
+    </details>
   </span>
 }
 

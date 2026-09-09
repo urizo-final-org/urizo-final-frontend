@@ -300,41 +300,53 @@ test('a failing switch surfaces the error and leaves the table refreshed', async
   expect(listVersions.mock.calls.length).toBeGreaterThan(1)
 })
 
-test('the metrics cell speaks in deltas, counts, a baseline badge and a source label — not raw scores', async () => {
+/**
+ * 시연 컷 3의 핵심 대조 — 승인 대기 v17(미달)과 v18(통과)이 나란히 뜨고,
+ * 활성 v12는 비교 기준으로 남는다.
+ */
+test('the metrics cell speaks in deltas, hit counts, a baseline badge and a source label — not raw scores', async () => {
   show(<RagAdminPanel api={api({
     listVersions: vi.fn().mockResolvedValue({
       items: [
-        version({ versionNumber: 16, status: 'APPROVAL_PENDING', knowledgeVersionId: 'kv-16', activatedAt: undefined }),
-        version({ versionNumber: 14, status: 'ARCHIVED', knowledgeVersionId: 'kv-14' }),
+        version({ versionNumber: 18, status: 'APPROVAL_PENDING', knowledgeVersionId: 'kv-18', activatedAt: undefined }),
+        version({ versionNumber: 17, status: 'APPROVAL_PENDING', knowledgeVersionId: 'kv-17', activatedAt: undefined }),
         version({ versionNumber: 12, knowledgeVersionId: 'kv-12' }),
       ],
     }),
   })} role="SUPER_ADMIN" />)
   const table = within((await screen.findByText('RAG 버전')).closest('section') as HTMLElement)
 
-  // 활성 v12는 비교 기준이라 델타 대신 "기준"과 단일 건수(0.975 × 252 ≈ 246).
+  // 활성 v12는 비교 기준이라 델타 대신 "기준".
   expect(table.getByText('검색 정확도 기준')).toBeInTheDocument()
-  expect(table.getByText('252문항 중 정답 포함 246건')).toBeInTheDocument()
-  // 승인 대기 v16은 활성 대비 상승 — 원값 0.981이 아니라 %p 델타와 건수 환산으로 말한다.
-  expect(table.getByText('검색 정확도 ▲ +0.6%p')).toBeInTheDocument()
-  expect(table.getByText('252문항 중 정답 포함 246 → 247건')).toBeInTheDocument()
-  // 보관 v14는 하락이고 기준선 미달 배지를 단다.
-  expect(table.getByText('검색 정확도 ▼ -3.4%p')).toBeInTheDocument()
-  expect(table.getByText('기준선 ≥0.95 미달')).toBeInTheDocument()
-  expect(table.getAllByText('기준선 ≥0.95 통과')).toHaveLength(2)
-  // 원값은 맨 아래 작게만 남는다.
-  expect(table.getByText('R@5 0.981 · MRR 0.974')).toBeInTheDocument()
-  // 출처 라벨은 숫자가 있는 셀 전부에 붙는다 — evaluate가 스텁(score=100 고정)이라
-  // 이 라벨이 없으면 방금 잰 값처럼 보이는 거짓말이 된다.
-  expect(table.getAllByText('오프라인 측정 · 8/29')).toHaveLength(3)
+  // hit@5 건수 — 정답이 상위 5에 포함된 문항 수. v12와 v18은 같은 값(250)이다.
+  expect(table.getAllByText('정답을 찾은 문항 250 / 252')).toHaveLength(2)
+  expect(table.getByText('정답을 찾은 문항 249 / 252')).toBeInTheDocument()
+  // v17은 R@5 기준 하락이고 미달 사유(C유형)가 배지에 그대로 보인다 — 접지 않는다.
+  expect(table.getByText('검색 정확도 ▼ -2.01%p')).toBeInTheDocument()
+  expect(table.getByText('기준선 미달 · C유형 0.7990 < 0.85')).toBeInTheDocument()
+  // v18은 활성과 동률(±0.00%p)이고 통과 — v17과 나란히 갈리는 것이 시연 컷의 핵심이다.
+  expect(table.getByText('검색 정확도 ±0.00%p')).toBeInTheDocument()
+  expect(table.getAllByText('기준선 통과')).toHaveLength(2)
+  // 원값은 접힌 details 안에 있다 — DOM에는 있으나 기본으로 보이지 않는다.
+  const raw = table.getByText('R@5 0.9546 · C유형 0.7990 · MRR 0.9697')
+  expect(raw).not.toBeVisible()
+  expect(table.getByText('252 TC · v17 색인 실측')).not.toBeVisible()
+  // 출처 라벨은 토글 손잡이라 항상 보인다 — evaluate가 스텁(score=100 고정)이라
+  // 이 라벨이 접히면 방금 잰 값처럼 보이는 거짓말이 된다.
+  const summaries = table.getAllByText('오프라인 측정 · 9/9 ▾')
+  expect(summaries).toHaveLength(3)
+  summaries.forEach((summary) => expect(summary).toBeVisible())
+  // details를 열면 원값이 보인다(JS 없이 <details> 네이티브 동작).
+  ;(raw.closest('details') as HTMLDetailsElement).open = true
+  expect(raw).toBeVisible()
 })
 
 test('a version without an offline measurement says so instead of inventing numbers', async () => {
   show(<RagAdminPanel api={api({
     listVersions: vi.fn().mockResolvedValue({
       items: [
-        // v14는 측정 상수에 키가 있지만 FAILED다 — 문서 0건 빌드에 측정값이 떠 있으면 거짓이다.
-        version({ versionNumber: 14, status: 'FAILED', knowledgeVersionId: 'kv-14', documentCount: 0, chunkCount: 0, activatedAt: undefined }),
+        // v17은 측정 상수에 키가 있지만 FAILED다 — 문서 0건 빌드에 측정값이 떠 있으면 거짓이다.
+        version({ versionNumber: 17, status: 'FAILED', knowledgeVersionId: 'kv-17', documentCount: 0, chunkCount: 0, activatedAt: undefined }),
         version({ versionNumber: 15, status: 'FAILED', knowledgeVersionId: 'kv-15', documentCount: 0, chunkCount: 0, activatedAt: undefined }),
         version({ versionNumber: 12, knowledgeVersionId: 'kv-12' }),
       ],
@@ -343,7 +355,7 @@ test('a version without an offline measurement says so instead of inventing numb
   const table = within((await screen.findByText('RAG 버전')).closest('section') as HTMLElement)
   expect(table.getAllByText('측정 전')).toHaveLength(2)
   // 미측정 셀에는 출처 라벨도 붙지 않는다 — 붙일 숫자가 없다.
-  expect(table.getAllByText('오프라인 측정 · 8/29')).toHaveLength(1)
+  expect(table.getAllByText('오프라인 측정 · 9/9 ▾')).toHaveLength(1)
 })
 
 test('the switch button label is just 전환 while the endpoint split stays elsewhere', async () => {
