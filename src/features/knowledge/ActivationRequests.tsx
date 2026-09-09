@@ -5,7 +5,7 @@ import type { KnowledgeAdminApi } from './admin-api'
 import type { ActivationRequest, KnowledgeVersion } from './admin-types'
 
 /**
- * 자료 갱신 요청 경로.
+ * 갱신 요청 경로.
  *
  * <p>**메우는 구멍**: 쓰기 4종이 전부 `SUPER_ADMIN` 전용이라 일반 관리자는 문제를 발견해도
  * 회색 버튼 툴팁의 "최고 관리자에게 요청하세요"가 전부였고, 그 문장은 아무 데로도 가지 않았다.
@@ -91,7 +91,7 @@ export function ActivationRequests({ api, knowledgeBaseId, mayWrite, versions, r
   const open = requests ?? []
 
   return <section className={panel}>
-    <PanelTitle title="자료 갱신 요청" sub={requests ? `열린 요청 ${open.length}건` : undefined} />
+    <PanelTitle title="갱신 요청" sub={requests ? `열린 요청 ${open.length}건` : undefined} />
 
     {!mayWrite && <div className="flex flex-col gap-2 border-b border-line-soft px-4 py-[0.875rem]">
       <p className="m-0 text-[0.6875rem] text-muted-3">

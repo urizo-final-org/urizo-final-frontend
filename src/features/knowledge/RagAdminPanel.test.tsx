@@ -469,5 +469,5 @@ test('a successful activation refetches the open requests too', async () => {
 test('a general admin gets a request path instead of a dead-ended tooltip', async () => {
   show(<RagAdminPanel api={api()} role="GENERAL_ADMIN" />)
   expect(await screen.findByRole('button', { name: '갱신 요청' })).toBeEnabled()
-  expect(screen.getByText(/아래 「자료 갱신 요청」에 남기면/)).toBeInTheDocument()
+  expect(screen.getByText(/아래 「갱신 요청」에 남기면/)).toBeInTheDocument()
 })

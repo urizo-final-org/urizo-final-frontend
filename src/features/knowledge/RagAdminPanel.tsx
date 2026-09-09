@@ -293,7 +293,7 @@ export function RagAdminPanel({ api, role }: { api: KnowledgeAdminApi; role: Adm
     </PageHead>
 
     {/* 이 문장은 원래 아무 데로도 가지 않았다. 이제 아래 요청 패널이 그 경로다. */}
-    {!mayWrite && <Callout tone="warn" icon="lock">조회만 가능합니다. {WRITE_DENIED} 아래 「자료 갱신 요청」에 남기면 그대로 전달됩니다.</Callout>}
+    {!mayWrite && <Callout tone="warn" icon="lock">조회만 가능합니다. {WRITE_DENIED} 아래 「갱신 요청」에 남기면 그대로 전달됩니다.</Callout>}
     {failure != null && <Callout tone="warn" icon="triangle-alert">{describeFailure(failure)}</Callout>}
     {target?.kind === 'empty' && <TargetNotice target={target} />}
     {target != null && target.kind !== 'empty' && <TargetPicker target={target} onPick={pickTarget} />}
