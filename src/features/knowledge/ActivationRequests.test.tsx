@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { StrictMode } from 'react'
 import { expect, test, vi } from 'vitest'
 import { ActivationRequests } from './ActivationRequests'
+import { REFRESH_INTERVAL_MS } from './pending-approvals'
 import type { KnowledgeAdminApi } from './admin-api'
 import type { ActivationRequest, KnowledgeVersion } from './admin-types'
 
@@ -103,6 +104,29 @@ test('a resolved request disappears when the panel bumps the refresh key', async
     knowledgeBaseId="kb-1" mayWrite versions={[version()]} refreshKey={1}
   />)
   expect(await screen.findByText('열린 요청이 없습니다.')).toBeInTheDocument()
+})
+
+/**
+ * PR #55 리뷰 2 — 뱃지는 60초마다 갱신되는데 목록은 마운트·refreshKey에서만 읽어서,
+ * 화면을 열어둔 채 다른 관리자가 요청을 보내면 뱃지 숫자만 오르고 목록은 "열린 요청이
+ * 없습니다"로 남았다. 목록도 뱃지와 같은 상수 주기로 다시 읽는다.
+ */
+test('an open screen picks up requests from other admins on the badge cadence', async () => {
+  vi.useFakeTimers()
+  try {
+    const listing = vi.fn()
+      .mockResolvedValueOnce({ items: [] })
+      .mockResolvedValue({ items: [request()] })
+    show(api({ listActivationRequests: listing }), { mayWrite: true })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(listing).toHaveBeenCalledTimes(1)
+    await vi.advanceTimersByTimeAsync(REFRESH_INTERVAL_MS)
+    expect(listing).toHaveBeenCalledTimes(2)
+  }
+  finally {
+    vi.useRealTimers()
+  }
+  expect(await screen.findByText('일반 관리자')).toBeInTheDocument()
 })
 
 /**

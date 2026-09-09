@@ -17,7 +17,8 @@ import type { KnowledgeAdminApi } from './admin-api'
  * 다만 **요청 조회 실패는 승인 대기 건수까지 지우지 않는다** — 백엔드가 아직 이 엔드포인트를
  * 배포하지 않은 환경에서 404 하나로 기존 뱃지가 통째로 꺼지면 안 된다.
  */
-const REFRESH_INTERVAL_MS = 60_000
+/** 뱃지와 갱신 요청 목록이 같은 주기를 쓴다 — 갈라지면 "뱃지는 3인데 목록은 비어 있는" 화면이 된다. */
+export const REFRESH_INTERVAL_MS = 60_000
 /** 껍데기에서 도는 조회라 상한을 둔다. 뱃지 하나를 위해 목록을 무한정 훑지 않는다. */
 const MAX_PROJECTS = 5
 

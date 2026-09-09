@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { describeFailure } from '../../shared/api/error'
 import { Callout, PanelTitle, panel, smallButton, textarea } from '../../shared/ui/primitives'
+import { REFRESH_INTERVAL_MS } from './pending-approvals'
 import type { KnowledgeAdminApi } from './admin-api'
 import type { ActivationRequest, KnowledgeVersion } from './admin-types'
 import { noHover } from './no-hover'
@@ -73,6 +74,15 @@ export function ActivationRequests({ api, knowledgeBaseId, mayWrite, versions, r
   }, [api, knowledgeBaseId])
 
   useEffect(() => { void load() }, [load, refreshKey])
+
+  // 메뉴 뱃지는 60초마다 갱신되는데 이 목록은 마운트·refreshKey에서만 읽어서, 화면을
+  // 열어둔 채 다른 관리자가 요청을 보내면 뱃지 숫자만 오르고 목록은 "열린 요청이
+  // 없습니다"로 남았다(PR #55 리뷰 2). 뱃지와 같은 상수를 써서 두 주기가 어긋날 수 없게 한다.
+  useEffect(() => {
+    if (!knowledgeBaseId) return
+    const timer = setInterval(() => { void load() }, REFRESH_INTERVAL_MS)
+    return () => clearInterval(timer)
+  }, [knowledgeBaseId, load])
 
   const send = useCallback(async () => {
     if (!knowledgeBaseId) return
