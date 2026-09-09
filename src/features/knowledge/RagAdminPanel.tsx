@@ -525,7 +525,7 @@ function VersionTable({ versions, mayWrite, blocked, busy, canRollback, onSwitch
         disabled={busy || !canRollback}
         onClick={onRollback}
         title={!mayWrite ? WRITE_DENIED : canRollback ? '마지막으로 활성화됐던 버전으로 되돌립니다.' : '되돌릴 이전 활성 버전이 없습니다.'}
-      >이전 활성 버전으로 롤백</button>
+      >이전 버전 롤백</button>
     </PanelTitle>
     <div className="overflow-x-auto">
       <div className="min-w-[43.75rem]">
@@ -552,9 +552,7 @@ function VersionTable({ versions, mayWrite, blocked, busy, canRollback, onSwitch
                 disabled={busy || switchPath(version.status) == null}
                 onClick={() => onSwitch(version)}
                 title={!mayWrite ? WRITE_DENIED : NOT_SWITCHABLE[version.status] ?? `포털이 v${version.versionNumber} 기준으로 답하게 합니다.`}
-              >
-                {version.status === 'APPROVAL_PENDING' ? '활성화(승인)' : '활성화'}
-              </button>}
+              >전환</button>}
           </span>
         </div>)}
         {hidden > 0 && <button

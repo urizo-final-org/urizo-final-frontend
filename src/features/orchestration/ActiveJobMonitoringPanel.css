@@ -1,0 +1,152 @@
+.admin-app .monitoring-node-card {
+  border-style: solid;
+}
+
+.monitoring-node-card[data-node-selected='true'] {
+  outline: 1px solid #a5d4fc;
+  outline-offset: 4px;
+}
+
+.monitoring-node-card[data-node-current='true'] {
+  z-index: 2;
+  box-shadow: 0 0 0 1px #ff4058, 0 0 22px #ff405859, 0 8px 22px #070a0e59;
+}
+
+.monitoring-node-activity {
+  position: absolute;
+  inset: -1px;
+  overflow: visible;
+  pointer-events: none;
+  fill: none;
+  stroke-width: 4.5;
+  filter: drop-shadow(0 0 5px #ff4058cc);
+}
+
+.monitoring-node-activity rect {
+  animation: monitoring-border-orbit 2.6s linear infinite;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.monitoring-node-activity__trail {
+  stroke: #ff334f;
+  stroke-dasharray: 34 66;
+}
+
+.monitoring-node-activity__head {
+  stroke: #fff4f6;
+  stroke-dasharray: 5 95;
+  stroke-width: 3.5;
+}
+
+.monitoring-node-signals {
+  display: grid;
+  gap: 5px;
+}
+
+.monitoring-node-signals__secondary {
+  display: flex;
+  gap: 5px;
+}
+
+.monitoring-status-chip--provider {
+  flex: 1 1 auto;
+}
+
+.monitoring-status-chip--quality {
+  flex: 0 0 auto;
+}
+
+.monitoring-status-chip {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  padding: 3px 6px;
+  font-size: 0.625rem;
+  font-weight: 650;
+  line-height: 1.2;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.monitoring-status-chip--node {
+  font-size: 0.6875rem;
+  font-weight: 750;
+  letter-spacing: 0.01em;
+}
+
+.monitoring-status-chip--node[data-node-status='NOT_STARTED'] {
+  border-color: #64748b;
+  background: #33415599;
+  color: #d7e0eb;
+}
+
+.monitoring-status-chip--node[data-node-status='RUNNING'] {
+  border-color: #fb7185;
+  background: #9f12394d;
+  color: #ffe4e8;
+}
+
+.monitoring-status-chip--node[data-node-status='WAITING_APPROVAL'] {
+  border-color: #f59e0b;
+  background: #b4530952;
+  color: #ffedb5;
+}
+
+.monitoring-status-chip--node[data-node-status='COMPLETED'] {
+  border-color: #22c55e;
+  background: #16653466;
+  color: #c8f8d7;
+}
+
+.monitoring-status-chip--node[data-node-status='FAILED'] {
+  border-color: #f87171;
+  background: #991b1b66;
+  color: #ffe0e0;
+}
+
+.monitoring-status-chip--provider[data-provider-tone='unread'] {
+  border-color: #526071;
+  background: #273342b3;
+  color: #aeb9c8;
+}
+
+.monitoring-status-chip--provider[data-provider-tone='pending'] {
+  border-color: #38bdf8;
+  background: #07598552;
+  color: #d0f1ff;
+}
+
+.monitoring-status-chip--provider[data-provider-tone='connected'] {
+  border-color: #2dd4bf;
+  background: #0f766e52;
+  color: #ccfbf1;
+}
+
+.monitoring-status-chip--provider[data-provider-tone='disabled'] {
+  border-color: #8b5cf6;
+  background: #5b21b64d;
+  color: #e4d7ff;
+}
+
+.monitoring-status-chip--provider[data-provider-tone='error'] {
+  border-color: #f87171;
+  background: #7f1d1d52;
+  color: #ffd7d7;
+}
+
+.monitoring-status-chip--quality[data-quality-status='unconfigured'] {
+  border-color: #526071;
+  background: #202a36b3;
+  color: #9eabbc;
+}
+
+@keyframes monitoring-border-orbit {
+  to { stroke-dashoffset: -100; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .monitoring-node-activity rect { animation: none; }
+}
