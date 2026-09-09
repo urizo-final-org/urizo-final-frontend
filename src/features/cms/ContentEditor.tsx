@@ -8,7 +8,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { contentStyles } from '../site/contentDocument'
 import { HIGHLIGHT_COLORS, TEXT_COLORS } from '../site/contentPalette'
 import { contentImageUrl, type CmsApi } from './api'
-import { cleanImportedHtml } from './contentHtml'
+import { cleanImportedHtml, formatHtml } from './contentHtml'
 
 /**
  * 컨텐츠 본문 편집기.
@@ -124,7 +124,7 @@ export default function ContentEditor({ value, onChange, api, onFailure }: {
   function toggleSource() {
     if (!editor) return
     if (source === null) {
-      setSource(editor.getHTML())
+      setSource(formatHtml(editor.getHTML()))
       return
     }
     const cleaned = cleanImportedHtml(source)

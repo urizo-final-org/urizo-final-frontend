@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest'
-import { cleanImportedHtml } from './contentHtml'
+import { cleanImportedHtml, formatHtml } from './contentHtml'
 
 test('아는 태그는 그대로 두고 모르는 것은 이름을 모은다', () => {
   const result = cleanImportedHtml(
@@ -50,4 +50,37 @@ test('b·i 같은 옛 태그는 빠진 것으로 세지 않는다', () => {
   const result = cleanImportedHtml('<p><b>굵게</b><i>기울임</i><s>취소선</s></p>')
 
   expect(result.dropped).toEqual([])
+})
+
+test('덩어리마다 줄을 나누고 안에 든 것은 들여쓴다', () => {
+  const result = formatHtml(
+    '<h2>제목</h2><p>문단 <strong>굵게</strong>입니다</p>'
+    + '<ul><li><p>하나</p></li><li><p>둘</p></li></ul><hr>')
+
+  expect(result).toBe([
+    '<h2>제목</h2>',
+    '<p>문단 <strong>굵게</strong>입니다</p>',
+    '<ul>',
+    '  <li>',
+    '    <p>하나</p>',
+    '  </li>',
+    '  <li>',
+    '    <p>둘</p>',
+    '  </li>',
+    '</ul>',
+    '<hr>',
+  ].join('\n'))
+})
+
+/** 글 안에 흐르는 서식은 제자리에 둔다. 줄을 나누면 문장이 끊겨 읽기 어렵다. */
+test('글자 서식은 줄을 나누지 않는다', () => {
+  const result = formatHtml('<p><strong>굵게</strong><em>기울임</em><a href="/a">링크</a></p>')
+
+  expect(result).toBe('<p><strong>굵게</strong><em>기울임</em><a href="/a">링크</a></p>')
+})
+
+test('인용문 안의 문단도 들여쓴다', () => {
+  const result = formatHtml('<blockquote><p>인용한 말</p></blockquote>')
+
+  expect(result).toBe('<blockquote>\n  <p>인용한 말</p>\n</blockquote>')
 })

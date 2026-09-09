@@ -15,6 +15,67 @@ import { HIGHLIGHT_COLORS, TEXT_COLORS } from '../site/contentPalette'
  * </ol>
  */
 
+/**
+ * 줄을 따로 쓰는 부품.
+ *
+ * <p>글 안에 섞여 흐르는 서식(굵게·링크 따위)은 제자리에 두고, 문단·제목·목록처럼 덩어리를
+ * 이루는 것만 줄을 나눈다. 나누는 기준이 사람이 글을 보는 단위와 같아야 읽을 수 있다.
+ */
+const BLOCK = new Set(['P', 'H2', 'H3', 'UL', 'OL', 'LI', 'BLOCKQUOTE', 'HR', 'IMG'])
+
+/** 안에 또 덩어리를 담는 부품. 여기만 한 칸 더 들여쓴다. */
+const NESTS = new Set(['UL', 'OL', 'LI', 'BLOCKQUOTE'])
+
+/**
+ * 소스 편집에 보여줄 HTML을 줄 단위로 나눈다.
+ *
+ * <p>`getHTML()`은 줄바꿈 없이 한 줄로 준다. 그대로 보여주면 글상자 폭에서 태그 가운데가
+ * 끊겨 어디가 어디인지 알 수 없다.
+ */
+export function formatHtml(html: string) {
+  const holder = document.createElement('div')
+  holder.innerHTML = html
+  return lines(holder, 0).join('\n')
+}
+
+function lines(parent: Element, depth: number): string[] {
+  const pad = '  '.repeat(depth)
+  const out: string[] = []
+  let inline = ''
+
+  const flush = () => {
+    if (inline.trim().length > 0) out.push(pad + inline.trim())
+    inline = ''
+  }
+
+  for (const node of parent.childNodes) {
+    const element = node.nodeType === Node.ELEMENT_NODE ? node as Element : null
+    if (element === null || !BLOCK.has(element.tagName)) {
+      inline += element?.outerHTML ?? node.textContent ?? ''
+      continue
+    }
+    flush()
+    const tag = element.tagName.toLowerCase()
+    if (element.childNodes.length === 0) {
+      out.push(pad + element.outerHTML)
+      continue
+    }
+    if (!NESTS.has(element.tagName)) {
+      out.push(pad + element.outerHTML)
+      continue
+    }
+    out.push(`${pad}<${tag}${attributes(element)}>`)
+    out.push(...lines(element, depth + 1))
+    out.push(`${pad}</${tag}>`)
+  }
+  flush()
+  return out
+}
+
+function attributes(element: Element) {
+  return [...element.attributes].map((at) => ` ${at.name}="${at.value}"`).join('')
+}
+
 /** 편집기가 읽어 들일 수 있는 태그. 같은 뜻의 옛 태그도 Tiptap이 받아 주므로 함께 둔다. */
 const KNOWN = new Set([
   'P', 'H2', 'H3', 'UL', 'OL', 'LI', 'A', 'IMG', 'BLOCKQUOTE', 'HR', 'BR',
