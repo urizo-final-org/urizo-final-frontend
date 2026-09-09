@@ -135,9 +135,11 @@ test('the quality panel labels its source and leaves Faithfulness out', async ()
   // 계약에 지표가 없다. 실시간으로 보이면 안 되고 출처가 붙어야 한다.
   expect(metrics.getByText(/2026-08-29 측정 · 252 TC/)).toBeInTheDocument()
   expect(metrics.getByText('0.975')).toBeInTheDocument()
-  // 97/246건에 12개 카테고리가 0건이라 모집단 추정치로 쓸 수 없다.
+  // 97/246건에 12개 카테고리가 0건이라 모집단 추정치로 쓸 수 없다 — 값도 이름도 싣지 않는다.
   expect(metrics.queryByText(/0\.9734/)).not.toBeInTheDocument()
-  expect(metrics.getByText(/Faithfulness는 표본이 모집단을 대표하지 못해/)).toBeInTheDocument()
+  expect(metrics.queryByText(/Faithfulness/)).not.toBeInTheDocument()
+  // 용어는 ⓘ 툴팁이 푼다. 값만 있으면 0.897이 좋은 값인지 알 수 없다.
+  expect(metrics.getByLabelText(/여러 곳을 엮어 묻는 어려운 질문/)).toBeInTheDocument()
 })
 
 test('StrictMode double mount still fills the screen', async () => {
@@ -481,9 +483,11 @@ test('known versions are told apart by the metric column, not by anything else o
 
   // 활성 v12는 비교 기준이라 델타 대신 "기준".
   expect(table.getByText('검색 정확도 기준')).toBeInTheDocument()
-  // hit@5 — 정답이 상위 5에 하나라도 포함된 문항 수(부분점수 합이 아니다). v12·v18은 같은 250.
-  expect(table.getAllByText('정답을 찾은 문항 250 / 252')).toHaveLength(2)
-  expect(table.getByText('정답을 찾은 문항 249 / 252')).toBeInTheDocument()
+  // hit@5는 표에서 자리를 차지하지 않고 셀 hover 툴팁으로 미룬다 — 한눈에 읽을 것은 델타와 판정뿐이다.
+  expect(table.queryByText(/정답을 찾은 문항/)).not.toBeInTheDocument()
+  const tips = table.getAllByTitle(/정답을 찾은 문항/).map((node) => node.getAttribute('title'))
+  expect(tips.filter((tip) => tip === '정답을 찾은 문항 250 / 252')).toHaveLength(2)
+  expect(tips).toContain('정답을 찾은 문항 249 / 252')
   // v17은 R@5 기준 하락이고 배지는 판정만 말한다 — 사유(C유형 0.7990)는 접힌 원값에 있다.
   expect(table.getByText('검색 정확도 ▼ -2.01%p')).toBeInTheDocument()
   expect(table.getByText('기준선 미달')).toBeInTheDocument()

@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom'
 import { describeFailure } from '../../shared/api/error'
 import type { AdminRole } from '../../shared/api/session'
 import { Badge, Callout, PageHead, PanelTitle, panel, primaryButton, secondaryButton, smallButton, type Tone } from '../../shared/ui/primitives'
+import { Icon } from '../../shared/ui/icons'
 import { KnowledgeAdminApi } from './admin-api'
 import type { KnowledgeBase, KnowledgeTarget, KnowledgeVersion, KnowledgeVersionStatus, AgentJob, Project } from './admin-types'
 import { buildView, findInProgress, formatElapsed, BUILD_STEPS, stepStates, type BuildView } from './build-progress'
@@ -481,26 +482,59 @@ function BuildProgress({ view }: { view: BuildView }) {
  * <p>**Faithfulness는 싣지 않는다.** 97/246건이고 21개 카테고리 중 12종이 0건이라
  * 모집단 추정치로 쓸 수 없다. 게이지 한 줄이 그 조건을 담지 못한다.
  */
+/**
+ * 값만 늘어놓으면 `0.897`이 좋은 값인지 나쁜 값인지 알 수 없다. 기준선을 함께 들고
+ * 상태 점·미니 바로 통과 여부를 먼저 보이고, 용어는 ⓘ 툴팁으로 푼다.
+ *
+ * <p>바는 **0~1 전 구간**을 그린다. 0.8~1.0으로 잘라 그리면 차이가 커 보이지만 눈금을
+ * 속이는 것이다. 대신 기준선 위치에 눈금을 세워 "넘었는가"를 읽게 한다.
+ */
 const OFFLINE_METRICS = [
-  { label: 'Recall@5 전체', value: '0.975' },
-  { label: 'Recall@10 전체', value: '0.990' },
-  { label: 'MRR@10', value: '0.970' },
-  { label: 'Recall@5 · C 유형', value: '0.897' },
+  { label: 'Recall@5 전체', value: 0.975, baseline: 0.95,
+    hint: '질문 100개 중 정답 문서가 상위 5개 안에 들어온 비율입니다. 높을수록 좋습니다.' },
+  { label: 'Recall@10 전체', value: 0.990, baseline: 0.95,
+    hint: '상위 10개까지 넓혔을 때의 같은 비율입니다.' },
+  { label: 'MRR@10', value: 0.970, baseline: 0.94,
+    hint: '정답이 몇 번째로 나왔는지를 점수로 바꾼 값입니다. 1에 가까울수록 정답이 앞쪽에 있습니다.' },
+  { label: 'Recall@5 · C 유형', value: 0.897, baseline: 0.85,
+    hint: '여러 곳을 엮어 묻는 어려운 질문만 따로 잰 값입니다. 구조적으로 어려워 기준선이 낮습니다.' },
 ]
+
+/** 용어 옆 ⓘ. 네이티브 title이라 클리핑·라이브러리 없이 어디에나 붙는다. */
+function InfoTip({ hint }: { hint: string }) {
+  return <span className="cursor-help text-muted-3 hover:text-muted" title={hint} aria-label={hint}>
+    <Icon name="circle-help" size={11} />
+  </span>
+}
 
 function QualityMetrics() {
   return <section className={panel}>
     <PanelTitle title="품질 지표" sub="2026-08-29 측정 · 252 TC 전건 · 오프라인 실측 스냅샷" />
-    <div className="grid gap-[0.875rem] px-4 pb-4 pt-[0.875rem] sm:grid-cols-2">
-      {OFFLINE_METRICS.map((metric) => <div key={metric.label} className="flex items-center justify-between text-[0.71875rem] text-muted">
-        <span>{metric.label}</span>
-        <b className="font-mono text-[0.78125rem] font-semibold text-ink">{metric.value}</b>
-      </div>)}
+    <div className="grid gap-x-6 gap-y-[0.875rem] px-4 pb-4 pt-[0.875rem] sm:grid-cols-2">
+      {OFFLINE_METRICS.map((metric) => {
+        const passes = metric.value >= metric.baseline
+        return <div key={metric.label} className="flex flex-col gap-[0.3125rem]">
+          <div className="flex items-center justify-between gap-2 text-[0.71875rem] text-muted">
+            <span className="flex items-center gap-1">{metric.label}<InfoTip hint={metric.hint} /></span>
+            <span className="flex items-center gap-[0.375rem]">
+              <span
+                className={`h-[0.4375rem] w-[0.4375rem] rounded-full ${passes ? 'bg-ok-fg' : 'bg-fail-fg'}`}
+                title={passes ? `기준선 ${metric.baseline} 통과` : `기준선 ${metric.baseline} 미달`}
+              />
+              <b className="font-mono text-[0.78125rem] font-semibold text-ink">{metric.value.toFixed(3)}</b>
+            </span>
+          </div>
+          {/* 0~1 전 구간. 눈금은 기준선 위치다 — 넘었는지를 눈으로 읽는 유일한 표식이다. */}
+          <div className="relative h-[0.25rem] w-full overflow-hidden rounded-full bg-sub" title={`기준선 ${metric.baseline}`}>
+            <div
+              className={`h-full rounded-full ${passes ? 'bg-ok-fg' : 'bg-fail-fg'}`}
+              style={{ width: `${metric.value * 100}%` }}
+            />
+            <span className="absolute inset-y-0 w-px bg-muted-2" style={{ left: `${metric.baseline * 100}%` }} />
+          </div>
+        </div>
+      })}
     </div>
-    <p className="m-0 border-t border-line-soft px-4 py-[0.625rem] text-[0.6875rem] text-muted-3">
-      실시간 값이 아닙니다 — 공개 계약에 품질 지표가 없어 오프라인 측정 결과를 싣습니다.
-      Faithfulness는 표본이 모집단을 대표하지 못해(97/246건 · 12개 카테고리 0건) 싣지 않습니다.
-    </p>
   </section>
 }
 
@@ -564,9 +598,10 @@ function MetricsCell({ version, activeR5 }: { version: KnowledgeVersion; activeR
   const compare = !isActive && activeR5 != null
   const headline = isActive ? '검색 정확도 기준' : compare ? `검색 정확도 ${formatDeltaPp(metrics.r5, activeR5)}` : '검색 정확도'
   const passes = meetsBaseline(metrics)
-  return <span className="flex flex-col items-start gap-[0.1875rem]">
+  // 세부 수치는 셀 hover로 미룬다. 표에서 한눈에 읽어야 하는 것은 델타와 통과 여부뿐이다.
+  const detail = `정답을 찾은 문항 ${metrics.hit5} / ${METRICS_TOTAL}`
+  return <span className="flex flex-col items-start gap-[0.1875rem]" title={detail}>
     <b className="text-[0.71875rem] font-semibold text-ink">{headline}</b>
-    <span className="text-[0.6875rem] text-body">{`정답을 찾은 문항 ${metrics.hit5} / ${METRICS_TOTAL}`}</span>
     <Badge tone={passes ? 'ok' : 'fail'}>{passes ? '기준선 통과' : '기준선 미달'}</Badge>
     {/* 출처 라벨이 토글 손잡이다. 접히는 것은 원값뿐 — 라벨 자체는 절대 접히지 않는다. */}
     <details>
@@ -597,9 +632,10 @@ function VersionTable({ versions, mayWrite, blocked, busy, canRollback, onSwitch
   // 보이는 버전 중 하나라도 측정치가 있을 때만 열을 만든다. 이 환경의 버전을 하나도 모르면
   // "측정 전"만 늘어놓는 빈 열이 되므로 아예 없는 편이 낫다.
   const hasMetrics = (shown ?? []).some((version) => offlineMetrics(version) != null)
+  // 유동 폭은 내용이 가장 긴 '지표'가 갖는다. 버전은 이제 'v18' 한 토막이라 4rem이면 충분하다.
   const columns = hasMetrics
-    ? 'grid-cols-[minmax(0,1fr)_7rem_7rem_13rem_9rem_8rem]'
-    : 'grid-cols-[minmax(0,1fr)_7rem_7rem_9rem_8rem]'
+    ? 'grid-cols-[4rem_6.5rem_6rem_minmax(0,1fr)_7rem_6.5rem]'
+    : 'grid-cols-[4rem_6.5rem_6rem_minmax(0,1fr)_6.5rem]'
   const hidden = versions == null || shown == null ? 0 : versions.length - shown.length
   return <section className={panel}>
     <PanelTitle title="RAG 버전" sub={versions ? `${versions.length}건` : undefined}>
@@ -611,7 +647,7 @@ function VersionTable({ versions, mayWrite, blocked, busy, canRollback, onSwitch
       >이전 버전 롤백</button>
     </PanelTitle>
     <div className="overflow-x-auto">
-      <div className="min-w-[56.75rem]">
+      <div className="min-w-[40rem]">
         <div className={`${headRow} ${columns}`}>
           <span>버전</span><span>상태</span><span>문서/청크</span>{hasMetrics && <span>지표</span>}<span>활성화</span><span className="text-right">동작</span>
         </div>
@@ -633,7 +669,7 @@ function VersionTable({ versions, mayWrite, blocked, busy, canRollback, onSwitch
                 disabled={busy || switchPath(version.status) == null}
                 onClick={() => onSwitch(version)}
                 title={!mayWrite ? WRITE_DENIED : NOT_SWITCHABLE[version.status] ?? `포털이 v${version.versionNumber} 기준으로 답하게 합니다.`}
-              >전환</button>}
+              ><Icon name="repeat" size={12} />전환</button>}
           </span>
         </div>)}
         {hidden > 0 && <button
