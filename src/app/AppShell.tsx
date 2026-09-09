@@ -131,12 +131,25 @@ function AuthenticatedAdmin({ session, theme, onToggleTheme, onRefresh, onExpire
   const codingApi = useMemo(() => new CodingConsoleApi(session.sessionToken, lifecycle.refreshed, lifecycle.expired), [session.sessionToken, lifecycle])
   const knowledgeApi = useMemo(() => new KnowledgeAdminApi(session.sessionToken, lifecycle.refreshed, lifecycle.expired), [session.sessionToken, lifecycle])
   // 승인 대기는 화면에 들어가야만 보였다. 메뉴에 건수를 띄워 들어가기 전에 알린다.
-  // 두 역할 모두 본다 — 발견은 일반 관리자도 하고, 못 하는 것은 처리뿐이다.
-  const pendingApprovals = usePendingApprovals(knowledgeApi, permitted.some((route) => route.id === 'rag'))
-  const navBadges = useMemo(
-    () => (pendingApprovals ? { rag: { count: pendingApprovals, title: `승인 대기 ${pendingApprovals}건` } } : undefined),
-    [pendingApprovals],
-  )
+  //
+  // **최고 관리자만 본다.** 이 뱃지가 세는 둘(승인 대기 빌드·갱신 요청)은 모두 SUPER_ADMIN이
+  // 처리하는 일이다. 같은 숫자를 일반 관리자에게 띄우면 눌러 들어가도 할 수 있는 것이 없어,
+  // 알림이 아니라 잡음이 된다. 일반 관리자 몫은 "자동 감지된 갱신 필요" 알림인데 그것을
+  // 만드는 쪽(스케줄러)이 아직 없으므로, 셀 것이 생길 때까지 0을 띄우지 않고 숨긴다.
+  const showsRagBadge = session.actor.role === 'SUPER_ADMIN'
+    && permitted.some((route) => route.id === 'rag')
+  const pendingApprovals = usePendingApprovals(knowledgeApi, showsRagBadge)
+  // 두 축을 한 숫자로 합산한다. 답하는 질문이 "들어가 볼 일이 있나" 하나이기 때문이다.
+  // 어느 쪽인지는 툴팁이 나눠 말하고, 화면 안에서 각각 따로 보인다.
+  const navBadges = useMemo(() => {
+    if (!pendingApprovals) return undefined
+    const { approvals, requests } = pendingApprovals
+    const title = [
+      approvals > 0 ? `승인 대기 ${approvals}건` : null,
+      requests > 0 ? `갱신 요청 ${requests}건` : null,
+    ].filter(Boolean).join(' · ')
+    return { rag: { count: approvals + requests, title } }
+  }, [pendingApprovals])
 
   function go(route: RouteId) { navigate(pathForRoute(route)); setMenuOpen(false) }
 
