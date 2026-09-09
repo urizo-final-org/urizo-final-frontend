@@ -37,15 +37,13 @@ test('굵게·기울임 서식을 글자에 붙인다', () => {
   expect(screen.getByText('기울임').tagName).toBe('EM')
 })
 
-/** `AI05-017`에서 연 셋. 편집기가 만들어도 렌더러가 모르면 사이트에서 조용히 사라진다. */
-test('코드·취소선·밑줄 서식을 글자에 붙인다', () => {
+/** `AI05-017`에서 연 둘. 편집기가 만들어도 렌더러가 모르면 사이트에서 조용히 사라진다. */
+test('취소선·밑줄 서식을 글자에 붙인다', () => {
   render(<ContentDocument body={document({ type: 'paragraph', content: [
-    { type: 'text', text: '코드', marks: [{ type: 'code' }] },
     { type: 'text', text: '취소선', marks: [{ type: 'strike' }] },
     { type: 'text', text: '밑줄', marks: [{ type: 'underline' }] },
   ] })} />)
 
-  expect(screen.getByText('코드').tagName).toBe('CODE')
   expect(screen.getByText('취소선').tagName).toBe('S')
   expect(screen.getByText('밑줄').tagName).toBe('U')
 })

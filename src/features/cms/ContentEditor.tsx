@@ -26,6 +26,8 @@ export default function ContentEditor({ value, onChange, api, onFailure }: {
     extensions: [
       StarterKit.configure({
         blockquote: false,
+        // 인라인 코드는 열지 않는다. 이 사이트의 컨텐츠에 명령어나 함수 이름을 쓸 일이 없다.
+        code: false,
         codeBlock: false,
         horizontalRule: false,
         heading: { levels: [2, 3] },
@@ -176,10 +178,6 @@ export default function ContentEditor({ value, onChange, api, onFailure }: {
         <path d="M4 12h16" />
         <path d="M17.5 6.5C16.5 5 14.5 4.2 12 4.2c-3 0-5 1.3-5 3.3 0 1.5 1 2.5 3 3.2" />
         <path d="M7 17c1 1.5 2.8 2.8 5.5 2.8 3 0 5-1.4 5-3.4 0-1.1-.5-2-1.6-2.7" />
-      </Tool>
-      <Tool editor={editor} label="코드" active="code"
-        onClick={() => command((chain) => chain.toggleCode())}>
-        <path d="m9 17-5-5 5-5" /><path d="m15 7 5 5-5 5" />
       </Tool>
       <Tool editor={editor} label="링크" active="link" onClick={setLink}>
         <path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.8 1.7" />
