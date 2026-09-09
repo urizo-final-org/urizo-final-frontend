@@ -5,6 +5,7 @@ import type { AdminRole } from '../../shared/api/session'
 import { Badge, Callout, PageHead, PanelTitle, panel, primaryButton, secondaryButton, smallButton, type Tone } from '../../shared/ui/primitives'
 import { Icon } from '../../shared/ui/icons'
 import { ActivationRequests } from './ActivationRequests'
+import { noHover } from './no-hover'
 import { KnowledgeAdminApi } from './admin-api'
 import type { KnowledgeBase, KnowledgeTarget, KnowledgeVersion, KnowledgeVersionStatus, AgentJob, Project } from './admin-types'
 import { buildView, findInProgress, formatElapsed, BUILD_STEPS, stepStates, type BuildView } from './build-progress'
@@ -91,7 +92,8 @@ function visibleVersions(versions: KnowledgeVersion[]): KnowledgeVersion[] {
 
 /**
  * 표 안의 액션 버튼. 공용 `smallButton`은 배경이 패널과 같아 링크처럼 보였다 —
- * 배경·여백·모서리를 주고 hover에서 색이 바뀌게 해 「누를 수 있는 것」으로 읽히게 한다.
+ * 배경·여백·모서리를 주어 「누를 수 있는 것」으로 읽히게 한다. hover 색 변화는 두지 않는다 —
+ * 시연 화면에서 마우스가 표 위를 지나갈 때마다 버튼이 깜빡이는 것으로 보였다.
  *
  * <p>**공용 `primaryButton`을 쓰지 않는 이유**: `admin-theme.css`의
  * `.admin-app button { color: inherit }`가 명시도(0,1,1)에서 Tailwind `text-white`(0,1,0)를
@@ -102,7 +104,8 @@ function visibleVersions(versions: KnowledgeVersion[]): KnowledgeVersion[] {
  * **양쪽 테마에서 패널과 확실히 구분되는 유일한 기존 토큰**이다. `sub`(#f8fafc)는 흰 패널과
  * 붙어 보여 링크처럼 읽혔다. 공용 테마 CSS를 건드리지 않으려고 기존 값을 재사용한다.
  */
-const tableButton = 'inline-flex h-8 items-center justify-center gap-1 rounded-md border border-field-line bg-line px-4 text-[0.71875rem] font-semibold text-strong shadow-[0_1px_1px_#10203410] transition-colors enabled:hover:border-primary enabled:hover:bg-primary enabled:hover:text-white disabled:opacity-45'
+const tableButton = 'inline-flex h-8 items-center justify-center gap-1 rounded-md border border-field-line bg-line px-4 text-[0.71875rem] font-semibold text-strong shadow-[0_1px_1px_#10203410] disabled:opacity-45'
+
 
 /** 확인 창 하나로 쓰기 3종을 받는다. 되돌리기 어려운 동작 앞에 사람 손을 한 번 더 둔다. */
 type Confirmation = { title: string; lines: string[]; label: string; run: () => Promise<unknown> }
@@ -367,7 +370,7 @@ function ConfirmDialog({ confirmation, busy, onCancel, onConfirm }: {
         </ul>
       </div>
       <div className="flex justify-end gap-2 border-t border-line px-4 py-3">
-        <button className={secondaryButton} onClick={onCancel} disabled={busy}>취소</button>
+        <button className={noHover(secondaryButton)} onClick={onCancel} disabled={busy}>취소</button>
         <button className={tableButton} onClick={onConfirm} disabled={busy}>
           {busy ? '처리 중…' : confirmation.label}
         </button>
@@ -701,12 +704,12 @@ function VersionTable({ versions, mayWrite, blocked, busy, canRollback, onSwitch
         </div>)}
         {hidden > 0 && <button
           type="button"
-          className="w-full border-t border-line bg-transparent px-4 py-[0.625rem] text-left text-[0.6875rem] text-muted-3 hover:text-muted"
+          className="w-full border-t border-line bg-transparent px-4 py-[0.625rem] text-left text-[0.6875rem] text-muted-3"
           onClick={() => setShowAll(true)}
         >이전 버전 {hidden}건 더 보기</button>}
         {showAll && versions != null && versions.length > ALWAYS_VISIBLE_RECENT && <button
           type="button"
-          className="w-full border-t border-line bg-transparent px-4 py-[0.625rem] text-left text-[0.6875rem] text-muted-3 hover:text-muted"
+          className="w-full border-t border-line bg-transparent px-4 py-[0.625rem] text-left text-[0.6875rem] text-muted-3"
           onClick={() => setShowAll(false)}
         >접기</button>}
       </div>

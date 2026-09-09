@@ -3,6 +3,7 @@ import { describeFailure } from '../../shared/api/error'
 import { Callout, PanelTitle, panel, smallButton, textarea } from '../../shared/ui/primitives'
 import type { KnowledgeAdminApi } from './admin-api'
 import type { ActivationRequest, KnowledgeVersion } from './admin-types'
+import { noHover } from './no-hover'
 
 /**
  * 갱신 요청 경로.
@@ -122,7 +123,7 @@ export function ActivationRequests({ api, knowledgeBaseId, mayWrite, versions, r
         />
       </label>
       <div className="flex items-center gap-2">
-        <button className={smallButton} disabled={busy} onClick={() => { void send() }}>
+        <button className={noHover(smallButton)} disabled={busy} onClick={() => { void send() }}>
           {busy ? '보내는 중…' : '갱신 요청'}
         </button>
         {sent && <small className="text-[0.6875rem] text-ok-fg">전달했습니다. 아래 목록에 남습니다.</small>}
