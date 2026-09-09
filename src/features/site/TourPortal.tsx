@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
+import type { Menu, SiteTemplate } from '../cms/api'
 import { tabToCategory } from '../knowledge/category'
 import { useRagQuery } from '../knowledge/useRagQuery'
 import { withParticle } from './particle'
@@ -32,19 +33,43 @@ function BrandMark({ size = '2.125rem' }: { size?: string }) {
 /**
  * 홈·검색 결과가 함께 쓰는 사이트 헤더.
  *
- * <p>시안의 가운데 메뉴 3종·언어 선택·로그인 버튼은 옮기지 않았다. 어느 것도 갈 곳이나 동작이 없어
- * 죽은 링크가 되고, 미지원 기능을 UI로 약속하지 않는다는 기준과 어긋난다. 우측 슬롯은 실제로
- * 동작하는 CMS 관리자 링크를 유지한다.
+ * <p>시안의 고정 메뉴 3종·언어 선택·로그인 버튼 대신 실제 CMS 메뉴 계약을 표시한다. 우측 슬롯은
+ * 실제로 동작하는 CMS 관리자 링크를 유지한다.
  */
-export function PortalHeader() {
+export function PortalHeader({ template, menus }: { template: SiteTemplate; menus: Menu[] }) {
+  const roots = menus.filter((menu) => menu.parentId === null)
+
   return <header className="border-b border-line-soft bg-panel">
-    <div className="mx-auto flex h-[4.75rem] max-w-[80rem] items-center gap-7 px-7 max-[560px]:h-16 max-[560px]:px-4">
-      <Link to="/" className="flex items-center gap-[0.625rem] whitespace-nowrap text-[1.1875rem] font-extrabold tracking-[-.04em] text-ink no-underline">
-        <BrandMark />우리트립
-      </Link>
-      <Link className="ml-auto whitespace-nowrap text-[0.8125rem] font-semibold text-body no-underline hover:text-ink" to="/admin">CMS 관리자</Link>
+    <div className="border-b border-line-soft bg-page">
+      <div className="mx-auto flex max-w-[80rem] items-center justify-between gap-4 px-7 py-2 text-[0.6875rem] text-muted max-[560px]:px-4">
+        <span>{template.headerText}</span>
+        <Link className="whitespace-nowrap font-semibold text-body no-underline hover:text-ink" to="/admin">CMS 관리자</Link>
+      </div>
     </div>
+    <div className="mx-auto flex h-[4.75rem] max-w-[80rem] items-center gap-7 px-7 max-[560px]:h-16 max-[560px]:px-4">
+      <Link to="/" className="mr-auto flex items-center gap-[0.625rem] whitespace-nowrap text-[1.1875rem] font-extrabold tracking-[-.04em] text-ink no-underline">
+        <BrandMark />{template.siteName}
+      </Link>
+      <nav className="hidden h-full items-stretch lg:flex" aria-label="주 메뉴">
+        {roots.map((root) => {
+          const children = menus.filter((menu) => menu.parentId === root.id)
+          return <div className="group relative flex items-center" key={root.id}>
+            <Link className="px-4 py-7 text-[0.8125rem] font-bold text-body no-underline hover:text-primary" to={portalUrl(root.path)}>{root.name}</Link>
+            {children.length > 0 && <div className="invisible absolute left-1/2 top-[4.25rem] z-20 min-w-[11.875rem] -translate-x-1/2 translate-y-2 rounded-b-xl border-t-2 border-primary bg-panel p-2 opacity-0 shadow-[0_18px_45px_rgba(22,34,47,.14)] transition group-hover:visible group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:visible group-focus-within:translate-y-0 group-focus-within:opacity-100">
+              {children.map((child) => <Link className="block rounded-lg px-4 py-[0.625rem] text-xs text-body no-underline hover:bg-page hover:text-primary" key={child.id} to={portalUrl(child.path)}>{child.name}</Link>)}
+            </div>}
+          </div>
+        })}
+      </nav>
+    </div>
+    <nav className="flex gap-2 overflow-x-auto border-t border-line-soft px-4 py-3 lg:hidden" aria-label="모바일 주 메뉴">
+      {roots.map((root) => <Link className="shrink-0 rounded-full bg-page px-4 py-2 text-[0.6875rem] font-bold text-body no-underline" key={root.id} to={portalUrl(root.path)}>{root.name}</Link>)}
+    </nav>
   </header>
+}
+
+function portalUrl(path: string) {
+  return path.startsWith('/') ? path : `/${path}`
 }
 
 type CurationCard = { name: string; cat: string; desc: string }
@@ -96,7 +121,7 @@ function SectionHead({ title, total }: { title: string; total: number }) {
   </div>
 }
 
-export function PortalHome() {
+export function PortalHome({ template }: { template: SiteTemplate }) {
   const navigate = useNavigate()
   const [draft, setDraft] = useState('')
   const [tab, setTab] = useState('all')
@@ -114,7 +139,9 @@ export function PortalHome() {
   const [hero, ...rest] = HOME_SECTIONS
 
   return <main>
-    <section className="mx-auto max-w-[75rem] px-7 pb-2 pt-24 text-center max-[560px]:px-4 max-[560px]:pt-14">
+    <PortalHero template={template} />
+
+    <section className="mx-auto max-w-[75rem] px-7 pb-2 pt-20 text-center max-[560px]:px-4 max-[560px]:pt-14">
       <h1 className="m-0 text-[clamp(2.5rem,6vw,4.75rem)] font-extrabold leading-[1.12] tracking-[-.05em] text-ink">어디로 떠나볼까요?</h1>
 
       {/* 탭 8종은 portal-meta의 확정 상수 그대로다. 시안은 6종이지만 확정안이 우선한다. */}
@@ -171,6 +198,44 @@ export function PortalHome() {
       </section>)}
     </div>
   </main>
+}
+
+/** CMS의 단일 Hero 계약을 관광 포털의 둥근 카드형 시각 언어로 표현한다. */
+export function PortalHero({ template }: { template: SiteTemplate }) {
+  const label = `${template.layout} 템플릿 메인`
+
+  if (template.layout === 'MINIMAL') return <section className="mx-auto grid max-w-[75rem] gap-8 px-7 pt-8 max-[560px]:px-4 md:grid-cols-2" aria-label={label}>
+    <div className="flex min-h-[24rem] flex-col items-start justify-center rounded-[2rem] bg-page px-[clamp(2rem,5vw,4.5rem)] py-14">
+      <span className="mb-4 text-xs font-extrabold tracking-[.14em] text-primary">MINIMAL</span>
+      <h1 className="m-0 text-[clamp(2.25rem,5vw,4rem)] font-extrabold leading-[1.08] tracking-[-.055em] text-ink">{template.heroTitle}</h1>
+      <p className="mb-7 mt-5 max-w-xl text-base leading-[1.75] text-body">{template.heroSubtitle}</p>
+      <Link className="rounded-full bg-primary px-6 py-3 text-sm font-bold text-white no-underline" to={portalUrl(template.heroButtonUrl)}>{template.heroButtonLabel}<span className="ml-2">→</span></Link>
+    </div>
+    <div className="min-h-[24rem] rounded-[2rem] bg-site-ph bg-cover bg-center" style={{ backgroundImage: `url(${template.heroImageUrl})` }} />
+  </section>
+
+  const bold = template.layout === 'BOLD'
+  return <section className="relative mx-auto mt-8 min-h-[29rem] max-w-[75rem] overflow-hidden rounded-[2rem] bg-primary text-white max-[1220px]:mx-7 max-[560px]:mx-4" aria-label={label}>
+    <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: `url(${template.heroImageUrl})` }} />
+    <div className={`absolute inset-0 ${bold ? 'bg-[linear-gradient(90deg,rgba(16,28,42,.96)_0%,rgba(16,28,42,.72)_58%,rgba(16,28,42,.2)_100%)]' : 'bg-[linear-gradient(90deg,rgba(16,28,42,.9)_0%,rgba(16,28,42,.62)_55%,rgba(16,28,42,.14)_100%)]'}`} />
+    <div className="relative z-10 flex min-h-[29rem] items-center px-[clamp(2rem,7vw,6rem)] py-16">
+      <div className="max-w-[43rem]">
+        <span className="mb-4 block text-xs font-extrabold tracking-[.16em] text-white/70">{bold ? 'BOLD' : 'CLASSIC'}</span>
+        <h1 className={`m-0 text-[clamp(2.5rem,6vw,4.75rem)] leading-[1.06] tracking-[-.06em] ${bold ? 'font-black uppercase' : 'font-extrabold'}`}>{template.heroTitle}</h1>
+        <p className="mb-7 mt-5 max-w-2xl text-base leading-[1.75] text-white/80">{template.heroSubtitle}</p>
+        <Link className="inline-flex rounded-full bg-primary px-6 py-3 text-sm font-bold text-white no-underline shadow-[0_10px_30px_rgba(0,0,0,.16)]" to={portalUrl(template.heroButtonUrl)}>{template.heroButtonLabel}<span className="ml-2">→</span></Link>
+      </div>
+    </div>
+  </section>
+}
+
+export function PortalFooter({ template }: { template: SiteTemplate }) {
+  return <footer className="mt-auto border-t border-line-soft bg-panel">
+    <div className="mx-auto flex max-w-[75rem] flex-wrap items-start justify-between gap-8 px-7 py-10 text-xs leading-6 text-muted max-[560px]:px-4">
+      <div><strong className="block text-sm text-ink">{template.siteName}</strong><p className="m-0 mt-2 max-w-xl">{template.footerText}</p></div>
+      <span className="w-full border-t border-line-soft pt-5 text-[0.6875rem]">© 2026 {template.siteName}. Local CMS Demo.</span>
+    </div>
+  </footer>
 }
 
 /** F11(60초/30회)이 검색과 챗봇을 함께 조인다. 탭 연타·타이핑이 예산을 태우지 않게 한다. */

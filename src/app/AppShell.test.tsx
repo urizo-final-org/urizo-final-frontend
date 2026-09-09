@@ -18,7 +18,20 @@ test('the public URL renders the tour portal home without login, isolated from t
   vi.stubGlobal('fetch', publicFetch())
   render(<AppShell />)
   expect(await screen.findByRole('heading', { name: '어디로 떠나볼까요?' })).toBeInTheDocument()
-  expect(screen.getByRole('link', { name: 'CMS 관리자' })).toHaveAttribute('href', '/admin')
+  const header = within(screen.getByRole('banner'))
+  expect(header.getByRole('link', { name: /AX Bio Studio/ })).toHaveAttribute('href', '/')
+  expect(header.getByText('Technology · Trust · Growth')).toBeInTheDocument()
+  expect(header.getByRole('link', { name: 'CMS 관리자' })).toHaveAttribute('href', '/admin')
+  const menu = within(header.getByRole('navigation', { name: '주 메뉴' }))
+  expect(menu.getByRole('link', { name: '소개' })).toHaveAttribute('href', '/about')
+  expect(menu.getByRole('link', { name: '회사 소개' })).toHaveAttribute('href', '/about/company')
+  const cmsHero = within(screen.getByRole('region', { name: 'CLASSIC 템플릿 메인' }))
+  expect(cmsHero.getByRole('heading', { name: 'Technology for a Better Tomorrow' })).toBeInTheDocument()
+  expect(cmsHero.getByText('사람과 기술을 연결합니다.')).toBeInTheDocument()
+  expect(cmsHero.getByRole('link', { name: /회사 소개/ })).toHaveAttribute('href', '/about/company')
+  const footer = within(screen.getByRole('contentinfo'))
+  expect(footer.getByText('AX Bio Studio | 서울특별시 디지털로 123')).toBeInTheDocument()
+  expect(footer.getByText('© 2026 AX Bio Studio. Local CMS Demo.')).toBeInTheDocument()
   // 홈 섹션은 코퍼스 집계 상위 3개 카테고리다. 근거 없는 큐레이션 제목을 쓰지 않는다.
   for (const section of ['관광지', '음식', '숙박']) {
     expect(screen.getByRole('heading', { name: section, level: 2 })).toBeInTheDocument()
@@ -241,7 +254,13 @@ test('the tour helper shows a refusal without an evidence section', async () => 
   expect(panel().queryByText('답변 근거')).not.toBeInTheDocument()
 })
 
-// 루트 사이트는 관광 포털(I8)이므로 Template Layout은 publicPath가 지정된 부속 사이트에서 확인한다.
+test.each(['MINIMAL', 'BOLD', 'CLASSIC'])('the tour portal renders its CMS %s hero layout', async (layout) => {
+  vi.stubGlobal('fetch', publicFetch({ ...siteTemplate(), layout }))
+  render(<AppShell />)
+  expect(await screen.findByRole('region', { name: `${layout} 템플릿 메인` })).toBeInTheDocument()
+})
+
+// publicPath가 지정된 부속 사이트의 기존 Template Renderer도 계속 유지한다.
 test.each(['MINIMAL', 'BOLD', 'CLASSIC'])('a configured sub-site home renders the %s template layout', async (layout) => {
   window.history.pushState({}, '', '/campaign')
   vi.stubGlobal('fetch', publicFetch({ ...siteTemplate(), layout }, '/campaign'))
@@ -249,21 +268,32 @@ test.each(['MINIMAL', 'BOLD', 'CLASSIC'])('a configured sub-site home renders th
   expect(await screen.findByRole('region', { name: `${layout} 템플릿 메인` })).toBeInTheDocument()
 })
 
-test('an open public page refreshes when CMS data changes', async () => {
-  window.history.pushState({}, '', '/campaign')
+test('an open portal refreshes its CMS presentation when CMS data changes', async () => {
   let template = siteTemplate()
   vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => {
     const path = String(input)
-    if (path.startsWith('/api/site/context?path=')) return Promise.resolve(json(siteContext(template, '/campaign')))
+    if (path.startsWith('/api/site/context?path=')) return Promise.resolve(json(siteContext(template)))
     if (path === '/api/site/menus' || path === '/api/site/boards') return Promise.resolve(json([]))
     return Promise.resolve(json([]))
   }))
   render(<AppShell />)
   expect(await screen.findByRole('heading', { name: 'Technology for a Better Tomorrow' })).toBeInTheDocument()
 
-  template = { ...template, heroTitle: 'CMS 변경 즉시 반영' }
-  window.dispatchEvent(new Event(SITE_UPDATE_EVENT))
+  template = {
+    ...template,
+    primaryColor: '#6b3fa0',
+    siteName: 'CMS 여행 포털',
+    headerText: 'CMS 헤더 변경',
+    footerText: 'CMS 푸터 변경',
+    heroTitle: 'CMS 변경 즉시 반영',
+  }
+  act(() => window.dispatchEvent(new Event(SITE_UPDATE_EVENT)))
   expect(await screen.findByRole('heading', { name: 'CMS 변경 즉시 반영' })).toBeInTheDocument()
+  expect(within(screen.getByRole('banner')).getByRole('link', { name: /CMS 여행 포털/ })).toBeInTheDocument()
+  expect(within(screen.getByRole('banner')).getByText('CMS 헤더 변경')).toBeInTheDocument()
+  expect(within(screen.getByRole('contentinfo')).getByText('CMS 푸터 변경')).toBeInTheDocument()
+  const portal = document.querySelector('.site-app > div') as HTMLElement
+  expect(portal.style.getPropertyValue('--primary')).toBe('#6b3fa0')
 })
 
 test('an initial public Site failure is visible and retry recovers the page', async () => {
@@ -758,9 +788,10 @@ test('an administrator sees a clear template save failure', async () => {
 
 test('a menu URL renders its mapped static content', async () => {
   window.history.pushState({}, '', '/about/company')
-  vi.stubGlobal('fetch', publicFetch())
+  vi.stubGlobal('fetch', publicFetch({ ...siteTemplate(), siteName: 'CMS 여행 포털' }))
   render(<AppShell />)
   expect(await screen.findByRole('heading', { name: '회사 소개', level: 1 })).toBeInTheDocument()
+  expect(screen.getByText('CMS 여행 포털', { selector: 'p' })).toBeInTheDocument()
   expect(await screen.findByRole('heading', { name: '사람과 기술을 연결합니다', level: 2 }))
       .toBeInTheDocument()
 })
