@@ -16,7 +16,7 @@ import { Placeholder } from './portal-primitives'
  * <p>`address`는 계약에 없는 값이다. 배선 뒤에는 `addressLine(citation.excerpt)`으로 본문의
  * `[주소]` 줄에서 뽑아 넘긴다(`portal-meta.ts`). 지금은 목업이 따로 들고 있어 그대로 받는다.
  */
-export function PortalResultCard({ title, excerpt, categoryLabel, address }: {
+export function PortalResultCard({ title, excerpt, categoryLabel, address, eventStatus }: {
   title: string
   excerpt: string
   categoryLabel?: string
@@ -26,12 +26,21 @@ export function PortalResultCard({ title, excerpt, categoryLabel, address }: {
    */
   sourceUrl?: string
   address?: string
+  /**
+   * `'ENDED'`일 때만 "종료된 행사" 칩을 단다. 경고가 아니라 사실 표시다 — 지난 행사도
+   * 참고 정보라 결과에서 빼지 않고, 빼면 검색 지표까지 흔들린다.
+   */
+  eventStatus?: string | null
 }) {
   const homepage = homepageLine(excerpt)
+  const ended = eventStatus === 'ENDED'
   return <article className="grid grid-cols-[15rem_minmax(0,1fr)] overflow-hidden rounded-2xl border border-line-soft bg-panel max-[680px]:grid-cols-1">
     <Placeholder label={`사진 · ${title}`} className="h-full min-h-[12.25rem] w-60 max-[680px]:aspect-[16/9] max-[680px]:h-auto max-[680px]:min-h-0 max-[680px]:w-full" />
     <div className="flex flex-col gap-2 px-[1.625rem] py-[1.375rem]">
-      {categoryLabel != null && <span className="self-start rounded-md border border-line px-2 py-1 text-[0.6875rem] font-bold text-primary">{categoryLabel}</span>}
+      {(categoryLabel != null || ended) && <div className="flex flex-wrap gap-1.5">
+        {categoryLabel != null && <span className="rounded-md border border-line px-2 py-1 text-[0.6875rem] font-bold text-primary">{categoryLabel}</span>}
+        {ended && <span className="rounded-md border border-line px-2 py-1 text-[0.6875rem] font-bold text-muted">종료된 행사</span>}
+      </div>}
       <strong className="text-[1.1875rem] font-extrabold tracking-[-.03em] text-ink">{title}</strong>
       {address != null && <span className="text-[0.8125rem] text-muted">{address}</span>}
       {/* 라벨 줄은 각자 제 자리(뱃지·주소·링크)로 올라갔다. 본문에는 개요만 남긴다 —

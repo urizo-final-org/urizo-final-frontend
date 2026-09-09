@@ -51,7 +51,7 @@ test('a general admin sees the screen but every write button is already disabled
   await screen.findByText('관광 지식 베이스')
   // 눌러서 403을 받는 게 아니라 세션 역할로 미리 판별한다. 403은 방어선이지 UI가 아니다.
   expect(screen.getByRole('button', { name: 'Build 시작' })).toBeDisabled()
-  expect(screen.getByRole('button', { name: '이전 활성 버전으로 롤백' })).toBeDisabled()
+  expect(screen.getByRole('button', { name: '이전 버전 롤백' })).toBeDisabled()
   expect(screen.getByText(/SUPER_ADMIN 권한이 필요합니다/)).toBeInTheDocument()
 })
 
@@ -298,6 +298,39 @@ test('a failing switch surfaces the error and leaves the table refreshed', async
   // 실패해도 창은 닫히고, 화면이 실제 상태와 어긋나지 않도록 목록을 다시 읽는다.
   await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
   expect(listVersions.mock.calls.length).toBeGreaterThan(1)
+})
+
+test('does not attach offline measurements to environment-local version numbers', async () => {
+  show(<RagAdminPanel api={api({
+    listVersions: vi.fn().mockResolvedValue({
+      items: [
+        version({ versionNumber: 18, status: 'APPROVAL_PENDING', knowledgeVersionId: 'another-db-v18', activatedAt: undefined }),
+        version({ versionNumber: 17, status: 'APPROVAL_PENDING', knowledgeVersionId: 'another-db-v17', activatedAt: undefined }),
+        version({ versionNumber: 12, knowledgeVersionId: 'another-db-v12' }),
+      ],
+    }),
+  })} role="SUPER_ADMIN" />)
+  const table = within((await screen.findByText('RAG 버전')).closest('section') as HTMLElement)
+
+  expect(table.queryByText('지표')).not.toBeInTheDocument()
+  expect(table.queryByText(/검색 정확도/)).not.toBeInTheDocument()
+  expect(table.queryByText(/오프라인 측정 · 9\/9/)).not.toBeInTheDocument()
+})
+
+test('the switch button label is just 전환 while the endpoint split stays elsewhere', async () => {
+  show(<RagAdminPanel api={api({
+    listVersions: vi.fn().mockResolvedValue({
+      items: [
+        version({ versionNumber: 11, status: 'ARCHIVED', knowledgeVersionId: 'kv-11' }),
+        version({ versionNumber: 10, status: 'APPROVAL_PENDING', knowledgeVersionId: 'kv-10', activatedAt: undefined }),
+        version(),
+      ],
+    }),
+  })} role="SUPER_ADMIN" />)
+  // 상태가 달라도 표의 라벨은 하나다. 엔드포인트 분기는 switchPath가 그대로 든다
+  // (아래 'an archived version rolls back…' 테스트가 계속 지킨다).
+  expect(await screen.findAllByRole('button', { name: '전환' })).toHaveLength(2)
+  expect(screen.queryByRole('button', { name: /활성화\(승인\)/ })).not.toBeInTheDocument()
 })
 
 function ladder() {
