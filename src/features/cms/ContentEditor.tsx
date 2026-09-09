@@ -113,8 +113,11 @@ export default function ContentEditor({ value, onChange, api, onFailure }: {
    */
   function command(run: (chain: ChainedCommands) => ChainedCommands) {
     if (!editor) return
-    const { from, to } = editor.state.selection
-    run(editor.chain().focus().setTextSelection({ from, to })).run()
+    const { from, to, empty } = editor.state.selection
+    const chain = editor.chain().focus()
+    // 커서만 있을 때는 범위를 다시 세우지 않는다. ProseMirror가 선택을 바꾸면 `storedMarks`를
+    // 비우기 때문에, 굵게를 켜 두고 밑줄을 누르면 굵게가 꺼진다. 서식을 겹쳐 켤 수 없게 된다.
+    run(empty ? chain : chain.setTextSelection({ from, to })).run()
   }
 
   /**
