@@ -84,3 +84,24 @@ test('인용문 안의 문단도 들여쓴다', () => {
 
   expect(result).toBe('<blockquote>\n  <p>인용한 말</p>\n</blockquote>')
 })
+
+/**
+ * 브라우저는 `style`을 다시 적을 때 hex를 `rgb()`로 바꾼다. 표기가 달라졌다고 팔레트에 있는
+ * 색을 지우면, 소스 편집을 열었다 닫는 것만으로 색이 사라진다.
+ */
+test('rgb로 적힌 팔레트 색도 남긴다', () => {
+  const result = cleanImportedHtml('<p><span style="color: rgb(192, 57, 43)">빨강</span></p>')
+
+  expect(result.html).toContain('#c0392b')
+})
+
+test('소스 편집을 열었다 닫아도 색이 그대로다', () => {
+  const written = '<p><span style="color: #c0392b">빨강</span>'
+    + '<mark data-color="#fff3a3" style="background-color: #fff3a3">형광</mark></p>'
+
+  const result = cleanImportedHtml(formatHtml(written))
+
+  expect(result.html).toContain('#c0392b')
+  expect(result.html).toContain('#fff3a3')
+  expect(result.dropped).toEqual([])
+})

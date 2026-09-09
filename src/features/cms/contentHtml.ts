@@ -133,13 +133,28 @@ function trimColours(node: Element) {
   }
 }
 
-/** `style` 문자열에서 선언 하나를 읽는다. 값은 소문자로 맞춘다. */
+/** `style` 문자열에서 선언 하나를 읽는다. 값은 팔레트와 견줄 수 있게 hex로 맞춘다. */
 function declaration(style: string, name: string) {
   for (const part of style.split(';')) {
     const at = part.indexOf(':')
     if (at < 0) continue
     if (part.slice(0, at).trim().toLowerCase() !== name) continue
-    return part.slice(at + 1).trim().toLowerCase()
+    return hex(part.slice(at + 1).trim().toLowerCase())
   }
   return null
+}
+
+/**
+ * 색 값을 hex로 맞춘다.
+ *
+ * <p>브라우저는 `style`을 다시 적을 때 `#c0392b`를 `rgb(192, 57, 43)`으로 바꾼다. 편집기가 쓴
+ * 것을 DOM에 한 번 넣었다 꺼내면 표기가 달라지므로, 그대로 견주면 팔레트에 있는 색도
+ * 없는 것으로 보고 지운다.
+ */
+function hex(value: string) {
+  const rgb = value.match(/^rgba?\(\s*(\d+)[\s,]+(\d+)[\s,]+(\d+)/)
+  if (rgb === null) return value
+  return '#' + rgb.slice(1, 4)
+    .map((part) => Number(part).toString(16).padStart(2, '0'))
+    .join('')
 }
