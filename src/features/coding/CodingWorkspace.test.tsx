@@ -632,6 +632,55 @@ test('a blocked preview says why instead of asking the operator to keep waiting'
   expect(screen.queryByRole('link', { name: '미리보기 열기' })).not.toBeInTheDocument()
 })
 
+/*
+ * A failed check does not always keep the preview down, and this is where that used to be
+ * confused. Job 9b55bb27's test failed while its preview was up and working; the screen hid
+ * the link anyway and left the approval button alone - taking away the only evidence this
+ * reader has, and keeping the one thing that should have been in doubt.
+ */
+test('a failed check does not hide a preview that is actually up', async () => {
+  render(<CodingWorkspace role="SUPER_ADMIN" api={candidateApi({
+    ...candidateDetail,
+    preview: {
+      ready: true,
+      url: 'http://127.0.0.1:18081/',
+      checkFailure: 'AI 가 만든 화면이 검사를 통과하지 못했습니다. 최고관리자에게 확인을 요청해 주세요.',
+    },
+  })} />)
+
+  // Both, not either: the thing to look at, and the reason to look at it carefully.
+  expect(await screen.findByRole('link', { name: '미리보기 열기' }))
+    .toHaveAttribute('href', 'http://127.0.0.1:18081/')
+  expect(screen.getByText(/검사를 통과하지 못했습니다/)).toBeInTheDocument()
+  expect(screen.queryByText(/아직 준비되지 않았습니다/)).not.toBeInTheDocument()
+})
+
+test('a build that failed says what went wrong and that there is nothing to open', async () => {
+  render(<CodingWorkspace role="SUPER_ADMIN" api={candidateApi({
+    ...candidateDetail,
+    preview: {
+      ready: false,
+      checkFailure: 'AI 가 만든 결과가 검사를 통과하지 못했습니다. 최고관리자에게 확인을 요청해 주세요.',
+      blocked: '검사가 실패해 미리보기를 띄우지 않았습니다.',
+    },
+  })} />)
+
+  expect(await screen.findByText(/검사를 통과하지 못했습니다/)).toBeInTheDocument()
+  expect(screen.getByText(/미리보기를 띄우지 않았습니다/)).toBeInTheDocument()
+  expect(screen.queryByRole('link', { name: '미리보기 열기' })).not.toBeInTheDocument()
+  // Nothing is still being raised, so nobody should be told to wait for it.
+  expect(screen.queryByText(/아직 준비되지 않았습니다/)).not.toBeInTheDocument()
+})
+
+test('a result whose checks passed carries no check warning at all', async () => {
+  // The control for the two above: the warning appears because a check failed, not because
+  // the panel always draws one.
+  render(<CodingWorkspace role="SUPER_ADMIN" api={candidateApi()} />)
+
+  expect(await screen.findByRole('link', { name: '미리보기 열기' })).toBeInTheDocument()
+  expect(screen.queryByText(/검사를 통과하지 못했습니다/)).not.toBeInTheDocument()
+})
+
 test('rejecting with attempts left promises another try, and says which one', async () => {
   render(<CodingWorkspace role="SUPER_ADMIN" api={candidateApi()} />)
 

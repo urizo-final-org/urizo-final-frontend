@@ -310,6 +310,7 @@ function SearchResults({ state, onRetry, hasQuery }: {
       title={citation.title}
       excerpt={citation.excerpt}
       categoryLabel={citation.categoryLabel}
+      eventStatus={citation.eventStatus}
       address={addressLine(citation.excerpt) ?? undefined}
     />)}
   </div>

@@ -131,6 +131,13 @@ export interface PreviewLink {
   ready: boolean
   url?: string
   /**
+   * Which check failed, whether or not there is a link. A failed test does not always keep
+   * the preview down, so this is not the same question as blocked, and it is not allowed to
+   * decide whether the link is shown - that is what took the link away from a Job whose
+   * preview was up and working.
+   */
+  checkFailure?: string
+  /**
    * Why there is nothing to open. Set only when a step actually failed; ready false with no
    * reason means the preview is still being raised. Written for a reader who cannot read
    * code, so it never names a file or a symbol.
