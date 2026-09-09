@@ -600,7 +600,7 @@ function VersionTable({ versions, mayWrite, blocked, busy, canRollback, onSwitch
         disabled={busy || !canRollback}
         onClick={onRollback}
         title={!mayWrite ? WRITE_DENIED : canRollback ? '마지막으로 활성화됐던 버전으로 되돌립니다.' : '되돌릴 이전 활성 버전이 없습니다.'}
-      >이전 활성 버전으로 롤백</button>
+      >이전 버전 롤백</button>
     </PanelTitle>
     <div className="overflow-x-auto">
       <div className="min-w-[56.75rem]">

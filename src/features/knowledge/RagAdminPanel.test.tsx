@@ -51,7 +51,7 @@ test('a general admin sees the screen but every write button is already disabled
   await screen.findByText('관광 지식 베이스')
   // 눌러서 403을 받는 게 아니라 세션 역할로 미리 판별한다. 403은 방어선이지 UI가 아니다.
   expect(screen.getByRole('button', { name: 'Build 시작' })).toBeDisabled()
-  expect(screen.getByRole('button', { name: '이전 활성 버전으로 롤백' })).toBeDisabled()
+  expect(screen.getByRole('button', { name: '이전 버전 롤백' })).toBeDisabled()
   expect(screen.getByText(/SUPER_ADMIN 권한이 필요합니다/)).toBeInTheDocument()
 })
 
