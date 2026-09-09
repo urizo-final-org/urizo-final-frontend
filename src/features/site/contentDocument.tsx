@@ -23,6 +23,7 @@ export const contentStyles = [
   '[&_li>p]:my-0',
   '[&_strong]:font-bold [&_strong]:text-[#263e48]',
   '[&_em]:italic',
+  '[&_s]:line-through [&_u]:underline [&_u]:underline-offset-2',
   // 링크는 템플릿 대표색을 따르지 않고 파란색으로 고정한다. 본문 안에서 눌러서 나가는 곳임을
   // 알아보는 표시라 대표색과 섞이면 그냥 강조한 글자로 읽힌다.
   '[&_a]:text-[#0b63ce] [&_a]:underline [&_a]:underline-offset-2',
@@ -95,12 +96,14 @@ function render(node: DocumentNode): ReactNode {
   }
 }
 
-/** 글자에 붙은 서식. 굵게·기울임·링크만 안다. */
+/** 글자에 붙은 서식. 서버 허용 목록(`ContentBody.MARKS`)과 같은 다섯 개를 안다. */
 function marked(node: DocumentNode): ReactNode {
   let content: ReactNode = node.text ?? ''
   for (const mark of node.marks ?? []) {
     if (mark.type === 'bold') content = <strong>{content}</strong>
     else if (mark.type === 'italic') content = <em>{content}</em>
+    else if (mark.type === 'strike') content = <s>{content}</s>
+    else if (mark.type === 'underline') content = <u>{content}</u>
     else if (mark.type === 'link') {
       const href = text(mark.attrs?.href)
       // 바깥으로 나가는 링크는 새 창으로 열고 참조자를 넘기지 않는다.
