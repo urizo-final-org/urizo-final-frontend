@@ -93,3 +93,28 @@ test('문서가 아니면 빈 화면 대신 받은 글자를 보여준다', () =
 
   expect(screen.getByText('## 아직 변환되지 않은 본문')).toBeInTheDocument()
 })
+
+/** `AI05-017` 2차. 노드 둘은 속성이 없어 태그만 확인하면 된다. */
+test('인용문과 구분선을 그린다', () => {
+  render(<ContentDocument body={document(
+    { type: 'blockquote', content: [{ type: 'paragraph', content: [
+      { type: 'text', text: '인용한 말' }] }] },
+    { type: 'horizontalRule' },
+  )} />)
+
+  expect(screen.getByText('인용한 말').closest('blockquote')).not.toBeNull()
+  expect(screen.getByRole('separator')).toBeInTheDocument()
+})
+
+/** 색은 팔레트에 있는 값만 그린다. 목록 밖이면 색 없이 글자만 남긴다. */
+test('팔레트 색만 글자에 입힌다', () => {
+  render(<ContentDocument body={document({ type: 'paragraph', content: [
+    { type: 'text', text: '빨강', marks: [{ type: 'textStyle', attrs: { color: '#c0392b' } }] },
+    { type: 'text', text: '형광', marks: [{ type: 'highlight', attrs: { color: '#fff3a3' } }] },
+    { type: 'text', text: '몰래', marks: [{ type: 'textStyle', attrs: { color: 'red' } }] },
+  ] })} />)
+
+  expect(screen.getByText('빨강')).toHaveStyle({ color: '#c0392b' })
+  expect(screen.getByText('형광').tagName).toBe('MARK')
+  expect(screen.getByText('몰래').tagName).not.toBe('SPAN')
+})

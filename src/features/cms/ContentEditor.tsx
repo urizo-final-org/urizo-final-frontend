@@ -1,8 +1,12 @@
+import { Color } from '@tiptap/extension-color'
+import Highlight from '@tiptap/extension-highlight'
 import Image from '@tiptap/extension-image'
+import { TextStyle } from '@tiptap/extension-text-style'
 import { EditorContent, useEditor, type ChainedCommands, type Editor } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
-import { useEffect, useRef, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { contentStyles } from '../site/contentDocument'
+import { HIGHLIGHT_COLORS, TEXT_COLORS } from '../site/contentPalette'
 import { contentImageUrl, type CmsApi } from './api'
 
 /**
@@ -25,16 +29,18 @@ export default function ContentEditor({ value, onChange, api, onFailure }: {
   const editor = useEditor({
     extensions: [
       StarterKit.configure({
-        blockquote: false,
         // 인라인 코드는 열지 않는다. 이 사이트의 컨텐츠에 명령어나 함수 이름을 쓸 일이 없다.
         code: false,
         codeBlock: false,
-        horizontalRule: false,
         heading: { levels: [2, 3] },
         // 건 링크를 눌러 확인할 수 있게 연다. 기본값이 새 탭이라 쓰던 글이 날아가지 않는다.
         link: { openOnClick: true, autolink: false, protocols: ['http', 'https'] },
       }),
       OwnImage,
+      // 색은 `textStyle` 마크의 속성으로 붙는다. `Color`만 넣으면 붙을 자리가 없다.
+      TextStyle,
+      Color,
+      Highlight.configure({ multicolor: true }),
     ],
     content: parse(value),
     // 기본값은 문서가 바뀔 때만 다시 그린다. 그러면 글자를 고르거나 서식만 바뀐 순간에는 툴바가
@@ -189,6 +195,41 @@ export default function ContentEditor({ value, onChange, api, onFailure }: {
 
       <Divider />
 
+      <Swatches
+        label="글자색"
+        colors={TEXT_COLORS}
+        current={editor.getAttributes('textStyle').color as string | undefined}
+        onPick={(color) => command((chain) => (color ? chain.setColor(color) : chain.unsetColor()))}
+      >
+        <path d="m5 19 6-14h2l6 14" /><path d="M7.5 14h9" />
+      </Swatches>
+      <Swatches
+        label="형광펜"
+        colors={HIGHLIGHT_COLORS}
+        current={editor.getAttributes('highlight').color as string | undefined}
+        onPick={(color) => command((chain) => (color
+          ? chain.setHighlight({ color })
+          : chain.unsetHighlight()))}
+        clearable
+      >
+        <path d="m15 4 5 5-9 9H6v-5z" /><path d="M4 21h16" />
+      </Swatches>
+
+      <Divider />
+
+      <Tool editor={editor} label="인용문" active="blockquote"
+        onClick={() => command((chain) => chain.toggleBlockquote())}>
+        <path d="M4 6h16" /><path d="M4 18h16" />
+        <path d="M8 10v4" /><path d="M12 10h8" /><path d="M12 14h5" />
+      </Tool>
+      <Tool editor={editor} label="구분선"
+        onClick={() => command((chain) => chain.setHorizontalRule())}>
+        <path d="M3 12h18" /><path d="M6 7h12" opacity="0.4" />
+        <path d="M6 17h12" opacity="0.4" />
+      </Tool>
+
+      <Divider />
+
       <Tool editor={editor} label="목록" active="bulletList"
         onClick={() => command((chain) => chain.toggleBulletList())}>
         <path d="M3 6h.01" /><path d="M3 12h.01" /><path d="M3 18h.01" />
@@ -220,6 +261,72 @@ export default function ContentEditor({ value, onChange, api, onFailure }: {
 
 function Divider() {
   return <span className="mx-[0.3125rem] h-4 w-px bg-[#e4ebea]" aria-hidden="true" />
+}
+
+/**
+ * 색을 고르는 툴바 단추.
+ *
+ * <p>색을 자유롭게 입력받지 않고 정해진 것만 보여준다. 서버가 목록 밖 값을 거부하므로,
+ * 고를 수 없게 하는 편이 저장할 때 막는 것보다 낫다.
+ *
+ * <p>지금 걸린 색을 아래쪽 띠로 보여준다. 아이콘만으로는 무엇이 걸려 있는지 알 수 없다.
+ */
+function Swatches({ label, colors, current, onPick, clearable, children }: {
+  label: string
+  colors: readonly { name: string; value: string | null }[]
+  current?: string
+  onPick: (color: string | null) => void
+  clearable?: boolean
+  children: ReactNode
+}) {
+  const [open, setOpen] = useState(false)
+  return <span className="relative">
+    <button
+      type="button"
+      title={label}
+      aria-label={label}
+      aria-expanded={open}
+      className="grid h-7 w-7 place-items-center rounded-[0.25rem] hover:bg-sub"
+      onMouseDown={(event) => event.preventDefault()}
+      onClick={() => setOpen((was) => !was)}
+    >
+      <span className="grid gap-[0.125rem]">
+        <svg
+          width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+          strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"
+        >{children}</svg>
+        <span
+          className="h-[0.1875rem] w-[0.9375rem] rounded-full"
+          style={{ background: current ?? '#c3cfd2' }}
+          aria-hidden="true"
+        />
+      </span>
+    </button>
+    {open && <span
+      className="absolute left-0 top-[1.875rem] z-20 flex gap-[0.1875rem] rounded-[0.3125rem] border border-line-soft bg-white p-[0.3125rem] shadow-[0_4px_12px_#1020341f]"
+      role="group"
+      aria-label={`${label} 고르기`}
+    >
+      {colors.map((color) => <button
+        key={color.name}
+        type="button"
+        title={color.name}
+        aria-label={color.name}
+        className="h-[1.125rem] w-[1.125rem] rounded-[0.1875rem] shadow-[inset_0_0_0_1px_#00000018]"
+        style={{ background: color.value ?? '#ffffff' }}
+        onMouseDown={(event) => event.preventDefault()}
+        onClick={() => { onPick(color.value); setOpen(false) }}
+      >{color.value === null && <span className="text-[0.625rem] text-muted-3">✕</span>}</button>)}
+      {clearable && <button
+        type="button"
+        title="지우기"
+        aria-label="지우기"
+        className="h-[1.125rem] rounded-[0.1875rem] px-[0.3125rem] text-[0.625rem] text-muted-2 shadow-[inset_0_0_0_1px_#00000018]"
+        onMouseDown={(event) => event.preventDefault()}
+        onClick={() => { onPick(null); setOpen(false) }}
+      >지우기</button>}
+    </span>}
+  </span>
 }
 
 /**

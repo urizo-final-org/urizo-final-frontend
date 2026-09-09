@@ -1,4 +1,5 @@
-import { Fragment, type ReactNode } from 'react'
+import { Fragment, type CSSProperties, type ReactNode } from 'react'
+import { highlightColor, textColor } from './contentPalette'
 
 /**
  * 컨텐츠 본문의 생김새. 편집기·미리보기·사용자 사이트가 이 하나를 함께 쓴다.
@@ -24,6 +25,12 @@ export const contentStyles = [
   '[&_strong]:font-bold [&_strong]:text-[#263e48]',
   '[&_em]:italic',
   '[&_s]:line-through [&_u]:underline [&_u]:underline-offset-2',
+  '[&_blockquote]:my-6 [&_blockquote]:border-l-[3px] [&_blockquote]:border-[var(--brand,#2a5f61)]',
+  '[&_blockquote]:bg-[#f4f8f8] [&_blockquote]:py-3 [&_blockquote]:pl-5 [&_blockquote]:pr-4',
+  '[&_blockquote>p]:my-1',
+  '[&_hr]:my-8 [&_hr]:border-0 [&_hr]:border-t [&_hr]:border-[#dde5e6]',
+  // 형광펜 안에서도 글자색이 살아 있어야 한다. 브라우저 기본값이 검정이라 덮어쓴다.
+  '[&_mark]:rounded-[0.15em] [&_mark]:px-[0.15em]',
   // 링크는 템플릿 대표색을 따르지 않고 파란색으로 고정한다. 본문 안에서 눌러서 나가는 곳임을
   // 알아보는 표시라 대표색과 섞이면 그냥 강조한 글자로 읽힌다.
   '[&_a]:text-[#0b63ce] [&_a]:underline [&_a]:underline-offset-2',
@@ -88,6 +95,10 @@ function render(node: DocumentNode): ReactNode {
       return <ol>{children(node)}</ol>
     case 'listItem':
       return <li>{children(node)}</li>
+    case 'blockquote':
+      return <blockquote>{children(node)}</blockquote>
+    case 'horizontalRule':
+      return <hr />
     case 'image':
       return <img src={text(node.attrs?.src)} alt={text(node.attrs?.alt)} />
     default:
@@ -104,6 +115,15 @@ function marked(node: DocumentNode): ReactNode {
     else if (mark.type === 'italic') content = <em>{content}</em>
     else if (mark.type === 'strike') content = <s>{content}</s>
     else if (mark.type === 'underline') content = <u>{content}</u>
+    // 색은 팔레트에 있는 값만 쓴다. 값이 목록 밖이면 색 없이 글자만 남긴다.
+    else if (mark.type === 'textStyle') {
+      const color = textColor(mark.attrs?.color)
+      if (color) content = <span style={{ color }}>{content}</span>
+    }
+    else if (mark.type === 'highlight') {
+      const background = highlightColor(mark.attrs?.color)
+      if (background) content = <mark style={highlightStyle(background)}>{content}</mark>
+    }
     else if (mark.type === 'link') {
       const href = text(mark.attrs?.href)
       // 바깥으로 나가는 링크는 새 창으로 열고 참조자를 넘기지 않는다.
@@ -117,4 +137,9 @@ function marked(node: DocumentNode): ReactNode {
 
 function text(value: unknown) {
   return typeof value === 'string' ? value : ''
+}
+
+/** 형광펜의 기본 글자색은 검정이다. 본문 색을 물려받게 해서 형광만 얹는다. */
+function highlightStyle(background: string): CSSProperties {
+  return { background, color: 'inherit' }
 }
