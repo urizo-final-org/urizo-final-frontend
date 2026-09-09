@@ -151,6 +151,21 @@ test('switching the knowledge base drops the previously chosen target', async ()
   }))
 })
 
+/**
+ * PR #55 리뷰 3 — 조회 실패가 requests=null로 표현돼 "불러오는 중…"과 같은 화면이 됐다.
+ * 한 번 실패하면 재시도 경로도 없이 영원히 로딩 문구가 남았다. 실패는 실패라고 말한다.
+ */
+test('a failed listing says so and offers a retry instead of loading forever', async () => {
+  const listing = vi.fn()
+    .mockRejectedValueOnce(new Error('down'))
+    .mockResolvedValue({ items: [request()] })
+  show(api({ listActivationRequests: listing }), { mayWrite: true })
+  expect(await screen.findByText('요청 목록을 불러오지 못했습니다.')).toBeInTheDocument()
+  expect(screen.queryByText('요청을 불러오는 중…')).not.toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: '다시 시도' }))
+  expect(await screen.findByText('일반 관리자')).toBeInTheDocument()
+})
+
 /** 요청 목록 하나가 실패해도 RAG 화면 전체가 오류로 덮이면 안 된다. */
 test('a failing list leaves the panel standing', async () => {
   show(api({ listActivationRequests: vi.fn().mockRejectedValue(new Error('down')) }))

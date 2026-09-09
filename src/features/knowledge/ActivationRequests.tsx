@@ -36,6 +36,9 @@ export function ActivationRequests({ api, knowledgeBaseId, mayWrite, versions, r
   refreshKey: number
 }) {
   const [requests, setRequests] = useState<ActivationRequest[] | null>(null)
+  // 실패를 requests=null로 표현하면 "불러오는 중…"과 구분이 안 돼 실패가 로딩으로
+  // 위장된다(PR #55 리뷰 3). 실패는 별도 축으로 들고, 로딩은 null에만 남긴다.
+  const [listFailed, setListFailed] = useState(false)
   const [reason, setReason] = useState('')
   const [targetId, setTargetId] = useState(NEW_BUILD)
   const [busy, setBusy] = useState(false)
@@ -59,17 +62,19 @@ export function ActivationRequests({ api, knowledgeBaseId, mayWrite, versions, r
     setSent(false)
     setFailure(null)
     setRequests(null)
+    setListFailed(false)
   }, [knowledgeBaseId])
 
   const load = useCallback(async () => {
     if (!knowledgeBaseId) return
     try {
       const list = await api.listActivationRequests(knowledgeBaseId)
-      if (alive.current) setRequests(list.items ?? [])
+      if (alive.current) { setRequests(list.items ?? []); setListFailed(false) }
     }
     catch {
-      // 요청 목록 하나 때문에 RAG 화면 전체가 오류로 덮이면 안 된다. 없는 셈 친다.
-      if (alive.current) setRequests(null)
+      // 요청 목록 하나 때문에 RAG 화면 전체가 오류로 덮이면 안 된다 — 패널은 세워 둔다.
+      // 갖고 있던 목록은 지우지 않는다: 낡았다고 알리는 편이 사라지는 것보다 낫다.
+      if (alive.current) setListFailed(true)
     }
   }, [api, knowledgeBaseId])
 
@@ -153,8 +158,12 @@ export function ActivationRequests({ api, knowledgeBaseId, mayWrite, versions, r
     </div>}
 
     <div>
-      {requests == null && <p className="m-0 px-4 py-[0.875rem] text-xs text-muted-3">요청을 불러오는 중…</p>}
-      {requests != null && open.length === 0 && <p className="m-0 px-4 py-[0.875rem] text-xs text-muted-3">
+      {requests == null && !listFailed && <p className="m-0 px-4 py-[0.875rem] text-xs text-muted-3">요청을 불러오는 중…</p>}
+      {listFailed && <div className="flex items-center gap-2 px-4 py-[0.875rem]">
+        <p className="m-0 text-xs text-muted-3">요청 목록을 불러오지 못했습니다.</p>
+        <button className={noHover(smallButton)} onClick={() => { void load() }}>다시 시도</button>
+      </div>}
+      {requests != null && !listFailed && open.length === 0 && <p className="m-0 px-4 py-[0.875rem] text-xs text-muted-3">
         열린 요청이 없습니다.
       </p>}
       {open.map((request) => <div key={request.requestId} className="border-b border-row-line px-4 py-[0.625rem] text-xs text-body last:border-b-0">
