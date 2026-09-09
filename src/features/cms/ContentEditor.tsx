@@ -8,6 +8,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { contentStyles } from '../site/contentDocument'
 import { HIGHLIGHT_COLORS, TEXT_COLORS } from '../site/contentPalette'
 import { contentImageUrl, type CmsApi } from './api'
+import { cleanImportedHtml } from './contentHtml'
 
 /**
  * 컨텐츠 본문 편집기.
@@ -26,6 +27,8 @@ export default function ContentEditor({ value, onChange, api, onFailure }: {
   onFailure: (message: string) => void
 }) {
   const file = useRef<HTMLInputElement>(null)
+  /** 소스 편집 중인 HTML. `null`이면 평소처럼 편집기를 보여준다. */
+  const [source, setSource] = useState<string | null>(null)
   const editor = useEditor({
     extensions: [
       StarterKit.configure({
@@ -112,6 +115,27 @@ export default function ContentEditor({ value, onChange, api, onFailure }: {
   }
 
   /**
+   * 소스 편집을 열고 닫는다.
+   *
+   * 열 때는 지금 본문을 HTML로 보여주고, 닫을 때 그것을 다시 본문으로 삼는다. 실제 변환은
+   * Tiptap이 하며 편집기가 켠 부품만 스키마를 통과하므로 모르는 것은 알아서 사라진다.
+   * 조용히 사라지면 붙여넣은 글이 반쯤 없어진 것을 나중에 발견하므로 무엇이 빠졌는지 알린다.
+   */
+  function toggleSource() {
+    if (!editor) return
+    if (source === null) {
+      setSource(editor.getHTML())
+      return
+    }
+    const cleaned = cleanImportedHtml(source)
+    editor.commands.setContent(cleaned.html, { emitUpdate: true })
+    setSource(null)
+    if (cleaned.dropped.length > 0) {
+      onFailure(`넣을 수 없는 ${cleaned.dropped.map((tag) => `<${tag}>`).join(' ')} 을(를) 빼고 반영했습니다.`)
+    }
+  }
+
+  /**
    * 툴바 명령은 고른 범위를 되돌린 뒤 실행한다.
    *
    * 버튼을 누르는 사이 편집기에서 포커스가 빠지면서 고른 범위가 풀린다. 그러면 굵게가 고른
@@ -145,6 +169,11 @@ export default function ContentEditor({ value, onChange, api, onFailure }: {
 
   return <div className="mt-[0.375rem] rounded-[0.3125rem] border border-field-line">
     <div className="flex flex-wrap items-center gap-[0.125rem] rounded-t-[0.3125rem] border-b border-field-line bg-white px-2 py-[0.375rem] text-muted">
+      {/*
+        소스 편집 중에는 서식 단추를 잠근다. 편집기가 화면에 없는데 명령만 도는 자리를 없앤다.
+        `contents`라 배치에는 영향이 없고, 소스 편집 단추는 이 밖에 두어 계속 누를 수 있다.
+      */}
+      <fieldset className="contents" disabled={source !== null}>
       <Tool editor={editor} label="되돌리기" disabled={!editor.can().undo()}
         onClick={() => editor.chain().focus().undo().run()}>
         <path d="M3 7v6h6" /><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13" />
@@ -265,8 +294,24 @@ export default function ContentEditor({ value, onChange, api, onFailure }: {
         accept="image/jpeg,image/png,image/webp"
         onChange={(event) => { void insertFiles([...(event.target.files ?? [])]); event.target.value = '' }}
       />
+      </fieldset>
+
+      <span className="ml-auto" />
+
+      {/* 자주 쓰는 것이 아니라 맨 끝에 둔다. 잘못 고치면 본문이 예상과 다르게 바뀐다. */}
+      <Tool editor={editor} label="소스 편집" pressed={source !== null} onClick={toggleSource}>
+        <path d="m9 17-5-5 5-5" /><path d="m15 7 5 5-5 5" />
+      </Tool>
     </div>
-    <EditorContent editor={editor} />
+    {source === null
+      ? <EditorContent editor={editor} />
+      : <textarea
+        className="block min-h-[18rem] w-full resize-y border-0 bg-sub p-4 font-mono text-[0.8125rem] leading-[1.65] text-body outline-none"
+        aria-label="HTML 소스"
+        spellCheck={false}
+        value={source}
+        onChange={(event) => setSource(event.target.value)}
+      />}
   </div>
 }
 
@@ -354,21 +399,23 @@ function Swatches({ label, colors, current, onPick, clearable, disabled, childre
  * 버튼을 누르는 순간 편집기에서 포커스가 빠지면 고른 범위가 풀려 서식이 걸리지 않는다.
  * `mousedown`의 기본 동작을 막아 포커스를 편집기에 둔 채로 명령만 보낸다.
  */
-function Tool({ editor, label, active, attrs, disabled, onClick, children }: {
+function Tool({ editor, label, active, attrs, disabled, pressed, onClick, children }: {
   editor: Editor
   label: string
   active?: string
   attrs?: Record<string, unknown>
   disabled?: boolean
+  /** 편집기 상태가 아니라 화면 상태로 눌린 표시를 정할 때 쓴다. 소스 편집이 그렇다. */
+  pressed?: boolean
   onClick: () => void
   children: ReactNode
 }) {
-  const on = active ? editor.isActive(active, attrs) : false
+  const on = pressed ?? (active ? editor.isActive(active, attrs) : false)
   return <button
     type="button"
     title={label}
     aria-label={label}
-    aria-pressed={active ? on : undefined}
+    aria-pressed={active !== undefined || pressed !== undefined ? on : undefined}
     disabled={disabled}
     style={on ? { color: 'var(--primary)' } : undefined}
     className={`grid h-7 w-7 place-items-center rounded-[0.25rem] disabled:opacity-35 ${

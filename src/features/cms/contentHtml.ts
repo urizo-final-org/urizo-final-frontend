@@ -1,0 +1,84 @@
+import { HIGHLIGHT_COLORS, TEXT_COLORS } from '../site/contentPalette'
+
+/**
+ * 소스 편집으로 들어온 HTML을 다듬는다.
+ *
+ * <p>실제 변환은 Tiptap이 한다. 편집기가 켠 부품만 스키마를 통과하므로 모르는 것은 알아서
+ * 사라진다. 여기서 하는 일은 둘이다.
+ *
+ * <ol>
+ *   <li>무엇이 빠지는지 미리 세어 사람에게 알린다. 조용히 사라지면 붙여넣은 글이 반쯤 없어진
+ *       것을 나중에 발견한다.</li>
+ *   <li>팔레트 밖 색을 지운다. 그대로 두면 저장 단계에서 거부되는데, 그때는 어디가 문제인지
+ *       찾기 어렵다. 가까운 색으로 바꾸지 않는다 — 한꺼번에 들어오는 글에서 색이 조용히
+ *       달라지는 것보다 없는 편이 낫다.</li>
+ * </ol>
+ */
+
+/** 편집기가 읽어 들일 수 있는 태그. 같은 뜻의 옛 태그도 Tiptap이 받아 주므로 함께 둔다. */
+const KNOWN = new Set([
+  'P', 'H2', 'H3', 'UL', 'OL', 'LI', 'A', 'IMG', 'BLOCKQUOTE', 'HR', 'BR',
+  'STRONG', 'B', 'EM', 'I', 'U', 'INS', 'S', 'STRIKE', 'DEL', 'SPAN', 'MARK',
+])
+
+const TEXT_VALUES = new Set(TEXT_COLORS.map((color) => color.value).filter((v): v is string => v !== null))
+const HIGHLIGHT_VALUES = new Set(HIGHLIGHT_COLORS.map((color) => color.value))
+
+export type ImportedHtml = {
+  html: string
+  /** 빠지는 태그 이름. 같은 것은 한 번만 센다. */
+  dropped: string[]
+}
+
+export function cleanImportedHtml(source: string): ImportedHtml {
+  const holder = document.createElement('div')
+  holder.innerHTML = source
+  const dropped = new Set<string>()
+
+  for (const node of [...holder.querySelectorAll('*')]) {
+    if (!KNOWN.has(node.tagName)) {
+      dropped.add(node.tagName.toLowerCase())
+      continue
+    }
+    trimColours(node)
+  }
+  return { html: holder.innerHTML, dropped: [...dropped].sort() }
+}
+
+/**
+ * 팔레트에 있는 색만 남긴다.
+ *
+ * <p>글자색은 `style="color"`로, 형광펜은 `style="background-color"`와 `data-color`로 온다.
+ * 나머지 선언은 편집기가 어차피 버리므로 색만 보고 통째로 다시 적는다.
+ */
+function trimColours(node: Element) {
+  const style = node.getAttribute('style')
+  if (style === null) return
+
+  const kept: string[] = []
+  const colour = declaration(style, 'color')
+  const background = declaration(style, 'background-color')
+  if (colour !== null && TEXT_VALUES.has(colour)) kept.push(`color: ${colour}`)
+  if (background !== null && HIGHLIGHT_VALUES.has(background)) {
+    kept.push(`background-color: ${background}`)
+  }
+
+  if (kept.length > 0) node.setAttribute('style', kept.join('; '))
+  else node.removeAttribute('style')
+
+  const marked = node.getAttribute('data-color')
+  if (marked !== null && !HIGHLIGHT_VALUES.has(marked.toLowerCase())) {
+    node.removeAttribute('data-color')
+  }
+}
+
+/** `style` 문자열에서 선언 하나를 읽는다. 값은 소문자로 맞춘다. */
+function declaration(style: string, name: string) {
+  for (const part of style.split(';')) {
+    const at = part.indexOf(':')
+    if (at < 0) continue
+    if (part.slice(0, at).trim().toLowerCase() !== name) continue
+    return part.slice(at + 1).trim().toLowerCase()
+  }
+  return null
+}

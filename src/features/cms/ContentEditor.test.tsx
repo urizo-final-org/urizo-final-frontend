@@ -88,3 +88,46 @@ test('인용문 안에서는 구분선을 넣을 수 없다', async () => {
 // 링크 글자 안에서 구분선과 색을 막는 것은 여기서 확인하지 못한다. 편집기가 문서를 받으면
 // 커서를 맨 앞에 두는데 그 자리는 링크 밖이고, 커서를 링크 안으로 옮길 방법이 없다.
 // 브라우저에서 사람이 확인한다.
+
+/** `AI05-018` 3차. 소스 편집은 모드를 바꾸는 것이라 화면 상태로 확인한다. */
+test('소스 편집을 열면 HTML이 보이고 서식 단추가 잠긴다', async () => {
+  open()
+
+  const toggle = await screen.findByRole('button', { name: '소스 편집' })
+  expect(screen.getByRole('button', { name: '굵게' })).toBeEnabled()
+
+  fireEvent.click(toggle)
+
+  const area = screen.getByRole<HTMLTextAreaElement>('textbox', { name: 'HTML 소스' })
+  expect(area.value).toContain('<p>본문</p>')
+  expect(toggle).toHaveAttribute('aria-pressed', 'true')
+  expect(screen.getByRole('button', { name: '굵게' })).toBeDisabled()
+})
+
+test('소스를 고치고 닫으면 본문에 반영된다', async () => {
+  const onChange = open()
+
+  fireEvent.click(await screen.findByRole('button', { name: '소스 편집' }))
+  fireEvent.change(screen.getByRole('textbox', { name: 'HTML 소스' }), {
+    target: { value: '<h2>새 제목</h2><p>새 본문</p>' },
+  })
+  fireEvent.click(screen.getByRole('button', { name: '소스 편집' }))
+
+  expect(saved(onChange)).toContain('"heading"')
+  expect(saved(onChange)).toContain('새 제목')
+})
+
+/** 조용히 사라지면 붙여넣은 글이 반쯤 없어진 것을 나중에 발견한다. */
+test('넣을 수 없는 부분이 있으면 무엇이 빠졌는지 알린다', async () => {
+  const api = new CmsApi('test-session', vi.fn(), vi.fn())
+  const onFailure = vi.fn()
+  render(<ContentEditor value={body} onChange={vi.fn()} api={api} onFailure={onFailure} />)
+
+  fireEvent.click(await screen.findByRole('button', { name: '소스 편집' }))
+  fireEvent.change(screen.getByRole('textbox', { name: 'HTML 소스' }), {
+    target: { value: '<p>본문</p><table><tr><td>표</td></tr></table>' },
+  })
+  fireEvent.click(screen.getByRole('button', { name: '소스 편집' }))
+
+  expect(onFailure).toHaveBeenCalledWith(expect.stringContaining('<table>'))
+})
