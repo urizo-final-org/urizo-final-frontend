@@ -19,6 +19,11 @@ export type PublicCitation = {
    * TODO(S2): 위와 같은 시점에 required로 좁힌다.
    */
   categoryLabel?: string
+  /**
+   * `'ENDED'`(종료된 행사) 또는 null. 백엔드 axms-ai02-008이 추가하는 필드라 지금 떠 있는
+   * 서버는 아직 싣지 않는다 — optional로 두고 배포 후 `string | null`로 좁힌다.
+   */
+  eventStatus?: string | null
 }
 
 export type PublicChatRequest = {
