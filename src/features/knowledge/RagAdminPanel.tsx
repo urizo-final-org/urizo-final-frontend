@@ -521,13 +521,13 @@ function QualityMetrics() {
  * 라벨(`METRICS_SOURCE`)은 접힘 토글의 손잡이로 항상 보이게 둔다 — 라벨 없이 숫자만 있으면
  * 시스템이 방금 잰 것처럼 보이는 거짓말이 된다. evaluate가 실제로 재게 되면 통째로 사라질 자리다.
  */
-type OfflineMetrics = { r5: number; cType: number; mrr: number; hit5: number; appliedTo: string }
+type OfflineMetrics = { r5: number; cType: number; mrr: number; hit5: number }
 
 const VERSION_METRICS: Record<string, OfflineMetrics> = {
-  // 데모 DB 2026-09-09 오프라인 실측 — v12 활성 · v17 색인 전략 변경(기준선 미달) · v18 만료 라벨만.
-  '27c887bc-b528-4099-af77-e8da92751e2a': { r5: 0.9747, cType: 0.8968, mrr: 0.9704, hit5: 250, appliedTo: 'v12 색인 실측' },
-  'e6da49bf-26f2-4f80-ba6d-b4995311e53e': { r5: 0.9546, cType: 0.7990, mrr: 0.9697, hit5: 249, appliedTo: 'v17 색인 실측' },
-  '2d239788-9cef-4bcf-ab30-f8e3d5b0f449': { r5: 0.9747, cType: 0.8968, mrr: 0.9704, hit5: 250, appliedTo: 'v18 색인 실측' },
+  // 데모 DB 2026-09-09 오프라인 실측. 순서대로 v12(활성) · v17(색인 전략 변경 · 기준선 미달) · v18(만료 라벨만).
+  '27c887bc-b528-4099-af77-e8da92751e2a': { r5: 0.9747, cType: 0.8968, mrr: 0.9704, hit5: 250 },
+  'e6da49bf-26f2-4f80-ba6d-b4995311e53e': { r5: 0.9546, cType: 0.7990, mrr: 0.9697, hit5: 249 },
+  '2d239788-9cef-4bcf-ab30-f8e3d5b0f449': { r5: 0.9747, cType: 0.8968, mrr: 0.9704, hit5: 250 },
 }
 /** 오프라인 TC 전건. hit@5 건수의 분모다. */
 const METRICS_TOTAL = 252
@@ -576,7 +576,6 @@ function MetricsCell({ version, activeR5 }: { version: KnowledgeVersion; activeR
       <span className="block font-mono text-[0.625rem] text-muted-2">
         {`R@5 ${metrics.r5.toFixed(4)} · C유형 ${metrics.cType.toFixed(4)} · MRR ${metrics.mrr.toFixed(4)}`}
       </span>
-      <span className="block text-[0.625rem] text-muted-3">{`${METRICS_TOTAL} TC · ${metrics.appliedTo}`}</span>
     </details>
   </span>
 }
