@@ -31,8 +31,8 @@ export const contentStyles = [
   //
   // 색 값으로 규칙을 나누지 않는다. 편집기는 인라인 색을 hex로 두는데 렌더러는 React가
   // `rgb(...)`로 바꿔 적어, 값을 대조하면 두 화면이 서로 다르게 걸린다.
-  '[&_[style*=color]_strong]:text-inherit',
-  '[&_[style*=color]_strong]:[filter:brightness(0.78)]',
+  // 글자색만 손댄다. `filter`로 어둡게 하면 형광펜 배경까지 함께 어두워진다.
+  '[&_[style*=color]_strong]:[color:color-mix(in_srgb,currentColor_78%,black)]',
   '[&_em]:italic',
   '[&_s]:line-through [&_u]:underline [&_u]:underline-offset-2',
   // 인용선은 옅게 둔다. 인용은 본문을 밀어내는 것이 아니라 옆으로 물러난 덩어리라,
