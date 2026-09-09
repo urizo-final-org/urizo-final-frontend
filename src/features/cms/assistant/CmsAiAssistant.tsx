@@ -5,6 +5,7 @@ import { notifyCmsChanged, notifySiteUpdated } from '../api'
 // 게시물 미리보기는 사용자 화면과 같은 렌더러를 쓴다. `AI05-001`이 이 재사용을 위해 export를 뽑았다.
 import { RichText } from '../../site/PublicSite'
 import { ContentDocument } from '../../site/contentDocument'
+import { HIGHLIGHT_COLORS, TEXT_COLORS } from '../../site/contentPalette'
 import { contentImageUrl, type ContentImage } from '../api'
 import { Icon } from '../../../shared/ui/icons'
 import { Badge, control, panel, primaryButton, secondaryButton, textarea } from '../../../shared/ui/primitives'
@@ -743,6 +744,14 @@ export default function CmsAiAssistant({ route, target, candidates, menus, onTar
       >요청 분석하기</button>
       {!routeSupported && <p className="mb-0 mt-2 text-center text-[0.625rem] leading-4 text-muted-3">
         {profile.section} 화면은 아직 자연어 변경을 지원하지 않습니다.
+      </p>}
+      {/*
+        쓸 수 있는 색을 미리 보여준다. 목록에 없는 색을 시키면 모델이 가장 가까운 것을 고르므로,
+        미리보기까지 갔다가 반려하는 헛걸음이 생긴다. 시키기 전에 아는 편이 낫다.
+      */}
+      {routeSupported && route === 'contents' && <p className="mb-0 mt-2 text-[0.625rem] leading-[1.5] text-muted-3">
+        쓸 수 있는 색은 {TEXT_COLORS.filter((color) => color.value).map((color) => color.name).join('·')},
+        형광펜은 {HIGHLIGHT_COLORS.map((color) => color.name).join('·')}입니다.
       </p>}
     </form>
 
