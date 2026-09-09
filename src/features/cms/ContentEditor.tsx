@@ -1,9 +1,14 @@
+import { Color } from '@tiptap/extension-color'
+import Highlight from '@tiptap/extension-highlight'
 import Image from '@tiptap/extension-image'
+import { TextStyle } from '@tiptap/extension-text-style'
 import { EditorContent, useEditor, type ChainedCommands, type Editor } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
-import { useEffect, useRef, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { contentStyles } from '../site/contentDocument'
+import { HIGHLIGHT_COLORS, TEXT_COLORS } from '../site/contentPalette'
 import { contentImageUrl, type CmsApi } from './api'
+import { cleanImportedHtml, formatHtml } from './contentHtml'
 
 /**
  * 컨텐츠 본문 편집기.
@@ -22,19 +27,23 @@ export default function ContentEditor({ value, onChange, api, onFailure }: {
   onFailure: (message: string) => void
 }) {
   const file = useRef<HTMLInputElement>(null)
+  /** 소스 편집 중인 HTML. `null`이면 평소처럼 편집기를 보여준다. */
+  const [source, setSource] = useState<string | null>(null)
   const editor = useEditor({
     extensions: [
       StarterKit.configure({
-        blockquote: false,
         // 인라인 코드는 열지 않는다. 이 사이트의 컨텐츠에 명령어나 함수 이름을 쓸 일이 없다.
         code: false,
         codeBlock: false,
-        horizontalRule: false,
         heading: { levels: [2, 3] },
         // 건 링크를 눌러 확인할 수 있게 연다. 기본값이 새 탭이라 쓰던 글이 날아가지 않는다.
         link: { openOnClick: true, autolink: false, protocols: ['http', 'https'] },
       }),
       OwnImage,
+      // 색은 `textStyle` 마크의 속성으로 붙는다. `Color`만 넣으면 붙을 자리가 없다.
+      TextStyle,
+      Color,
+      Highlight.configure({ multicolor: true }),
     ],
     content: parse(value),
     // 기본값은 문서가 바뀔 때만 다시 그린다. 그러면 글자를 고르거나 서식만 바뀐 순간에는 툴바가
@@ -106,6 +115,27 @@ export default function ContentEditor({ value, onChange, api, onFailure }: {
   }
 
   /**
+   * 소스 편집을 열고 닫는다.
+   *
+   * 열 때는 지금 본문을 HTML로 보여주고, 닫을 때 그것을 다시 본문으로 삼는다. 실제 변환은
+   * Tiptap이 하며 편집기가 켠 부품만 스키마를 통과하므로 모르는 것은 알아서 사라진다.
+   * 조용히 사라지면 붙여넣은 글이 반쯤 없어진 것을 나중에 발견하므로 무엇이 빠졌는지 알린다.
+   */
+  function toggleSource() {
+    if (!editor) return
+    if (source === null) {
+      setSource(formatHtml(editor.getHTML()))
+      return
+    }
+    const cleaned = cleanImportedHtml(source)
+    editor.commands.setContent(cleaned.html, { emitUpdate: true })
+    setSource(null)
+    if (cleaned.dropped.length > 0) {
+      onFailure(`넣을 수 없는 ${cleaned.dropped.map((tag) => `<${tag}>`).join(' ')} 을(를) 빼고 반영했습니다.`)
+    }
+  }
+
+  /**
    * 툴바 명령은 고른 범위를 되돌린 뒤 실행한다.
    *
    * 버튼을 누르는 사이 편집기에서 포커스가 빠지면서 고른 범위가 풀린다. 그러면 굵게가 고른
@@ -139,6 +169,11 @@ export default function ContentEditor({ value, onChange, api, onFailure }: {
 
   return <div className="mt-[0.375rem] rounded-[0.3125rem] border border-field-line">
     <div className="flex flex-wrap items-center gap-[0.125rem] rounded-t-[0.3125rem] border-b border-field-line bg-white px-2 py-[0.375rem] text-muted">
+      {/*
+        소스 편집 중에는 서식 단추를 잠근다. 편집기가 화면에 없는데 명령만 도는 자리를 없앤다.
+        `contents`라 배치에는 영향이 없고, 소스 편집 단추는 이 밖에 두어 계속 누를 수 있다.
+      */}
+      <fieldset className="contents" disabled={source !== null}>
       <Tool editor={editor} label="되돌리기" disabled={!editor.can().undo()}
         onClick={() => editor.chain().focus().undo().run()}>
         <path d="M3 7v6h6" /><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13" />
@@ -189,6 +224,52 @@ export default function ContentEditor({ value, onChange, api, onFailure }: {
 
       <Divider />
 
+      {/*
+        링크 글자에는 색을 칠하지 않는다. 파란 밑줄 자체가 눌러서 나가는 곳이라는 표시라,
+        다른 색을 얹으면 그 신호가 흐려진다. 밑줄은 링크에, 글자색은 그 안쪽에 걸려 서로 어긋나기도 한다.
+      */}
+      <Swatches
+        label="글자색"
+        colors={TEXT_COLORS}
+        disabled={editor.isActive('link')}
+        current={editor.getAttributes('textStyle').color as string | undefined}
+        onPick={(color) => command((chain) => (color ? chain.setColor(color) : chain.unsetColor()))}
+      >
+        <path d="m5 19 6-14h2l6 14" /><path d="M7.5 14h9" />
+      </Swatches>
+      <Swatches
+        label="형광펜"
+        colors={HIGHLIGHT_COLORS}
+        disabled={editor.isActive('link')}
+        current={editor.getAttributes('highlight').color as string | undefined}
+        onPick={(color) => command((chain) => (color
+          ? chain.setHighlight({ color })
+          : chain.unsetHighlight()))}
+        clearable
+      >
+        <path d="m15 4 5 5-9 9H6v-5z" /><path d="M4 21h16" />
+      </Swatches>
+
+      <Divider />
+
+      <Tool editor={editor} label="인용문" active="blockquote"
+        onClick={() => command((chain) => chain.toggleBlockquote())}>
+        <path d="M4 6h16" /><path d="M4 18h16" />
+        <path d="M8 10v4" /><path d="M12 10h8" /><path d="M12 14h5" />
+      </Tool>
+      {/*
+        인용문 안에는 넣지 못하게 막는다. 넣고 나면 지울 방법이 마땅치 않아 커서가 갇힌다.
+        링크 글자 가운데도 막는다. 거기서 나누면 같은 주소를 가리키는 링크 둘이 생긴다.
+      */}
+      <Tool editor={editor} label="구분선"
+        disabled={editor.isActive('blockquote') || editor.isActive('link')}
+        onClick={() => command((chain) => chain.setHorizontalRule())}>
+        <path d="M3 12h18" /><path d="M6 7h12" opacity="0.4" />
+        <path d="M6 17h12" opacity="0.4" />
+      </Tool>
+
+      <Divider />
+
       <Tool editor={editor} label="목록" active="bulletList"
         onClick={() => command((chain) => chain.toggleBulletList())}>
         <path d="M3 6h.01" /><path d="M3 12h.01" /><path d="M3 18h.01" />
@@ -213,13 +294,99 @@ export default function ContentEditor({ value, onChange, api, onFailure }: {
         accept="image/jpeg,image/png,image/webp"
         onChange={(event) => { void insertFiles([...(event.target.files ?? [])]); event.target.value = '' }}
       />
+      </fieldset>
+
+      <span className="ml-auto" />
+
+      {/* 자주 쓰는 것이 아니라 맨 끝에 둔다. 잘못 고치면 본문이 예상과 다르게 바뀐다. */}
+      <Tool editor={editor} label="소스 편집" pressed={source !== null} onClick={toggleSource}>
+        <path d="m9 17-5-5 5-5" /><path d="m15 7 5 5-5 5" />
+      </Tool>
     </div>
-    <EditorContent editor={editor} />
+    {source === null
+      ? <EditorContent editor={editor} />
+      : <textarea
+        className="block min-h-[18rem] w-full resize-y border-0 bg-sub p-4 font-mono text-[0.8125rem] leading-[1.65] text-body outline-none"
+        aria-label="HTML 소스"
+        spellCheck={false}
+        value={source}
+        onChange={(event) => setSource(event.target.value)}
+      />}
   </div>
 }
 
 function Divider() {
   return <span className="mx-[0.3125rem] h-4 w-px bg-[#e4ebea]" aria-hidden="true" />
+}
+
+/**
+ * 색을 고르는 툴바 단추.
+ *
+ * <p>색을 자유롭게 입력받지 않고 정해진 것만 보여준다. 서버가 목록 밖 값을 거부하므로,
+ * 고를 수 없게 하는 편이 저장할 때 막는 것보다 낫다.
+ *
+ * <p>지금 걸린 색을 아래쪽 띠로 보여준다. 아이콘만으로는 무엇이 걸려 있는지 알 수 없다.
+ */
+function Swatches({ label, colors, current, onPick, clearable, disabled, children }: {
+  label: string
+  colors: readonly { name: string; value: string | null }[]
+  current?: string
+  onPick: (color: string | null) => void
+  clearable?: boolean
+  disabled?: boolean
+  children: ReactNode
+}) {
+  const [open, setOpen] = useState(false)
+  return <span className="relative">
+    <button
+      type="button"
+      title={label}
+      aria-label={label}
+      aria-expanded={open && !disabled}
+      // 색이 걸려 있는지 읽어 주는 쪽에도 알린다. 아래 띠는 눈으로만 보이는 표시다.
+      aria-pressed={current !== undefined}
+      disabled={disabled}
+      className="grid h-7 w-7 place-items-center rounded-[0.25rem] hover:bg-sub disabled:opacity-35"
+      onMouseDown={(event) => event.preventDefault()}
+      onClick={() => setOpen((was) => !was)}
+    >
+      <span className="grid gap-[0.125rem]">
+        <svg
+          width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+          strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"
+        >{children}</svg>
+        <span
+          className="h-[0.1875rem] w-[0.9375rem] rounded-full"
+          style={{ background: current ?? '#c3cfd2' }}
+          aria-hidden="true"
+        />
+      </span>
+    </button>
+    {open && !disabled && <span
+      className="absolute left-0 top-[1.875rem] z-20 flex gap-[0.1875rem] rounded-[0.3125rem] border border-line-soft bg-white p-[0.3125rem] shadow-[0_4px_12px_#1020341f]"
+      role="group"
+      aria-label={`${label} 고르기`}
+    >
+      {colors.map((color) => <button
+        key={color.name}
+        type="button"
+        title={color.name}
+        aria-label={color.name}
+        className="h-[1.125rem] w-[1.125rem] rounded-[0.1875rem] shadow-[inset_0_0_0_1px_#00000018]"
+        style={{ background: color.value ?? '#ffffff' }}
+        onMouseDown={(event) => event.preventDefault()}
+        onClick={() => { onPick(color.value); setOpen(false) }}
+      >{color.value === null && <span className="text-[0.625rem] text-muted-3">✕</span>}</button>)}
+      {clearable && <button
+        type="button"
+        title="지우기"
+        aria-label="지우기"
+        className="h-[1.125rem] rounded-[0.1875rem] px-[0.3125rem] text-[0.625rem] text-muted-2 shadow-[inset_0_0_0_1px_#00000018]"
+        onMouseDown={(event) => event.preventDefault()}
+        onClick={() => { onPick(null); setOpen(false) }}
+      >지우기</button>}
+    </span>}
+  </span>
 }
 
 /**
@@ -232,21 +399,23 @@ function Divider() {
  * 버튼을 누르는 순간 편집기에서 포커스가 빠지면 고른 범위가 풀려 서식이 걸리지 않는다.
  * `mousedown`의 기본 동작을 막아 포커스를 편집기에 둔 채로 명령만 보낸다.
  */
-function Tool({ editor, label, active, attrs, disabled, onClick, children }: {
+function Tool({ editor, label, active, attrs, disabled, pressed, onClick, children }: {
   editor: Editor
   label: string
   active?: string
   attrs?: Record<string, unknown>
   disabled?: boolean
+  /** 편집기 상태가 아니라 화면 상태로 눌린 표시를 정할 때 쓴다. 소스 편집이 그렇다. */
+  pressed?: boolean
   onClick: () => void
   children: ReactNode
 }) {
-  const on = active ? editor.isActive(active, attrs) : false
+  const on = pressed ?? (active ? editor.isActive(active, attrs) : false)
   return <button
     type="button"
     title={label}
     aria-label={label}
-    aria-pressed={active ? on : undefined}
+    aria-pressed={active !== undefined || pressed !== undefined ? on : undefined}
     disabled={disabled}
     style={on ? { color: 'var(--primary)' } : undefined}
     className={`grid h-7 w-7 place-items-center rounded-[0.25rem] disabled:opacity-35 ${
