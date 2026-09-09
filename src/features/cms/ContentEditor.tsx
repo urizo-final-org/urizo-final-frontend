@@ -26,11 +26,10 @@ export default function ContentEditor({ value, onChange, api, onFailure }: {
     extensions: [
       StarterKit.configure({
         blockquote: false,
+        // 인라인 코드는 열지 않는다. 이 사이트의 컨텐츠에 명령어나 함수 이름을 쓸 일이 없다.
         code: false,
         codeBlock: false,
         horizontalRule: false,
-        strike: false,
-        underline: false,
         heading: { levels: [2, 3] },
         // 건 링크를 눌러 확인할 수 있게 연다. 기본값이 새 탭이라 쓰던 글이 날아가지 않는다.
         link: { openOnClick: true, autolink: false, protocols: ['http', 'https'] },
@@ -114,8 +113,11 @@ export default function ContentEditor({ value, onChange, api, onFailure }: {
    */
   function command(run: (chain: ChainedCommands) => ChainedCommands) {
     if (!editor) return
-    const { from, to } = editor.state.selection
-    run(editor.chain().focus().setTextSelection({ from, to })).run()
+    const { from, to, empty } = editor.state.selection
+    const chain = editor.chain().focus()
+    // 커서만 있을 때는 범위를 다시 세우지 않는다. ProseMirror가 선택을 바꾸면 `storedMarks`를
+    // 비우기 때문에, 굵게를 켜 두고 밑줄을 누르면 굵게가 꺼진다. 서식을 겹쳐 켤 수 없게 된다.
+    run(empty ? chain : chain.setTextSelection({ from, to })).run()
   }
 
   /**
@@ -169,6 +171,16 @@ export default function ContentEditor({ value, onChange, api, onFailure }: {
       <Tool editor={editor} label="기울임" active="italic"
         onClick={() => command((chain) => chain.toggleItalic())}>
         <path d="M19 4h-9" /><path d="M14 20H5" /><path d="m15 4-4 16" />
+      </Tool>
+      <Tool editor={editor} label="밑줄" active="underline"
+        onClick={() => command((chain) => chain.toggleUnderline())}>
+        <path d="M6 4v6a6 6 0 0 0 12 0V4" /><path d="M4 20h16" />
+      </Tool>
+      <Tool editor={editor} label="취소선" active="strike"
+        onClick={() => command((chain) => chain.toggleStrike())}>
+        <path d="M4 12h16" />
+        <path d="M17.5 6.5C16.5 5 14.5 4.2 12 4.2c-3 0-5 1.3-5 3.3 0 1.5 1 2.5 3 3.2" />
+        <path d="M7 17c1 1.5 2.8 2.8 5.5 2.8 3 0 5-1.4 5-3.4 0-1.1-.5-2-1.6-2.7" />
       </Tool>
       <Tool editor={editor} label="링크" active="link" onClick={setLink}>
         <path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.8 1.7" />
