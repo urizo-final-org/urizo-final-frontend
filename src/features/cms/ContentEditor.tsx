@@ -298,6 +298,8 @@ function Swatches({ label, colors, current, onPick, clearable, disabled, childre
       title={label}
       aria-label={label}
       aria-expanded={open && !disabled}
+      // 색이 걸려 있는지 읽어 주는 쪽에도 알린다. 아래 띠는 눈으로만 보이는 표시다.
+      aria-pressed={current !== undefined}
       disabled={disabled}
       className="grid h-7 w-7 place-items-center rounded-[0.25rem] hover:bg-sub disabled:opacity-35"
       onMouseDown={(event) => event.preventDefault()}
