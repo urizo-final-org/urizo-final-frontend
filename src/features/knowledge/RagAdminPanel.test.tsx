@@ -136,9 +136,11 @@ test('the quality panel labels its source and leaves Faithfulness out', async ()
   // 계약에 지표가 없다. 실시간으로 보이면 안 되고 출처가 붙어야 한다.
   expect(metrics.getByText(/2026-08-29 측정 · 252 TC/)).toBeInTheDocument()
   expect(metrics.getByText('0.975')).toBeInTheDocument()
-  // 97/246건에 12개 카테고리가 0건이라 모집단 추정치로 쓸 수 없다.
+  // 97/246건에 12개 카테고리가 0건이라 모집단 추정치로 쓸 수 없다 — 값도 이름도 싣지 않는다.
   expect(metrics.queryByText(/0\.9734/)).not.toBeInTheDocument()
-  expect(metrics.getByText(/Faithfulness는 표본이 모집단을 대표하지 못해/)).toBeInTheDocument()
+  expect(metrics.queryByText(/Faithfulness/)).not.toBeInTheDocument()
+  // 용어는 ⓘ 툴팁이 푼다. 값만 있으면 0.897이 좋은 값인지 알 수 없다.
+  expect(metrics.getByLabelText(/여러 곳을 엮어 묻는 어려운 질문/)).toBeInTheDocument()
 })
 
 test('StrictMode double mount still fills the screen', async () => {
@@ -504,3 +506,77 @@ test('a general admin gets a request path instead of a dead-ended tooltip', asyn
   expect(await screen.findByRole('button', { name: '갱신 요청' })).toBeEnabled()
   expect(screen.getByText(/아래 「갱신 요청」에 남기면/)).toBeInTheDocument()
 })
+
+/**
+ * 이 환경(데모 DB)의 UUID를 아는 버전에만 지표가 붙는다. 위 회귀 테스트와 짝이다 —
+ * 저쪽은 "모르는 UUID면 열 자체가 없다", 이쪽은 "아는 UUID면 갈라 보인다".
+ */
+const DEMO = {
+  v12: '27c887bc-b528-4099-af77-e8da92751e2a',
+  v17: 'e6da49bf-26f2-4f80-ba6d-b4995311e53e',
+  v18: '2d239788-9cef-4bcf-ab30-f8e3d5b0f449',
+}
+
+function demoVersions() {
+  return {
+    listVersions: vi.fn().mockResolvedValue({
+      items: [
+        version({ versionNumber: 18, status: 'APPROVAL_PENDING', knowledgeVersionId: DEMO.v18, activatedAt: undefined }),
+        version({ versionNumber: 17, status: 'APPROVAL_PENDING', knowledgeVersionId: DEMO.v17, activatedAt: undefined }),
+        version({ versionNumber: 12, knowledgeVersionId: DEMO.v12 }),
+      ],
+    }),
+  }
+}
+
+test('known versions are told apart by the metric column, not by anything else on the row', async () => {
+  show(<RagAdminPanel api={api(demoVersions())} role="SUPER_ADMIN" />)
+  const table = within((await screen.findByText('RAG 버전')).closest('section') as HTMLElement)
+
+  // 활성 v12는 비교 기준이라 델타 대신 "기준".
+  expect(table.getByText('검색 정확도 기준')).toBeInTheDocument()
+  // hit@5는 표에서 자리를 차지하지 않고 셀 hover 툴팁으로 미룬다 — 한눈에 읽을 것은 델타와 판정뿐이다.
+  expect(table.queryByText(/정답을 찾은 문항/)).not.toBeInTheDocument()
+  const tips = table.getAllByTitle(/정답을 찾은 문항/).map((node) => node.getAttribute('title'))
+  expect(tips.filter((tip) => tip === '정답을 찾은 문항 250 / 252')).toHaveLength(2)
+  expect(tips).toContain('정답을 찾은 문항 249 / 252')
+  // v17은 R@5 기준 하락이고 배지는 판정만 말한다 — 사유(C유형 0.7990)는 접힌 원값에 있다.
+  expect(table.getByText('검색 정확도 ▼ -2.01%p')).toBeInTheDocument()
+  expect(table.getByText('기준선 미달')).toBeInTheDocument()
+  // v18은 활성과 동률이고 통과 — v17과 나란히 갈리는 것이 시연 컷 3의 핵심이다.
+  expect(table.getByText('검색 정확도 ±0.00%p')).toBeInTheDocument()
+  expect(table.getAllByText('기준선 통과')).toHaveLength(2)
+})
+
+test('the source label never collapses even though the raw numbers do', async () => {
+  show(<RagAdminPanel api={api(demoVersions())} role="SUPER_ADMIN" />)
+  const table = within((await screen.findByText('RAG 버전')).closest('section') as HTMLElement)
+
+  // evaluate가 스텁(score=100 고정)이라, 출처가 접히면 시스템이 방금 잰 값처럼 보이는 거짓말이 된다.
+  const summaries = table.getAllByText('오프라인 측정 · 9/9 ▾')
+  expect(summaries).toHaveLength(3)
+  summaries.forEach((summary) => expect(summary).toBeVisible())
+
+  // 원값은 DOM에는 있으나 기본으로 보이지 않는다. <details> 네이티브 동작이라 JS가 없다.
+  const raw = table.getByText('R@5 0.9546 · C유형 0.7990 · MRR 0.9697')
+  expect(raw).not.toBeVisible()
+  ;(raw.closest('details') as HTMLDetailsElement).open = true
+  expect(raw).toBeVisible()
+})
+
+test('a failed build gets no measurement even when its id is in the table', async () => {
+  show(<RagAdminPanel api={api({
+    listVersions: vi.fn().mockResolvedValue({
+      items: [
+        // 같은 UUID라도 FAILED는 문서 0건이라 잴 색인이 없다. 숫자가 뜨면 거짓이다.
+        version({ versionNumber: 17, status: 'FAILED', knowledgeVersionId: DEMO.v17, documentCount: 0, chunkCount: 0, activatedAt: undefined }),
+        version({ versionNumber: 12, knowledgeVersionId: DEMO.v12 }),
+      ],
+    }),
+  })} role="SUPER_ADMIN" />)
+  const table = within((await screen.findByText('RAG 버전')).closest('section') as HTMLElement)
+  expect(table.getByText('측정 전')).toBeInTheDocument()
+  // 미측정 셀에는 출처 라벨도 붙지 않는다 — 붙일 숫자가 없다.
+  expect(table.getAllByText('오프라인 측정 · 9/9 ▾')).toHaveLength(1)
+})
+
