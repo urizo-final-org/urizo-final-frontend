@@ -204,11 +204,9 @@ test('a failed build cannot be activated — it would make the chatbot see an em
   })
   show(<RagAdminPanel api={calls} role="SUPER_ADMIN" />)
 
-  // 문서 0건짜리 버전을 활성화하면 챗봇이 아무것도 못 찾는다. 실패한 빌드는 롤백 대상도
-  // 아니어서(저장소가 409를 던진다) 보관 버전과 달리 행을 내지 않는다.
-  const table = within((await screen.findByText('RAG 버전')).closest('section') as HTMLElement)
-  expect(table.queryByText('v4')).not.toBeInTheDocument()
-  expect(screen.queryByTitle('실패한 빌드는 활성화할 수 없습니다.')).not.toBeInTheDocument()
+  const denied = await screen.findByTitle('실패한 빌드는 활성화할 수 없습니다.')
+  expect(denied).toBeDisabled()
+  fireEvent.click(denied)
   expect(rollback).not.toHaveBeenCalled()
 })
 
@@ -353,50 +351,32 @@ function ladder() {
   ]
 }
 
-/** 살아 있는 것은 전부, 보관은 되돌릴 만큼만. 실패는 롤백이 409라 계속 감춘다. */
-test('the table keeps every live version and the recent archived ones', async () => {
+/** 11건이 한 번에 깔리면 지금 무엇을 봐야 하는지가 묻힌다. 지우지 않고 접는다. */
+test('the table opens on the versions that matter and folds the rest away', async () => {
   show(<RagAdminPanel api={api({ listVersions: vi.fn().mockResolvedValue({ items: ladder() }) })} role="SUPER_ADMIN" />)
 
   // v8은 요약 카드에도 나오므로 버전 표 안으로 좁혀 단언한다.
   const table = within((await screen.findByText('RAG 버전')).closest('section') as HTMLElement)
-  expect(table.getByText('v10')).toBeInTheDocument()
-  // 활성 버전은 목록 중간에 있어도 항상 보인다 — 롤백하면 그렇게 된다.
-  expect(table.getByText('v8')).toBeInTheDocument()
-  // 보관 버전은 되돌릴 대상이므로 남긴다.
   expect(table.getByText('v11')).toBeInTheDocument()
-  expect(table.getByText('v9')).toBeInTheDocument()
-  // 실패한 빌드는 롤백 대상이 아니다 — 저장소가 409를 던진다.
+  expect(table.getByText('v10')).toBeInTheDocument()
+  // 활성 버전은 최신 2건 밖에 있어도 항상 보인다 — 롤백하면 목록 중간으로 내려간다.
+  expect(table.getByText('v8')).toBeInTheDocument()
+  expect(table.queryByText('v9')).not.toBeInTheDocument()
   expect(table.queryByText('v4')).not.toBeInTheDocument()
-  expect(table.queryByText('v3')).not.toBeInTheDocument()
+  // 접었을 뿐 지운 것이 아니라는 사실을 숫자로 남긴다.
+  expect(table.getByText('6건')).toBeInTheDocument()
+  expect(table.getByRole('button', { name: '이전 버전 3건 더 보기' })).toBeInTheDocument()
 })
 
-/** 되돌릴 후보가 무한정 쌓이면 다시 16줄이 된다. 보관은 최근 3건까지만 남긴다. */
-test('the archived candidates stop at three', async () => {
-  const many = [
-    version({ versionNumber: 20, status: 'ACTIVE', knowledgeVersionId: 'kv-20' }),
-    version({ versionNumber: 19, status: 'ARCHIVED', knowledgeVersionId: 'kv-19' }),
-    version({ versionNumber: 18, status: 'ARCHIVED', knowledgeVersionId: 'kv-18' }),
-    version({ versionNumber: 17, status: 'ARCHIVED', knowledgeVersionId: 'kv-17' }),
-    version({ versionNumber: 16, status: 'ARCHIVED', knowledgeVersionId: 'kv-16' }),
-    version({ versionNumber: 15, status: 'ARCHIVED', knowledgeVersionId: 'kv-15' }),
-  ]
-  show(<RagAdminPanel api={api({ listVersions: vi.fn().mockResolvedValue({ items: many }) })} role="SUPER_ADMIN" />)
-
-  const table = within((await screen.findByText('RAG 버전')).closest('section') as HTMLElement)
-  expect(table.getByText('v19')).toBeInTheDocument()
-  expect(table.getByText('v17')).toBeInTheDocument()
-  expect(table.queryByText('v16')).not.toBeInTheDocument()
-  expect(table.queryByText('v15')).not.toBeInTheDocument()
-})
-
-/** 화면에서 줄인 것이지 지운 것이 아니다. 총 건수가 그 사실을 숫자로 남긴다. */
-test('the versions left off the table are still counted in the title', async () => {
+test('the folded versions are still one click away', async () => {
   show(<RagAdminPanel api={api({ listVersions: vi.fn().mockResolvedValue({ items: ladder() }) })} role="SUPER_ADMIN" />)
 
-  const table = within((await screen.findByText('RAG 버전')).closest('section') as HTMLElement)
-  // 표에는 4건만 보이지만 제목은 6건을 말한다 — 이력이 사라진 것이 아니다.
-  expect(table.getByText('6건')).toBeInTheDocument()
-  expect(screen.queryByRole('button', { name: /더 보기/ })).not.toBeInTheDocument()
+  fireEvent.click(await screen.findByRole('button', { name: '이전 버전 3건 더 보기' }))
+  // 실패한 빌드가 남아 있는 것이 "버전은 고치지 않고 새로 만든다"의 증거다.
+  expect(screen.getByText('v4')).toBeInTheDocument()
+  expect(screen.getByText('v3')).toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: '접기' }))
+  expect(screen.queryByText('v4')).not.toBeInTheDocument()
 })
 
 function building() {

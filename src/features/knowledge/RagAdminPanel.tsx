@@ -699,6 +699,16 @@ function VersionTable({ versions, mayWrite, blocked, busy, canRollback, onSwitch
               ><Icon name="repeat" size={12} />전환</button>}
           </span>
         </div>)}
+        {hidden > 0 && <button
+          type="button"
+          className="w-full border-t border-line bg-transparent px-4 py-[0.625rem] text-left text-[0.6875rem] text-muted-3 hover:text-muted"
+          onClick={() => setShowAll(true)}
+        >이전 버전 {hidden}건 더 보기</button>}
+        {showAll && versions != null && versions.length > ALWAYS_VISIBLE_RECENT && <button
+          type="button"
+          className="w-full border-t border-line bg-transparent px-4 py-[0.625rem] text-left text-[0.6875rem] text-muted-3 hover:text-muted"
+          onClick={() => setShowAll(false)}
+        >접기</button>}
       </div>
     </div>
   </section>
