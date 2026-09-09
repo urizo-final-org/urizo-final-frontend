@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
+import './ActiveJobMonitoringPanel.css'
 import { describeFailure } from '../../shared/api/error'
 import { Badge, Callout, PanelTitle, control, panel, secondaryButton, type Tone } from '../../shared/ui/primitives'
 import type {
@@ -9,7 +10,7 @@ import type {
 const POLL_MS = 1_000
 const JOB_LIST_POLL_MS = 5_000
 const NODE_WIDTH = 176
-const NODE_HEIGHT = 92
+const NODE_HEIGHT = 112
 
 const statusView: Record<MonitoringNodeDisplayStatus, { label: string; tone: Tone; line: string }> = {
   NOT_STARTED: { label: '대기', tone: 'idle', line: '#8f9aa8' },
@@ -205,7 +206,7 @@ export default function ActiveJobMonitoringPanel({ api }: { api: AgentSettingsAp
         {snapshotFailure && <p role="alert" className="border-b border-line-soft px-4 py-2 text-xs text-fail-fg">마지막 정상 상태를 유지합니다. {snapshotFailure}</p>}
         {profileFailure && <p role="alert" className="border-b border-line-soft px-4 py-2 text-xs text-fail-fg">{profileFailure}</p>}
         {loadingProfile && <p className="p-4 text-xs text-muted-2">Job 고정 Profile과 저장 Layout을 조회하고 있습니다.</p>}
-        {selectedSnapshot && profile && layout && <ReadOnlyMonitoringCanvas snapshot={selectedSnapshot} profile={profile} layout={layout}
+        {selectedSnapshot && profile && layout && <ReadOnlyMonitoringCanvas key={selectedSnapshot.job.jobId} snapshot={selectedSnapshot} profile={profile} layout={layout}
           selectedNodeId={selectedNodeId} selectedProviderLabel={selectedProviderLabel} onSelectNode={setSelectedNodeId} />}
       </article>
       <NodeMonitoringDetail api={api} snapshot={selectedSnapshot} selectedNodeId={selectedNodeId} onProviderLabel={setSelectedProviderLabel} />
@@ -221,15 +222,88 @@ function ReadOnlyMonitoringCanvas({ snapshot, profile, layout, selectedNodeId, s
   selectedProviderLabel: string
   onSelectNode: (nodeId: string) => void
 }) {
+  const viewportRef = useRef<HTMLDivElement>(null)
+  const [zoom, setZoom] = useState(1)
+  const zoomRef = useRef(1)
+  const zoomAnchor = useRef<{ left: number; top: number } | null>(null)
+  const pan = useRef<{ pointerId: number; x: number; y: number; left: number; top: number } | null>(null)
+  const [panning, setPanning] = useState(false)
   const positions = new Map(layout.nodes.map((node) => [node.id, node]))
   const completeLayout = profile.snapshot.nodes.every((node) => positions.has(node.id))
+
+  useEffect(() => {
+    const viewport = viewportRef.current
+    if (!viewport) return
+    const wheel = (event: WheelEvent) => {
+      // Consume even a clamped or horizontal wheel: the surrounding page must not scroll.
+      event.preventDefault()
+      event.stopPropagation()
+      if (event.deltaY === 0) return
+      const current = zoomRef.current
+      const next = Math.min(1.5, Math.max(0.5, Number((current + (event.deltaY < 0 ? 0.1 : -0.1)).toFixed(1))))
+      if (next === current) return
+      const bounds = viewport.getBoundingClientRect()
+      const x = event.clientX - bounds.left
+      const y = event.clientY - bounds.top
+      const scroll = zoomAnchor.current ?? { left: viewport.scrollLeft, top: viewport.scrollTop }
+      zoomAnchor.current = {
+        left: Math.max(0, (scroll.left + x) / current * next - x),
+        top: Math.max(0, (scroll.top + y) / current * next - y),
+      }
+      zoomRef.current = next
+      setZoom(next)
+    }
+    viewport.addEventListener('wheel', wheel, { passive: false })
+    return () => viewport.removeEventListener('wheel', wheel)
+  }, [completeLayout])
+
+  useLayoutEffect(() => {
+    const viewport = viewportRef.current
+    if (!viewport || !zoomAnchor.current) return
+    viewport.scrollLeft = zoomAnchor.current.left
+    viewport.scrollTop = zoomAnchor.current.top
+    zoomAnchor.current = null
+  }, [zoom])
+
+  function startPan(event: ReactPointerEvent<HTMLDivElement>) {
+    if (event.button !== 0 || (event.target as Element).closest('button')) return
+    event.preventDefault()
+    const viewport = event.currentTarget
+    viewport.setPointerCapture?.(event.pointerId)
+    pan.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, left: viewport.scrollLeft, top: viewport.scrollTop }
+    setPanning(true)
+  }
+
+  function movePan(event: ReactPointerEvent<HTMLDivElement>) {
+    const active = pan.current
+    if (!active || active.pointerId !== event.pointerId) return
+    event.currentTarget.scrollLeft = active.left - (event.clientX - active.x)
+    event.currentTarget.scrollTop = active.top - (event.clientY - active.y)
+  }
+
+  function endPan(event: ReactPointerEvent<HTMLDivElement>) {
+    if (pan.current?.pointerId !== event.pointerId) return
+    pan.current = null
+    if (event.currentTarget.hasPointerCapture?.(event.pointerId)) event.currentTarget.releasePointerCapture?.(event.pointerId)
+    setPanning(false)
+  }
+
   if (!completeLayout) return <p role="alert" className="p-4 text-xs text-fail-fg">저장 Layout에 일부 Snapshot Node 좌표가 없습니다.</p>
   const width = Math.max(720, ...layout.nodes.map((node) => node.x + NODE_WIDTH + 48))
   const height = Math.max(420, ...layout.nodes.map((node) => node.y + NODE_HEIGHT + 48))
   const states = new Map(snapshot.latestNodeStates.map((node) => [node.nodeId, node]))
 
-  return <div className="m-4 overflow-auto rounded-md border border-[#343c46] bg-[#20262e]" aria-label="읽기 전용 Node Canvas">
-    <div className="relative bg-[#20262e] bg-[radial-gradient(circle,#596472_1px,transparent_1px)] [background-size:20px_20px]" style={{ width, height }}>
+  return <div className="m-4 overflow-hidden rounded-md border border-[#343c46] bg-[#20262e]">
+    <div className="flex items-center justify-between gap-3 border-b border-[#343c46] px-3 py-2 text-[0.625rem] text-[#cbd5df]">
+      <span>휠로 확대·축소 · 빈 공간을 드래그해 이동</span>
+      <span aria-label="모니터링 Canvas 확대 비율">{Math.round(zoom * 100)}%</span>
+    </div>
+    <div ref={viewportRef} className={`h-[36rem] max-h-[70vh] min-h-[20rem] touch-none overflow-auto overscroll-contain ${panning ? 'cursor-grabbing select-none' : 'cursor-grab'}`}
+      aria-label="읽기 전용 Node Canvas" data-canvas-zoom={zoom}
+      onPointerDown={startPan} onPointerMove={movePan} onPointerUp={endPan} onPointerCancel={endPan} onLostPointerCapture={endPan}>
+    <div className="min-h-full min-w-full" style={{ width: width * zoom, height: height * zoom }}>
+    <div className="relative bg-[#20262e] bg-[radial-gradient(circle,#596472_1px,transparent_1px)] [background-size:20px_20px]"
+      data-monitoring-canvas-content style={{ width, height, transform: `scale(${zoom})`, transformOrigin: 'top left' }}>
       <svg className="pointer-events-none absolute inset-0 h-full w-full" viewBox={`0 0 ${width} ${height}`} aria-hidden="true">
         {profile.snapshot.edges.map((edge) => {
           const from = positions.get(edge.from)
@@ -249,20 +323,37 @@ function ReadOnlyMonitoringCanvas({ snapshot, profile, layout, selectedNodeId, s
         const state = states.get(node.id)
         const view = statusView[state?.status ?? 'NOT_STARTED']
         const selected = selectedNodeId === node.id
+        const running = !snapshot.job.domainTerminal && state?.status === 'RUNNING'
+        const current = !snapshot.job.domainTerminal
+          && (state?.status === 'RUNNING' || state?.status === 'WAITING_APPROVAL')
+        const providerTone = !selected ? 'unread'
+          : selectedProviderLabel === '연결됨' ? 'connected'
+            : selectedProviderLabel === '관측 대기' ? 'pending'
+              : selectedProviderLabel === 'DISABLED' ? 'disabled'
+                : selectedProviderLabel === '연결 안 됨' || selectedProviderLabel === 'UNAVAILABLE' ? 'error'
+                  : 'unread'
         return <button key={node.id} type="button" aria-label={`${node.id} Node`} aria-pressed={selected}
-          className="workflow-node-card absolute rounded-lg border bg-field p-3 text-left shadow-[0_8px_22px_#070a0e59]"
-          style={{ left: position.x, top: position.y, width: NODE_WIDTH, minHeight: NODE_HEIGHT, borderColor: view.line, borderWidth: selected ? 3 : 2 }}
+          className="workflow-node-card monitoring-node-card absolute rounded-lg border bg-field p-3 text-left shadow-[0_8px_22px_#070a0e59]"
+          data-node-current={current} data-node-running={running} data-node-selected={selected}
+          style={{ left: position.x, top: position.y, width: NODE_WIDTH, minHeight: NODE_HEIGHT, borderColor: current ? '#ff4058' : view.line, borderWidth: current ? 3 : 2 }}
           onClick={() => onSelectNode(node.id)}>
-          {state?.status === 'RUNNING' && <span aria-hidden="true" className="pointer-events-none absolute inset-0 rounded-lg border-2 border-sky-400 motion-safe:animate-pulse" />}
+          {current && <svg aria-hidden="true" className="monitoring-node-activity" width="100%" height="100%">
+            <rect className="monitoring-node-activity__trail" width="100%" height="100%" rx="8" pathLength="100" />
+            <rect className="monitoring-node-activity__head" width="100%" height="100%" rx="8" pathLength="100" />
+          </svg>}
           <span className="block truncate text-[0.75rem] font-semibold">{node.id}</span>
           <span className="mt-1 block truncate font-mono text-[0.5625rem] text-muted-2">{node.handlerKey}</span>
-          <span className="mt-2 flex flex-wrap items-center gap-1 text-[0.5625rem]">
-            <span className="rounded bg-sub px-1.5 py-0.5">N · {view.label}</span>
-            <span className="rounded bg-sub px-1.5 py-0.5 text-muted-2">P · {selected ? selectedProviderLabel : '미조회'}</span>
-            <span className="rounded bg-sub px-1.5 py-0.5 text-muted-2">Q · 미설정</span>
+          <span className="monitoring-node-signals mt-2">
+            <span className="monitoring-status-chip monitoring-status-chip--node" data-node-status={state?.status ?? 'NOT_STARTED'}>N · {view.label}</span>
+            <span className="monitoring-node-signals__secondary">
+              <span className="monitoring-status-chip monitoring-status-chip--provider" data-provider-tone={providerTone}>P · {selected ? selectedProviderLabel : '미조회'}</span>
+              <span className="monitoring-status-chip monitoring-status-chip--quality" data-quality-status="unconfigured">Q · 미설정</span>
+            </span>
           </span>
         </button>
       })}
+    </div>
+    </div>
     </div>
   </div>
 }

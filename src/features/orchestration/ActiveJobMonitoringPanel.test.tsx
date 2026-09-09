@@ -89,11 +89,117 @@ test('renders the fixed Profile layout with actual N/P and keeps Q unconfigured'
   expect(screen.getByRole('region', { name: 'N 상태 상세' })).toHaveTextContent(/진행 시간\d+초/)
   await waitFor(() => expect(screen.getByRole('region', { name: 'P Provider 상세' })).toHaveTextContent('OPENAI'))
   await waitFor(() => expect(screen.getByLabelText('code Node')).toHaveTextContent('P · 연결됨'))
-  expect(screen.getByLabelText('code Node').querySelector('.motion-safe\\:animate-pulse')).not.toBeNull()
-  expect(screen.getByLabelText('analyze Node').querySelector('.motion-safe\\:animate-pulse')).toBeNull()
+  expect(screen.getByLabelText('code Node')).toHaveAttribute('data-node-current', 'true')
+  expect(screen.getByLabelText('code Node').querySelector('.monitoring-node-activity')).not.toBeNull()
+  expect(screen.getByLabelText('analyze Node').querySelector('.monitoring-node-activity')).toBeNull()
   expect(screen.getByRole('region', { name: 'P Provider 상세' })).toHaveTextContent('gpt-5.6-sol')
   expect(screen.getByRole('region', { name: 'Q 평가 상세' })).toHaveTextContent('평가 미설정')
   expect(screen.getByRole('region', { name: 'Node occurrence 이력' })).toHaveTextContent('일부 과거 이력은 잘렸으며 최신 Node 상태는 유지됩니다.')
+})
+
+test('zooms around the pointer and consumes wheel events at both limits without scrolling the page', async () => {
+  const { unmount } = render(<ActiveJobMonitoringPanel api={monitoringApi()} />)
+  const canvas = await screen.findByLabelText('읽기 전용 Node Canvas')
+  canvas.getBoundingClientRect = () => ({ left: 20, top: 30, width: 600, height: 400, right: 620, bottom: 430, x: 20, y: 30, toJSON: () => ({}) })
+  canvas.scrollLeft = 100
+  canvas.scrollTop = 80
+  const outerWheel = vi.fn()
+  const outer = canvas.parentElement!
+  outer.addEventListener('wheel', outerWheel)
+  const wheel = (deltaY: number, deltaX = 0) => {
+    const event = new WheelEvent('wheel', { bubbles: true, cancelable: true, deltaY, deltaX, clientX: 220, clientY: 130 })
+    fireEvent(canvas, event)
+    return event
+  }
+  expect(wheel(-100).defaultPrevented).toBe(true)
+  expect(canvas).toHaveAttribute('data-canvas-zoom', '1.1')
+  expect(canvas.scrollLeft).toBeCloseTo(130)
+  expect(canvas.scrollTop).toBeCloseTo(98)
+  expect(screen.getByLabelText('모니터링 Canvas 확대 비율')).toHaveTextContent('110%')
+  for (let i = 0; i < 8; i++) expect(wheel(-100).defaultPrevented).toBe(true)
+  expect(canvas).toHaveAttribute('data-canvas-zoom', '1.5')
+  for (let i = 0; i < 12; i++) expect(wheel(100).defaultPrevented).toBe(true)
+  expect(canvas).toHaveAttribute('data-canvas-zoom', '0.5')
+  expect(wheel(0, 100).defaultPrevented).toBe(true)
+  expect(outerWheel).not.toHaveBeenCalled()
+  outer.removeEventListener('wheel', outerWheel)
+  unmount()
+  expect(wheel(-100).defaultPrevented).toBe(false)
+})
+
+test('pans only the background, releases capture on cancel, and keeps Node selection read-only', async () => {
+  render(<ActiveJobMonitoringPanel api={monitoringApi()} />)
+  const canvas = await screen.findByLabelText('읽기 전용 Node Canvas')
+  canvas.scrollLeft = 100
+  canvas.scrollTop = 80
+  canvas.setPointerCapture = vi.fn()
+  canvas.hasPointerCapture = vi.fn().mockReturnValue(true)
+  canvas.releasePointerCapture = vi.fn()
+  const pointer = (element: Element, type: string, values: Record<string, number>) =>
+    fireEvent(element, Object.assign(new Event(type, { bubbles: true, cancelable: true }), { button: 0, pointerId: 7, ...values }))
+  pointer(canvas, 'pointerdown', { clientX: 300, clientY: 200 })
+  expect(canvas.setPointerCapture).toHaveBeenCalledWith(7)
+  expect(canvas).toHaveClass('cursor-grabbing')
+  pointer(canvas, 'pointermove', { pointerId: 8, clientX: 100, clientY: 100 })
+  expect(canvas.scrollLeft).toBe(100)
+  pointer(canvas, 'pointermove', { clientX: 250, clientY: 160 })
+  expect(canvas.scrollLeft).toBe(150)
+  expect(canvas.scrollTop).toBe(120)
+  pointer(canvas, 'pointercancel', {})
+  expect(canvas.releasePointerCapture).toHaveBeenCalledWith(7)
+  expect(canvas).toHaveClass('cursor-grab')
+  pointer(canvas, 'pointermove', { clientX: 200, clientY: 100 })
+  expect(canvas.scrollLeft).toBe(150)
+  const node = screen.getByLabelText('analyze Node')
+  const savedPosition = node.getAttribute('style')
+  pointer(node, 'pointerdown', { clientX: 150, clientY: 150 })
+  pointer(node, 'pointermove', { clientX: 100, clientY: 100 })
+  fireEvent.click(node)
+  expect(canvas.setPointerCapture).toHaveBeenCalledTimes(1)
+  expect(node).toHaveAttribute('aria-pressed', 'true')
+  expect(node.getAttribute('style')).toBe(savedPosition)
+  expect(canvas.scrollLeft).toBe(150)
+})
+
+test('marks a live approval-wait Node as current and gives N, P, and Q distinct signal tones', async () => {
+  const state = snapshot({ domainJobStatus: 'WAITING_APPROVAL' })
+  state.latestNodeStates[1].status = 'WAITING_APPROVAL'
+  render(<ActiveJobMonitoringPanel api={monitoringApi({
+    getMonitoringJobSnapshot: vi.fn().mockResolvedValue(state),
+    getMonitoringOccurrenceObservations: vi.fn().mockReturnValue(new Promise(() => {})),
+  })} />)
+  const node = await screen.findByLabelText('code Node')
+  expect(node).toHaveAttribute('data-node-running', 'false')
+  expect(node).toHaveAttribute('data-node-current', 'true')
+  expect(node.querySelector('.monitoring-node-activity')).not.toBeNull()
+  expect(within(node).getByText('N · 승인 대기')).toHaveAttribute('data-node-status', 'WAITING_APPROVAL')
+  await waitFor(() => expect(within(node).getByText('P · 관측 대기')).toHaveAttribute('data-provider-tone', 'pending'))
+  expect(within(node).getByText('Q · 미설정')).toHaveAttribute('data-quality-status', 'unconfigured')
+})
+
+test.each(['FAILED', 'COMPLETED'] as const)('does not animate a terminal %s Node', async (status) => {
+  const state = snapshot({ domainTerminal: true, domainJobStatus: status })
+  state.latestNodeStates[1].status = status
+  render(<ActiveJobMonitoringPanel api={monitoringApi({ getMonitoringJobSnapshot: vi.fn().mockResolvedValue(state) })} />)
+  const node = await screen.findByLabelText('code Node')
+  expect(node).toHaveAttribute('data-node-current', 'false')
+  expect(node.querySelector('.monitoring-node-activity')).toBeNull()
+})
+
+test('preserves zoom across accepted polling and suppresses stale RUNNING decoration on terminal Jobs', async () => {
+  vi.useFakeTimers()
+  const terminal = snapshot({ monitorRevision: 3, stateVersion: 6, domainTerminal: true, domainJobStatus: 'FAILED' })
+  terminal.latestNodeStates[1].status = 'RUNNING'
+  const getMonitoringJobSnapshot = vi.fn().mockResolvedValueOnce(snapshot()).mockResolvedValue(terminal)
+  render(<ActiveJobMonitoringPanel api={monitoringApi({ getMonitoringJobSnapshot })} />)
+  await act(async () => {})
+  const canvas = screen.getByLabelText('읽기 전용 Node Canvas')
+  fireEvent.wheel(canvas, { deltaY: -100 })
+  fireEvent.click(screen.getByLabelText('analyze Node'))
+  await act(async () => { vi.advanceTimersByTime(1_000) })
+  expect(canvas).toHaveAttribute('data-canvas-zoom', '1.1')
+  expect(screen.getByLabelText('analyze Node')).toHaveAttribute('aria-pressed', 'true')
+  expect(screen.getByLabelText('code Node').querySelector('.monitoring-node-activity')).toBeNull()
 })
 
 test('does not overlap polls, discards a hidden stale response, resumes immediately, and latches terminal', async () => {
@@ -237,7 +343,7 @@ test('keeps a selected failed Job and its Canvas after it leaves the bounded rec
   fireEvent.change(screen.getByLabelText('실행 모니터링 Job'), { target: { value: job.jobId } })
   await act(async () => {})
   expect(screen.getByLabelText('code Node')).toHaveTextContent('N · 실패')
-  expect(screen.getByLabelText('code Node').querySelector('.motion-safe\\:animate-pulse')).toBeNull()
+  expect(screen.getByLabelText('code Node').querySelector('.monitoring-node-activity')).toBeNull()
   expect(screen.getByRole('region', { name: 'Node occurrence 이력' })).toHaveTextContent('MODEL_RESPONSE_INVALID')
   listMonitoringJobs.mockResolvedValue({ jobs: [] })
   await act(async () => { await vi.advanceTimersByTimeAsync(10_000) })
