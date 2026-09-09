@@ -92,6 +92,11 @@ function visibleVersions(versions: KnowledgeVersion[]): KnowledgeVersion[] {
  * 표 안의 액션 버튼. 공용 `smallButton`은 배경이 패널과 같아 링크처럼 보였다 —
  * 배경·여백·모서리를 주고 hover에서 색이 바뀌게 해 「누를 수 있는 것」으로 읽히게 한다.
  *
+ * <p>**공용 `primaryButton`을 쓰지 않는 이유**: `admin-theme.css`의
+ * `.admin-app button { color: inherit }`가 명시도(0,1,1)에서 Tailwind `text-white`(0,1,0)를
+ * 이겨, 남색 배경에 남색 글자가 되어 글자가 보이지 않는다. 앱 전체 36곳이 같은 조건이라
+ * 공용 수정은 다른 담당자 화면까지 건드린다 — 여기서는 이 버튼만 표 버튼과 같은 형태로 둔다.
+ *
  * <p>채움에 `line` 토큰을 쓴다. 이름은 선이지만 값이 라이트 #dfe6ed · 다크 #294156이라
  * **양쪽 테마에서 패널과 확실히 구분되는 유일한 기존 토큰**이다. `sub`(#f8fafc)는 흰 패널과
  * 붙어 보여 링크처럼 읽혔다. 공용 테마 CSS를 건드리지 않으려고 기존 값을 재사용한다.
@@ -282,7 +287,7 @@ export function RagAdminPanel({ api, role }: { api: KnowledgeAdminApi; role: Adm
     <PageHead title="RAG 관리" description="관광 공공데이터를 검색자료로 만들고 버전별 품질을 비교합니다.">
       <button className={secondaryButton} disabled title="커넥터 관리는 이번 범위 밖입니다.">데이터 소스 추가</button>
       <button
-        className={primaryButton}
+        className={tableButton}
         disabled={!canWrite || busy || newest == null || view != null}
         onClick={askBuild}
         title={!mayWrite ? WRITE_DENIED : view != null ? '이미 빌드가 진행 중입니다.' : '새 지식 버전을 만듭니다 (8분대).'}
@@ -351,7 +356,7 @@ function ConfirmDialog({ confirmation, busy, onCancel, onConfirm }: {
       </div>
       <div className="flex justify-end gap-2 border-t border-line px-4 py-3">
         <button className={secondaryButton} onClick={onCancel} disabled={busy}>취소</button>
-        <button className={primaryButton} onClick={onConfirm} disabled={busy}>
+        <button className={tableButton} onClick={onConfirm} disabled={busy}>
           {busy ? '처리 중…' : confirmation.label}
         </button>
       </div>
