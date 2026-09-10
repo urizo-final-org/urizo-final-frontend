@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
 import { describeFailure } from '../../shared/api/error'
 import { ROLE_LABELS, type AdminRole } from '../../shared/api/session'
 import {
@@ -235,7 +235,7 @@ function failureReason(code?: string): string {
     : '요청을 완료하지 못했습니다.'
 }
 
-export default function CodingWorkspace({ api, role }: { api: CodingConsoleApiClient; role: AdminRole }) {
+export default function CodingWorkspace({ api, role, monitoringAction }: { api: CodingConsoleApiClient; role: AdminRole; monitoringAction?: ReactNode }) {
   const [loading, setLoading] = useState(true)
   const [failure, setFailure] = useState<string | null>(null)
   const [current, setCurrent] = useState<JobSummary | null>(null)
@@ -509,7 +509,7 @@ export default function CodingWorkspace({ api, role }: { api: CodingConsoleApiCl
   return <>
     {/* No refresh button: the screen polls every 15 seconds, and a button that repeats what
       * already happens on its own only asks the reader to wonder whether it is needed. */}
-    <PageHead title="LLM DevOps" description="한국어로 개발을 요청하고 단계마다 사람이 승인합니다." />
+    <PageHead title="LLM DevOps" description="한국어로 개발을 요청하고 단계마다 사람이 승인합니다." wrapActions>{monitoringAction}</PageHead>
 
     {/* E6: 실행기가 죽으면 접수·진행이 조용히 멈춘다. "실패는 조용하지 않게" — 맨 위에 크게. */}
     {runner && !runner.alive && <div className="mb-[0.875rem]">

@@ -34,7 +34,7 @@ afterAll(() => {
   Reflect.deleteProperty(HTMLDialogElement.prototype, 'close')
 })
 
-test('the LLM_OPS starter uses the v4 PR-to-deploy tail without a CMS approval node', () => {
+test('the LLM_OPS starter routes PR completion by deployment capability without a CMS approval node', () => {
   const snapshot = starterSnapshots.LLM_OPS
   const node = (id: string) => snapshot.nodes.find((item) => item.id === id)
   const edge = (from: string, resultPort: string, to: string) =>
@@ -52,7 +52,7 @@ test('the LLM_OPS starter uses the v4 PR-to-deploy tail without a CMS approval n
     { id: 'preview_approval', type: 'approval', handlerKey: 'coding.preview_approval', resultPorts: ['approved', 'rejected'], config: { stage: 'CANDIDATE', requiredRole: 'GENERAL_ADMIN' } },
     { id: 'pr_request', type: 'tool', handlerKey: 'coding.pr_request', resultPorts: ['requested'], config: {} },
     { id: 'github_approval', type: 'approval', handlerKey: 'coding.approval', resultPorts: ['approved'], config: { stage: 'GITHUB', requiredRole: 'SUPER_ADMIN' } },
-    { id: 'pr_complete', type: 'tool', handlerKey: 'coding.pr_complete', resultPorts: ['completed'], config: {} },
+    { id: 'pr_complete', type: 'tool', handlerKey: 'coding.pr_complete', resultPorts: ['completed', 'closed'], config: { completionMode: 'deployment-capability' } },
     { id: 'deploy_request', type: 'tool', handlerKey: 'coding.deploy_request', resultPorts: ['recorded'], config: { mode: 'request_record_only' } },
     { id: 'deploy_approval', type: 'approval', handlerKey: 'coding.approval', resultPorts: ['approved'], config: { stage: 'DEPLOY', requiredRole: 'SUPER_ADMIN' } },
     { id: 'dev_merge_check', type: 'check', handlerKey: 'coding.dev_merge_check', resultPorts: ['merged', 'not_merged', 'blocked'], config: {} },
@@ -68,7 +68,8 @@ test('the LLM_OPS starter uses the v4 PR-to-deploy tail without a CMS approval n
     { from: 'rework_gate', resultPort: 'handover', to: 'end' }, { from: 'preview', resultPort: 'ready', to: 'preview_approval' },
     { from: 'preview_approval', resultPort: 'approved', to: 'pr_request' }, { from: 'preview_approval', resultPort: 'rejected', to: 'analyze' },
     { from: 'pr_request', resultPort: 'requested', to: 'github_approval' }, { from: 'github_approval', resultPort: 'approved', to: 'pr_complete' },
-    { from: 'pr_complete', resultPort: 'completed', to: 'deploy_request' }, { from: 'deploy_request', resultPort: 'recorded', to: 'deploy_approval' },
+    { from: 'pr_complete', resultPort: 'completed', to: 'deploy_request' },
+    { from: 'pr_complete', resultPort: 'closed', to: 'end' }, { from: 'deploy_request', resultPort: 'recorded', to: 'deploy_approval' },
     { from: 'deploy_approval', resultPort: 'approved', to: 'dev_merge_check' }, { from: 'dev_merge_check', resultPort: 'not_merged', to: 'deploy_request' },
     { from: 'dev_merge_check', resultPort: 'merged', to: 'deploy' }, { from: 'dev_merge_check', resultPort: 'blocked', to: 'end' },
     { from: 'deploy', resultPort: 'completed', to: 'end' }, { from: 'deploy', resultPort: 'blocked', to: 'end' },
@@ -97,7 +98,7 @@ test('the LLM_OPS starter uses the v4 PR-to-deploy tail without a CMS approval n
   expect(snapshot.guardrailProfileKey).toBe('central.default')
   expect(snapshot.nodes).toHaveLength(17)
   expect(node('cms_approval')).toBeUndefined()
-  expect(node('pr_complete')).toMatchObject({ handlerKey: 'coding.pr_complete', resultPorts: ['completed'] })
+  expect(node('pr_complete')).toMatchObject({ handlerKey: 'coding.pr_complete', resultPorts: ['completed', 'closed'] })
   expect(node('dev_merge_check')).toMatchObject({ handlerKey: 'coding.dev_merge_check', resultPorts: ['merged', 'not_merged', 'blocked'] })
   expect(node('deploy')).toMatchObject({ handlerKey: 'coding.deploy', resultPorts: ['completed', 'blocked'] })
   expect(edge('github_approval', 'approved', 'pr_complete')).toBe(true)
@@ -201,6 +202,17 @@ function profileApi(overrides: Partial<AgentSettingsApiClient> = {}): AgentSetti
     ...overrides,
   }
 }
+
+test('incoming monitoring navigation selects its tab and returning to the plain route restores the default tab', async () => {
+  const api = profileApi({ getMonitoringJobSnapshot: vi.fn().mockRejectedValue(new Error('Job unavailable')) })
+  const view = render(<AgentSettingsWorkspace api={api} openMonitoring monitoringJobId="linked-job" />)
+  expect(screen.getByRole('tab', { name: '실행 모니터링' })).toHaveAttribute('aria-selected', 'true')
+  await waitFor(() => expect(api.getMonitoringJobSnapshot).toHaveBeenCalledWith('linked-job', expect.any(AbortSignal)))
+  expect(await screen.findByRole('alert')).toHaveTextContent('요청한 Job을 불러오지 못했습니다.')
+  view.rerender(<AgentSettingsWorkspace api={api} />)
+  expect(screen.getByRole('tab', { name: 'Agent·Workflow' })).toHaveAttribute('aria-selected', 'true')
+  await waitFor(() => expect(api.list).toHaveBeenCalled())
+})
 
 test('the six Agent settings tabs separate live monitoring from observability and fake scores', async () => {
   render(<AgentSettingsWorkspace api={profileApi()} />)
@@ -1070,6 +1082,36 @@ test('save confirmation lists frontend binding violations and blocks the create 
   const dialog = screen.getByRole('dialog', { name: '새 DRAFT 저장' })
   expect(dialog).toHaveTextContent('저장 전 정책 위반')
   expect(dialog).toHaveTextContent('coding.deploy 필수 business stage가 없습니다.')
+  expect(within(dialog).getByRole('button', { name: '저장하기' })).toBeDisabled()
+  expect(api.create).not.toHaveBeenCalled()
+})
+
+test('legacy single-exit PR snapshots remain saveable without silently changing their graph', async () => {
+  const snapshot = {
+    ...activeVersion.snapshot,
+    nodes: activeVersion.snapshot.nodes.map((node) => node.id === 'pr_complete'
+      ? { ...node, resultPorts: ['completed'], config: {} } : node),
+    edges: activeVersion.snapshot.edges.filter((edge) => !(edge.from === 'pr_complete' && edge.resultPort === 'closed')),
+  }
+  const api = profileApi({ list: vi.fn().mockResolvedValue([{ ...activeVersion, snapshot }]) })
+  render(<AgentSettingsWorkspace api={api} />)
+  await screen.findByLabelText('pr_complete Node')
+  fireEvent.click(screen.getByRole('button', { name: '새 DRAFT 저장' }))
+  expect(within(screen.getByRole('dialog', { name: '새 DRAFT 저장' })).getByRole('button', { name: '저장하기' })).not.toBeDisabled()
+})
+
+test('the PR-only exit cannot be wired into deployment', async () => {
+  const snapshot = {
+    ...activeVersion.snapshot,
+    edges: activeVersion.snapshot.edges.map((edge) => edge.from === 'pr_complete' && edge.resultPort === 'closed'
+      ? { ...edge, to: 'deploy_request' } : edge),
+  }
+  const api = profileApi({ list: vi.fn().mockResolvedValue([{ ...activeVersion, snapshot }]) })
+  render(<AgentSettingsWorkspace api={api} />)
+  await screen.findByLabelText('pr_complete Node')
+  fireEvent.click(screen.getByRole('button', { name: '새 DRAFT 저장' }))
+  const dialog = screen.getByRole('dialog', { name: '새 DRAFT 저장' })
+  expect(dialog).toHaveTextContent('PR 완료 · 배포 없음 결과는 종료로 직접 연결해야 합니다.')
   expect(within(dialog).getByRole('button', { name: '저장하기' })).toBeDisabled()
   expect(api.create).not.toHaveBeenCalled()
 })

@@ -926,6 +926,83 @@ function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
 }
 
+test('collapses the desktop sidebar without losing navigation and preserves the mobile drawer controls', async () => {
+  window.history.pushState({}, '', '/admin/menus')
+  vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => Promise.resolve(json(
+    String(input) === '/api/auth/refresh' ? session() : [],
+  ))))
+  render(<AppShell />)
+  const toggle = await screen.findByRole('button', { name: '사이드바 접기' })
+  expect(toggle).toHaveAttribute('aria-expanded', 'true')
+  fireEvent.click(toggle)
+  expect(document.getElementById('admin-sidebar')).toHaveAttribute('data-collapsed', 'true')
+  const navigation = within(screen.getByRole('navigation', { name: '관리자 메뉴' }))
+  const contents = navigation.getByRole('button', { name: '컨텐츠 관리' })
+  expect(contents).toHaveAttribute('title', '컨텐츠 관리')
+  fireEvent.click(contents)
+  expect(await screen.findByRole('heading', { name: '컨텐츠 관리' })).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: '사이드바 펼치기' })).toHaveAttribute('aria-expanded', 'false')
+  expect(screen.getByRole('button', { name: '메뉴 열기' })).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: '메뉴 닫기' })).toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: '사이드바 펼치기' }))
+  expect(document.getElementById('admin-sidebar')).toHaveAttribute('data-collapsed', 'false')
+})
+
+test.each([
+  ['/admin/llm-devops', 'LLM DevOps', 'LLM_OPS'],
+  ['/admin/menus', '메뉴 관리', 'NATURAL_CMS'],
+  ['/admin/contents', '컨텐츠 관리', 'NATURAL_CMS'],
+  ['/admin/boards', '게시판 관리', 'NATURAL_CMS'],
+  ['/admin/templates', '템플릿 관리', 'NATURAL_CMS'],
+])('%s links a super administrator directly to the matching active Job', async (path, title, profileKey) => {
+  const jobId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+  window.history.pushState({}, '', path)
+  vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => {
+    const url = String(input)
+    if (url === '/api/auth/refresh') return Promise.resolve(json(session('SUPER_ADMIN')))
+    if (url === '/api/admin/ai/monitoring/jobs') return Promise.resolve(json({ jobs: [
+      { jobId: 'unrelated', profileKey: profileKey === 'LLM_OPS' ? 'NATURAL_CMS' : 'LLM_OPS', domainTerminal: false },
+      { jobId, profileKey, domainTerminal: false },
+    ] }))
+    if (url.startsWith('/api/admin/coding/jobs')) return Promise.resolve(json({ jobs: [], notifications: [] }))
+    return Promise.resolve(json([]))
+  }))
+  render(<AppShell />)
+  const heading = await screen.findByRole('heading', { name: title })
+  const link = await screen.findByRole('link', { name: '실시간 모니터링' })
+  expect(link).toHaveAttribute('href', `/admin/models?tab=monitoring&jobId=${jobId}`)
+  expect(heading.parentElement?.parentElement).toContainElement(link)
+})
+
+test('a general administrator gets neither a monitoring shortcut nor its privileged API request', async () => {
+  window.history.pushState({}, '', '/admin/menus')
+  const fetcher = vi.fn((input: RequestInfo | URL) => Promise.resolve(json(
+    String(input) === '/api/auth/refresh' ? session() : [],
+  )))
+  vi.stubGlobal('fetch', fetcher)
+  render(<AppShell />)
+  await screen.findByRole('heading', { name: '메뉴 관리' })
+  expect(screen.queryByRole('link', { name: '실시간 모니터링' })).not.toBeInTheDocument()
+  expect(fetcher.mock.calls.some(([url]) => String(url).startsWith('/api/admin/ai/monitoring/'))).toBe(false)
+})
+
+test('a monitoring deep link opens the tab and requests its exact Job even outside the list', async () => {
+  const jobId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+  window.history.pushState({}, '', `/admin/models?tab=monitoring&jobId=${jobId}`)
+  const fetcher = vi.fn((input: RequestInfo | URL) => {
+    const url = String(input)
+    if (url === '/api/auth/refresh') return Promise.resolve(json(session('SUPER_ADMIN')))
+    if (url === '/api/admin/ai/monitoring/jobs') return Promise.resolve(json({ jobs: [] }))
+    if (url === `/api/admin/ai/monitoring/jobs/${jobId}`) return Promise.resolve(json({ detail: 'Not found' }, 404))
+    return Promise.resolve(json([]))
+  })
+  vi.stubGlobal('fetch', fetcher)
+  render(<AppShell />)
+  expect(await screen.findByRole('tab', { name: '실행 모니터링' })).toHaveAttribute('aria-selected', 'true')
+  await waitFor(() => expect(fetcher.mock.calls.some(([url]) => String(url) === `/api/admin/ai/monitoring/jobs/${jobId}`)).toBe(true))
+  expect(screen.getByRole('button', { name: '최신 활성 Job 자동 추적 꺼짐' })).toHaveAttribute('aria-pressed', 'false')
+})
+
 function deferred<T>() {
   let resolve!: (value: T) => void
   const promise = new Promise<T>((onResolve) => { resolve = onResolve })
