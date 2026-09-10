@@ -546,40 +546,71 @@ function UsagePanel({ api }: { api: AgentSettingsApiClient }) {
   const [activeTab, setActiveTab] = useState<ObservabilityTab>('node')
   const [fromInput, setFromInput] = useState(initialRange.current.from)
   const [toInput, setToInput] = useState(initialRange.current.to)
+  const [jobInput, setJobInput] = useState('')
+  const [query, setQuery] = useState(() => ({
+    from: utcInstant(initialRange.current.from), to: utcInstant(initialRange.current.to), jobId: '',
+    kind: 'NODE' as 'NODE' | 'PROVIDER', cursors: [undefined] as (string | undefined)[], page: 0,
+  }))
   const [metrics, setMetrics] = useState<ObservabilityMetricsResponse | null>(null)
   const [observations, setObservations] = useState<ObservabilityResponse | null>(null)
   const [loadedAt, setLoadedAt] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [failure, setFailure] = useState<string | null>(null)
 
-  async function load() {
-    setLoading(true)
-    setFailure(null)
-    setMetrics(null)
-    setObservations(null)
+  function load() {
     try {
       const from = utcInstant(fromInput)
       const to = utcInstant(toInput)
       if (from >= to) throw new Error('UTC 조회 종료 시각은 시작 시각보다 뒤여야 합니다.')
-      const [nextMetrics, nextObservations] = await Promise.all([
-        api.getObservabilityMetrics(from, to),
-        api.getObservations(from, to),
-      ])
-      if (nextMetrics.from !== nextObservations.from || nextMetrics.to !== nextObservations.to
-        || nextMetrics.environment !== nextObservations.environment || nextMetrics.environment !== 'local') {
-        throw new Error('관측 응답의 UTC 기간 또는 환경이 일치하지 않습니다.')
+      const jobId = jobInput.trim().toLowerCase()
+      if (jobId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(jobId)) {
+        throw new Error('Job ID는 전체 UUID를 입력해 주세요.')
       }
-      setMetrics(nextMetrics)
-      setObservations(nextObservations)
-      setLoadedAt(new Date().toISOString())
+      setQuery({ from, to, jobId, kind: activeTab === 'provider' ? 'PROVIDER' : 'NODE', cursors: [undefined], page: 0 })
     } catch (error) {
       setFailure(describeFailure(error))
-    } finally {
-      setLoading(false)
     }
   }
 
-  useEffect(() => { void load() }, [])
+  useEffect(() => {
+    const controller = new AbortController()
+    setLoading(true)
+    setFailure(null)
+    setMetrics(null)
+    setObservations(null)
+    const fetchPage = async () => {
+      try {
+        const [nextMetrics, nextObservations] = await Promise.all([
+          api.getObservabilityMetrics(query.from, query.to, query.jobId || undefined, controller.signal),
+          api.getObservations(query.from, query.to, {
+            jobId: query.jobId || undefined, kind: query.kind, limit: 50, cursor: query.cursors[query.page],
+          }, controller.signal),
+        ])
+        if (controller.signal.aborted) return
+        if (nextMetrics.from !== nextObservations.from || nextMetrics.to !== nextObservations.to
+          || nextMetrics.environment !== nextObservations.environment || nextMetrics.environment !== 'local') {
+          throw new Error('관측 응답의 UTC 기간 또는 환경이 일치하지 않습니다.')
+        }
+        setMetrics(nextMetrics)
+        setObservations(nextObservations)
+        setLoadedAt(new Date().toISOString())
+      } catch (error) {
+        if (!controller.signal.aborted) setFailure(describeFailure(error))
+      } finally {
+        if (!controller.signal.aborted) setLoading(false)
+      }
+    }
+    void fetchPage()
+    return () => controller.abort()
+  }, [api, query])
+
+  function selectTab(tab: ObservabilityTab) {
+    setActiveTab(tab)
+    if (tab !== 'quality') {
+      const kind = tab === 'provider' ? 'PROVIDER' : 'NODE'
+      if (kind !== query.kind) setQuery((current) => ({ ...current, kind, cursors: [undefined], page: 0 }))
+    }
+  }
 
   const nodeRows = observations?.observations.filter((row) => row.name !== 'axms.model') ?? []
   const providerRows = observations?.observations.filter((row) => row.name === 'axms.model') ?? []
@@ -610,29 +641,36 @@ function UsagePanel({ api }: { api: AgentSettingsApiClient }) {
         </label>
         <button type="submit" className={`${secondaryButton} self-end`} disabled={loading}>{loading ? '조회 중' : '새로고침'}</button>
       </form>
+      <form className="flex flex-wrap items-end gap-2 border-t border-line-soft px-4 py-3" onSubmit={(event) => { event.preventDefault(); load() }}>
+        <label className="min-w-0 flex-1 text-[0.6875rem] font-semibold text-body">
+          Job ID 검색
+          <input aria-label="Job ID 검색" className={`${control} mt-1 font-mono`} placeholder="전체 Job ID · 비워두면 전체 조회" maxLength={36} value={jobInput} disabled={loading} onChange={(event) => setJobInput(event.target.value)} />
+        </label>
+        <button type="submit" className={secondaryButton} disabled={loading}>검색</button>
+      </form>
       <div className="border-t border-line-soft px-4 py-3 text-[0.6875rem] leading-5 text-muted-2">
         {metrics && observations
-          ? <>기간 <span className="font-mono text-body">{metrics.from}</span> — <span className="font-mono text-body">{metrics.to}</span> · 환경 <b className="text-body">{metrics.environment}</b>{loadedAt && <> · 조회 완료 <span className="font-mono text-body">{loadedAt}</span></>}</>
+          ? <>기간 <span className="font-mono text-body">{metrics.from}</span> — <span className="font-mono text-body">{metrics.to}</span> · 환경 <b className="text-body">{metrics.environment}</b> · Job <span className="break-all font-mono text-body">{query.jobId || '전체'}</span>{loadedAt && <> · 조회 완료 <span className="font-mono text-body">{loadedAt}</span></>}</>
           : 'Metrics와 Observations에 같은 UTC 기간과 environment=local 필터를 적용합니다.'}
       </div>
     </section>
 
     {failure && <div role="alert" className="mt-3 flex flex-wrap items-center gap-2 rounded-md border border-[#f0d5d1] bg-fail-bg px-3 py-2 text-xs text-fail-fg">
       <span>{failure}</span>
-      <button type="button" className={`${secondaryButton} ml-auto`} disabled={loading} onClick={() => void load()}>다시 조회</button>
+      <button type="button" className={`${secondaryButton} ml-auto`} disabled={loading} onClick={() => setQuery((current) => ({ ...current }))}>다시 조회</button>
     </div>}
 
     <div className="mt-4 flex gap-2 border-b border-line" role="tablist" aria-label="사용량·평가 상세 영역">
       {tabs.map((tab) => <button key={tab.id} type="button" role="tab" aria-selected={activeTab === tab.id}
         className={`px-3 pb-2 text-[0.75rem] ${activeTab === tab.id ? 'font-semibold text-ink shadow-[inset_0_-2px_var(--primary)]' : 'text-muted'}`}
-        onClick={() => setActiveTab(tab.id)}>{tab.label}</button>)}
+        onClick={() => selectTab(tab.id)}>{tab.label}</button>)}
     </div>
 
     {loading && <div className="mt-3"><Callout tone="warn" icon="loader-circle">Node와 Provider 계측을 조회하고 있습니다.</Callout></div>}
 
     {!loading && activeTab === 'node' && observations && <section className={`${panel} mt-3`} aria-label="Node 계측 결과">
       <PanelTitle title="Node 계측"><Badge tone={nodeAvailability?.tone ?? 'idle'}>{nodeAvailability?.label ?? '관측 대기'}</Badge></PanelTitle>
-      <p className="border-t border-line-soft px-4 py-2 text-[0.6875rem] text-muted-2">최근 최대 50건의 Observation 조회 결과입니다.</p>
+      <p className="border-t border-line-soft px-4 py-2 text-[0.6875rem] text-muted-2">선택한 조건의 Node·Tool·Check 관측 · 페이지당 최대 50건 · 최신순</p>
       {nodeRows.length === 0
         ? <p className="p-4 text-[0.71875rem] text-muted-2">{observations.status === 'AVAILABLE' ? '이번 조회 결과에 Node·Tool·Check 관측이 없습니다.' : observations.errorCode ?? '관측 연결 상태를 확인해 주세요.'}</p>
         : <div className="overflow-x-auto"><table className="w-full min-w-[46rem] text-left text-[0.6875rem]"><thead className="bg-sub text-muted-2"><tr><th className="px-3 py-2">관측</th><th className="px-3 py-2">Job / Node</th><th className="px-3 py-2">상태 / Attempt</th><th className="px-3 py-2">지연시간</th><th className="px-3 py-2">시작 UTC</th></tr></thead><tbody>
@@ -649,7 +687,7 @@ function UsagePanel({ api }: { api: AgentSettingsApiClient }) {
         </tbody></table></div>}
       {observations && <div className="border-t border-line-soft">
         <div className="flex items-center justify-between gap-2 bg-sub px-3 py-2"><b className="text-[0.6875rem]">실제 Provider 호출</b><Badge tone={providerDetailAvailability?.tone ?? 'idle'} dot={false}>{providerDetailAvailability?.label ?? '관측 대기'}</Badge></div>
-        <p className="border-t border-line-soft px-4 py-2 text-[0.6875rem] text-muted-2">최근 최대 50건의 Observation 조회 결과입니다.</p>
+        <p className="border-t border-line-soft px-4 py-2 text-[0.6875rem] text-muted-2">선택한 조건의 Provider 관측 · 페이지당 최대 50건 · 최신순 · 상단 집계는 전체 조회 기간 기준</p>
         {providerRows.length === 0
           ? <p className="p-4 text-[0.71875rem] text-muted-2">{observations.status === 'AVAILABLE' ? '이번 조회 결과에 실제 Provider 호출 Observation이 없습니다.' : observations.errorCode ?? '관측 연결 상태를 확인해 주세요.'}</p>
           : <div className="overflow-x-auto"><table className="w-full min-w-[56rem] text-left text-[0.6875rem]"><thead className="bg-sub text-muted-2"><tr><th className="px-3 py-2">Provider / Model</th><th className="px-3 py-2">Job / Node</th><th className="px-3 py-2">OTel Trace</th><th className="px-3 py-2">입력 / 출력 Token</th><th className="px-3 py-2">지연시간</th></tr></thead><tbody>
@@ -657,6 +695,15 @@ function UsagePanel({ api }: { api: AgentSettingsApiClient }) {
           </tbody></table></div>}
       </div>}
     </section>}
+
+    {activeTab !== 'quality' && <nav className="mt-3 flex flex-wrap items-center justify-end gap-2 text-xs text-muted-2" aria-label="관측 페이지 이동">
+      <span aria-live="polite">{query.page + 1} 페이지{!loading && observations && ` · 현재 ${(query.kind === 'NODE' ? nodeRows : providerRows).length}건`}</span>
+      <button type="button" className={secondaryButton} disabled={loading || query.page === 0} onClick={() => setQuery((current) => ({ ...current, page: current.page - 1 }))}>이전</button>
+      <button type="button" className={secondaryButton} disabled={loading || !!failure || !observations?.nextCursor || observations.status !== 'AVAILABLE'} onClick={() => {
+        const cursor = observations?.nextCursor
+        if (cursor) setQuery((current) => ({ ...current, page: current.page + 1, cursors: [...current.cursors.slice(0, current.page + 1), cursor] }))
+      }}>다음</button>
+    </nav>}
 
     {!loading && activeTab === 'quality' && <section className={`${panel} mt-3`} aria-label="품질 평가 결과">
       <PanelTitle title="품질 평가"><Badge tone="idle" dot={false}>평가 미설정</Badge></PanelTitle>
