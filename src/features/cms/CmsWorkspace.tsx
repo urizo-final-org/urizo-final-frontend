@@ -29,7 +29,7 @@ const recordName = 'block truncate text-[0.78125rem] text-ink'
 const CMS_SUCCESS_EVENT = 'axms:cms-success'
 type SuccessNotice = { id: string; message: string }
 
-export default function CmsWorkspace({ route, api, assistantApi }: { route: CmsRouteId; api: CmsApi; assistantApi: NaturalCmsApi }) {
+export default function CmsWorkspace({ route, api, assistantApi, monitoringAction }: { route: CmsRouteId; api: CmsApi; assistantApi: NaturalCmsApi; monitoringAction?: ReactNode }) {
   const [success, setSuccess] = useState<SuccessNotice | null>(null)
   const [assistantCollapsed, setAssistantCollapsed] = useState(false)
   const [assistantTarget, setAssistantTarget] = useState<CmsAssistantTarget | null>(null)
@@ -48,10 +48,10 @@ export default function CmsWorkspace({ route, api, assistantApi }: { route: CmsR
   }, [success])
   useEffect(() => { setSuccess(null); setAssistantTarget(null); setAssistantCandidates([]); setAssistantMenus([]) }, [route])
   const workspace = route === 'members' ? <Members api={api} />
-    : route === 'menus' ? <Menus api={api} onSelect={setAssistantTarget} onCandidates={setAssistantCandidates} onMenus={setAssistantMenus} />
-      : route === 'contents' ? <Contents api={api} onSelect={setAssistantTarget} onCandidates={setAssistantCandidates} onMenus={setAssistantMenus} />
-        : route === 'boards' ? <Boards api={api} onSelect={setAssistantTarget} onCandidates={setAssistantCandidates} onMenus={setAssistantMenus} />
-          : <Templates api={api} />
+    : route === 'menus' ? <Menus api={api} onSelect={setAssistantTarget} onCandidates={setAssistantCandidates} onMenus={setAssistantMenus} monitoringAction={monitoringAction} />
+      : route === 'contents' ? <Contents api={api} onSelect={setAssistantTarget} onCandidates={setAssistantCandidates} onMenus={setAssistantMenus} monitoringAction={monitoringAction} />
+        : route === 'boards' ? <Boards api={api} onSelect={setAssistantTarget} onCandidates={setAssistantCandidates} onMenus={setAssistantMenus} monitoringAction={monitoringAction} />
+          : <Templates api={api} monitoringAction={monitoringAction} />
   const assistantRoute = route === 'members' ? null : route
   return <>
     <SuccessToast notice={success} />
@@ -65,7 +65,7 @@ export default function CmsWorkspace({ route, api, assistantApi }: { route: CmsR
 }
 
 function Heading({ title, description, children }: { title: string; description: string; children?: ReactNode }) {
-  return <PageHead title={title} description={description}>{children}</PageHead>
+  return <PageHead title={title} description={description} wrapActions>{children}</PageHead>
 }
 function SuccessToast({ notice }: { notice: SuccessNotice | null }) {
   return notice ? <div className="pointer-events-none fixed inset-0 z-[100] grid place-items-center p-5" aria-live="polite" aria-atomic="true">
@@ -140,8 +140,9 @@ function Members({ api }: { api: CmsApi }) {
   </>
 }
 
-function Menus({ api, onSelect, onCandidates, onMenus }: {
+function Menus({ api, onSelect, onCandidates, onMenus, monitoringAction }: {
   api: CmsApi
+  monitoringAction?: ReactNode
   onSelect: (target: CmsAssistantTarget | null) => void
   onCandidates: (candidates: CmsAssistantTarget[]) => void
   onMenus: (menus: AssistantMenu[]) => void
@@ -185,6 +186,7 @@ function Menus({ api, onSelect, onCandidates, onMenus }: {
   const targetOptions = targetType === 'CONTENT' ? contents : targetType === 'BOARD' ? boards : []
   return <>
     <Heading title="메뉴 관리" description="메뉴 구조를 만들고 특정 컨텐츠 또는 게시판을 연결합니다.">
+      {monitoringAction}
       {editing && <button type="button" className={secondaryButton} onClick={() => select(null)}><Icon name="plus" />새 메뉴</button>}
     </Heading>
     <Failure value={failure} />
@@ -228,8 +230,9 @@ function Menus({ api, onSelect, onCandidates, onMenus }: {
   </>
 }
 
-function Contents({ api, onSelect, onCandidates, onMenus }: {
+function Contents({ api, onSelect, onCandidates, onMenus, monitoringAction }: {
   api: CmsApi
+  monitoringAction?: ReactNode
   onSelect: (target: CmsAssistantTarget | null) => void
   onCandidates: (candidates: CmsAssistantTarget[]) => void
   /** 컨텐츠 화면에서는 **선택한 컨텐츠를 연결한 메뉴**만 넘긴다. 삭제 확인이 그것을 알린다. */
@@ -313,6 +316,7 @@ function Contents({ api, onSelect, onCandidates, onMenus }: {
   async function remove(id: number) { if (!window.confirm('컨텐츠를 삭제할까요?')) return; setFailure(null); try { await api.deleteContent(id); clear(); await load(); notifySiteUpdated(); notifyCmsSuccess('컨텐츠를 삭제했습니다.') } catch (e) { setFailure(`컨텐츠를 삭제하지 못했습니다. ${describeFailure(e)}`) } }
   return <>
     <Heading title="컨텐츠 관리" description="메뉴에 연결할 정적 페이지를 가벼운 에디터로 작성합니다.">
+      {monitoringAction}
       <button className={primaryButton} onClick={startContent}><Icon name="plus" />새 컨텐츠</button>
     </Heading>
     <Failure value={failure} />
@@ -347,8 +351,9 @@ function Contents({ api, onSelect, onCandidates, onMenus }: {
   </>
 }
 
-function Boards({ api, onSelect, onCandidates, onMenus }: {
+function Boards({ api, onSelect, onCandidates, onMenus, monitoringAction }: {
   api: CmsApi
+  monitoringAction?: ReactNode
   onSelect: (target: CmsAssistantTarget | null) => void
   onCandidates: (candidates: CmsAssistantTarget[]) => void
   /** 게시판 화면에서는 **선택한 게시판을 연결한 메뉴**만 넘긴다. 삭제 확인이 그것을 알린다. */
@@ -448,6 +453,7 @@ function Boards({ api, onSelect, onCandidates, onMenus }: {
   async function removePost() { if (!selectedPost || !selectedBoard || !window.confirm('게시물을 삭제할까요?')) return; setFailure(null); try { await api.deletePost(selectedPost.id); choosePost(null); setPosts(await api.posts(selectedBoard.id)); notifySiteUpdated(); notifyCmsSuccess('게시물을 삭제했습니다.') } catch (e) { setFailure(`게시물을 삭제하지 못했습니다. ${describeFailure(e)}`) } }
   return <>
     <Heading title="게시판 관리" description="게시판과 게시글을 관리하고 메뉴 관리에서 연결합니다.">
+      {monitoringAction}
       <button className={primaryButton} onClick={newBoard}><Icon name="plus" />새 게시판</button>
     </Heading>
     <Failure value={failure} />
@@ -509,7 +515,7 @@ function Boards({ api, onSelect, onCandidates, onMenus }: {
   </>
 }
 
-function Templates({ api }: { api: CmsApi }) {
+function Templates({ api, monitoringAction }: { api: CmsApi; monitoringAction?: ReactNode }) {
   const [items, setItems] = useState<SiteTemplate[]>([])
   const [value, setValue] = useState<SiteTemplate | null>(null)
   const [preview, setPreview] = useState<SiteTemplate | null>(null)
@@ -525,7 +531,7 @@ function Templates({ api }: { api: CmsApi }) {
   function select(item: SiteTemplate) { setFailure(null); setValue(item) }
 
   return <>
-    <Heading title="템플릿 관리" description="공통 디자인과 메인 화면, Header, Footer를 한곳에서 관리합니다." />
+    <Heading title="템플릿 관리" description="공통 디자인과 메인 화면, Header, Footer를 한곳에서 관리합니다.">{monitoringAction}</Heading>
     <Failure value={failure} />
     <div className="mb-[0.875rem] grid gap-[0.875rem] md:grid-cols-3">
       {items.map((item) => <article key={item.key} className={`${panel} grid content-start gap-3 p-4 ${value?.key === item.key ? 'border-primary ring-2 ring-[#eef2f7]' : ''}`}>

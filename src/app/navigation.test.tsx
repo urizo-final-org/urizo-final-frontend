@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { expect, test, vi } from 'vitest'
 import { AppNavigation } from './navigation'
 
@@ -25,4 +25,16 @@ test('a pending count reaches the RAG menu before the page is opened', () => {
 test('a zero count draws nothing', () => {
   show({ rag: { count: 0, title: '승인 대기 0건' } })
   expect(screen.queryByLabelText(/승인 대기/)).not.toBeInTheDocument()
+})
+
+test('compact navigation retains accessible labels and opens icons from a collapsed group', () => {
+  const onNavigate = vi.fn()
+  const view = render(<AppNavigation activeRoute="models" role="SUPER_ADMIN" onNavigate={onNavigate} />)
+  fireEvent.click(screen.getByRole('button', { name: 'AI 운영' }))
+  expect(screen.queryByRole('button', { name: 'Agent 설정' })).not.toBeInTheDocument()
+  view.rerender(<AppNavigation activeRoute="models" role="SUPER_ADMIN" onNavigate={onNavigate} compact />)
+  const agentSettings = screen.getByRole('button', { name: 'Agent 설정' })
+  expect(agentSettings).toHaveAttribute('title', 'Agent 설정')
+  fireEvent.click(agentSettings)
+  expect(onNavigate).toHaveBeenCalledWith('models')
 })
