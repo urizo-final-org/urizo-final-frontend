@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent as Reac
 import './ActiveJobMonitoringPanel.css'
 import { describeFailure } from '../../shared/api/error'
 import { Badge, Callout, PanelTitle, control, panel, secondaryButton, type Tone } from '../../shared/ui/primitives'
+import { nodeDisplayName } from './WorkflowPanel'
 import type {
   AgentSettingsApiClient, MonitoringJobSnapshotResponse, MonitoringLatestNodeState,
   MonitoringNodeDisplayStatus, ProfileEditorLayout, ProfileKey, ProfileVersion, SelectedObservationsResponse,
@@ -358,8 +359,10 @@ function ReadOnlyMonitoringCanvas({ snapshot, profile, layout, selectedNodeId, s
             <rect className="monitoring-node-activity__trail" width="100%" height="100%" rx="8" pathLength="100" />
             <rect className="monitoring-node-activity__head" width="100%" height="100%" rx="8" pathLength="100" />
           </svg>}
-          <span className="block truncate text-[0.75rem] font-semibold">{node.id}</span>
-          <span className="mt-1 block truncate font-mono text-[0.5625rem] text-muted-2">{node.handlerKey}</span>
+          {/* The same name the settings canvas shows, so the two screens read alike; the
+              id stays underneath because logs and approvals still refer to it. */}
+          <span className="block truncate text-[0.75rem] font-semibold">{nodeDisplayName(profile.profileKey, node)}</span>
+          <span className="mt-1 block truncate font-mono text-[0.5625rem] text-muted-2">{node.id}</span>
           <span className="monitoring-node-signals mt-2">
             <span className="monitoring-status-chip monitoring-status-chip--node" data-node-status={state?.status ?? 'NOT_STARTED'}>N · {view.label}</span>
             <span className="monitoring-node-signals__secondary">
