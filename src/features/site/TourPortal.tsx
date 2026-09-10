@@ -229,7 +229,7 @@ export function PortalHome({ template, menus = [], notices = [] }: { template: S
 
     <section className="border-b border-line-soft bg-page">
       <div className="mx-auto max-w-[75rem] px-7 pb-[3.75rem] pt-14 max-[560px]:px-4">
-        <SectionHead title="지금 열리는 축제·행사" eyebrow={`${todayLabel()} 기준 · 진행·예정 19건`} moreCategory="event" />
+        <SectionHead title="지금 열리는 축제·행사?" eyebrow={`${todayLabel()} 기준 · 진행·예정 19건`} moreCategory="event" />
         <div className="mt-6 grid gap-5 [grid-template-columns:repeat(auto-fit,minmax(13.125rem,1fr))]">
           {FESTIVALS.map((festival) => <article key={festival.name}>
             <div className="relative overflow-hidden rounded-xl border border-line-soft">
