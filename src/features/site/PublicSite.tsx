@@ -100,7 +100,7 @@ export default function PublicSite() {
       {routePath === '/search'
         ? <PortalSearch />
         : routePath === '/'
-          ? <PortalHome template={template} />
+          ? <PortalHome template={template} menus={menus} notices={notices} />
           : <SubPage menu={currentMenu} menus={menus} board={currentBoard} content={content} posts={posts} post={post} failure={failure} publicPath={site.publicPath} siteName={template.siteName} />}
       <PortalFooter template={template} />
       <ChatWidget />
