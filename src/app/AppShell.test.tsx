@@ -791,7 +791,7 @@ test('an administrator previews a template and saves only contract fields', asyn
 
   render(<AppShell />)
   expect(await screen.findByRole('heading', { name: '템플릿 관리' })).toBeInTheDocument()
-  expect(await screen.findByText('Header와 메인 영역의 배치·여백·강조 방식을 선택합니다.')).toBeInTheDocument()
+  expect(await screen.findByText('메인 관광 포털은 공통 배치를 유지하며 제목의 굵기·영문 대문자 강조가 달라집니다. 하위 사이트는 각 레이아웃의 배치를 사용합니다.')).toBeInTheDocument()
   expect(screen.queryByText('ACTIVE')).not.toBeInTheDocument()
 
   fireEvent.click(screen.getByRole('button', { name: 'BOLD 템플릿 미리보기' }))
