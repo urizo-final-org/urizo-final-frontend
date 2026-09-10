@@ -241,10 +241,7 @@ test('discards the previous Job response after selection changes', async () => {
     getMonitoringJobSnapshot,
   })
   render(<ActiveJobMonitoringPanel api={api} />)
-  await waitFor(() => expect(screen.getByLabelText('실행 모니터링 Job')).toHaveValue(''))
-  expect(await screen.findByRole('option', { name: '모니터링할 Job을 선택하세요' })).toHaveProperty('selected', true)
-  expect(getMonitoringJobSnapshot).not.toHaveBeenCalled()
-  fireEvent.change(screen.getByLabelText('실행 모니터링 Job'), { target: { value: job.jobId } })
+  await waitFor(() => expect(screen.getByLabelText('실행 모니터링 Job')).toHaveValue(job.jobId))
   await waitFor(() => expect(getMonitoringJobSnapshot).toHaveBeenCalledWith(job.jobId, expect.any(AbortSignal)))
   fireEvent.change(screen.getByLabelText('실행 모니터링 Job'), { target: { value: secondJob.jobId } })
   await waitFor(() => expect(within(screen.getByRole('region', { name: '실행 모니터링 상세' })).getAllByText('WAITING_APPROVAL')).toHaveLength(2))
@@ -390,6 +387,7 @@ test('manual list refresh preserves selection and layout and recovers from an er
   const api = monitoringApi({ listMonitoringJobs })
   render(<ActiveJobMonitoringPanel api={api} />)
   await screen.findByLabelText('읽기 전용 Node Canvas')
+  fireEvent.change(screen.getByLabelText('실행 모니터링 Job'), { target: { value: job.jobId } })
   fireEvent.click(screen.getByLabelText('analyze Node'))
   fireEvent.click(screen.getByRole('button', { name: '목록 새로고침' }))
   expect(await screen.findByRole('alert')).toHaveTextContent('List unavailable')
@@ -401,4 +399,62 @@ test('manual list refresh preserves selection and layout and recovers from an er
   expect(screen.getByLabelText('analyze Node')).toHaveAttribute('aria-pressed', 'true')
   expect(api.list).toHaveBeenCalledTimes(1)
   expect(api.getEditorLayout).toHaveBeenCalledTimes(1)
+})
+
+test('follows a newly active Job without clicks, supports manual pinning, and resumes latest tracking', async () => {
+  vi.useFakeTimers()
+  const newer = { ...job, jobId: '44444444-4444-4444-8444-444444444444', lastUpdatedAt: '2026-09-08T00:00:00Z' }
+  const listMonitoringJobs = vi.fn().mockResolvedValue({ jobs: [job] })
+  const api = monitoringApi({ listMonitoringJobs,
+    getMonitoringJobSnapshot: vi.fn().mockImplementation((id: string) => Promise.resolve(snapshot(id === newer.jobId ? newer : job))),
+  })
+  render(<ActiveJobMonitoringPanel api={api} />)
+  await act(async () => {})
+  listMonitoringJobs.mockResolvedValue({ jobs: [newer, job] })
+  await act(async () => { await vi.advanceTimersByTimeAsync(5_000) })
+  expect(screen.getByLabelText('실행 모니터링 Job')).toHaveValue(newer.jobId)
+  expect(screen.getByLabelText('읽기 전용 Node Canvas')).toBeInTheDocument()
+  fireEvent.change(screen.getByLabelText('실행 모니터링 Job'), { target: { value: job.jobId } })
+  await act(async () => { await vi.advanceTimersByTimeAsync(5_000) })
+  expect(screen.getByLabelText('실행 모니터링 Job')).toHaveValue(job.jobId)
+  fireEvent.click(screen.getByRole('button', { name: '최신 활성 Job 자동 추적 꺼짐' }))
+  await act(async () => {})
+  expect(screen.getByLabelText('실행 모니터링 Job')).toHaveValue(newer.jobId)
+  expect(api.getEditorLayout).toHaveBeenCalledTimes(1)
+})
+
+test('opens a deep-linked Job outside the bounded list and pins it across newer active Jobs', async () => {
+  vi.useFakeTimers()
+  const latest = { ...job, jobId: '44444444-4444-4444-8444-444444444444' }
+  const api = monitoringApi({ listMonitoringJobs: vi.fn().mockResolvedValue({ jobs: [latest] }) })
+  render(<ActiveJobMonitoringPanel api={api} requestedJobId={job.jobId} />)
+  await act(async () => { await vi.advanceTimersByTimeAsync(10_000) })
+  expect(screen.getByLabelText('실행 모니터링 Job')).toHaveValue(job.jobId)
+  expect(screen.getByLabelText('읽기 전용 Node Canvas')).toBeInTheDocument()
+  expect(api.getMonitoringJobSnapshot).not.toHaveBeenCalledWith(latest.jobId, expect.anything())
+  expect(screen.getByRole('button', { name: '최신 활성 Job 자동 추적 꺼짐' })).toHaveAttribute('aria-pressed', 'false')
+})
+
+test('loads the exact fixed Profile and Canvas when latest tracking switches to NATURAL_CMS', async () => {
+  vi.useFakeTimers()
+  const natural = { ...job, jobId: '44444444-4444-4444-8444-444444444444', profileKey: 'NATURAL_CMS',
+    profileVersionId: '55555555-5555-4555-8555-555555555555' }
+  const naturalProfile: ProfileVersion = { ...profile, profileKey: 'NATURAL_CMS', profileVersionId: natural.profileVersionId,
+    snapshot: { ...profile.snapshot, profileKey: 'NATURAL_CMS', profileVersionId: natural.profileVersionId } }
+  const listMonitoringJobs = vi.fn().mockResolvedValue({ jobs: [job] })
+  const api = monitoringApi({ listMonitoringJobs,
+    list: vi.fn().mockImplementation((key: string) => Promise.resolve([key === 'NATURAL_CMS' ? naturalProfile : profile])),
+    getEditorLayout: vi.fn().mockImplementation((id: string) => Promise.resolve({ profileVersionId: id,
+      nodes: [{ id: 'analyze', x: 48, y: 64 }, { id: 'code', x: 300, y: 64 }] })),
+    getMonitoringJobSnapshot: vi.fn().mockImplementation((id: string) => Promise.resolve(snapshot(id === natural.jobId ? natural : job))),
+  })
+  render(<ActiveJobMonitoringPanel api={api} />)
+  await act(async () => {})
+  listMonitoringJobs.mockResolvedValue({ jobs: [natural, job] })
+  await act(async () => { await vi.advanceTimersByTimeAsync(5_000) })
+  expect(screen.getByLabelText('실행 모니터링 Job')).toHaveValue(natural.jobId)
+  expect(screen.getByText('NATURAL_CMS 실행 흐름')).toBeInTheDocument()
+  expect(screen.getByLabelText('읽기 전용 Node Canvas')).toBeInTheDocument()
+  expect(api.list).toHaveBeenLastCalledWith('NATURAL_CMS')
+  expect(api.getEditorLayout).toHaveBeenLastCalledWith(natural.profileVersionId)
 })

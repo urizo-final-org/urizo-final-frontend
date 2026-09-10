@@ -20,9 +20,11 @@ const statusView: Record<MonitoringNodeDisplayStatus, { label: string; tone: Ton
   FAILED: { label: '실패', tone: 'fail', line: '#c2413b' },
 }
 
-export default function ActiveJobMonitoringPanel({ api }: { api: AgentSettingsApiClient }) {
+export default function ActiveJobMonitoringPanel({ api, requestedJobId = '' }: { api: AgentSettingsApiClient; requestedJobId?: string }) {
   const [jobs, setJobs] = useState<Awaited<ReturnType<AgentSettingsApiClient['listMonitoringJobs']>>['jobs']>([])
-  const [selectedJobId, setSelectedJobId] = useState('')
+  const [selectedJobId, setSelectedJobId] = useState(requestedJobId)
+  const [followingLatest, setFollowingLatest] = useState(!requestedJobId)
+  const followLatest = useRef(!requestedJobId)
   const [snapshot, setSnapshot] = useState<MonitoringJobSnapshotResponse | null>(null)
   const [profile, setProfile] = useState<ProfileVersion | null>(null)
   const [layout, setLayout] = useState<ProfileEditorLayout | null>(null)
@@ -37,6 +39,12 @@ export default function ActiveJobMonitoringPanel({ api }: { api: AgentSettingsAp
   const latestSnapshot = useRef<MonitoringJobSnapshotResponse | null>(null)
 
   useEffect(() => {
+    followLatest.current = !requestedJobId
+    setFollowingLatest(!requestedJobId)
+    setSelectedJobId(requestedJobId)
+  }, [requestedJobId])
+
+  useEffect(() => {
     let disposed = false
     let timer: number | undefined
     let controller: AbortController | undefined
@@ -49,9 +57,9 @@ export default function ActiveJobMonitoringPanel({ api }: { api: AgentSettingsAp
         const response = await api.listMonitoringJobs(localController.signal)
         if (disposed || localController.signal.aborted || document.hidden) return
         setJobs(response.jobs)
-        const active = response.jobs.filter((job) => !job.domainTerminal)
-        // Keep an explicit selection, including its terminal history. Only one active Job is unambiguous.
-        setSelectedJobId((current) => current || (active.length === 1 ? active[0].jobId : ''))
+        // The API orders active Jobs by their latest monitoring update. Explicit selections stay pinned.
+        const latestActive = response.jobs.find((job) => !job.domainTerminal)
+        if (followLatest.current && latestActive) setSelectedJobId(latestActive.jobId)
         setListFailure(null)
       } catch (error) {
         if (!disposed && !localController.signal.aborted) setListFailure(describeFailure(error))
@@ -186,15 +194,24 @@ export default function ActiveJobMonitoringPanel({ api }: { api: AgentSettingsAp
       <div className="flex flex-wrap items-end gap-3">
         <label className="min-w-64 flex-1 text-[0.71875rem] font-semibold text-body">활성·최근 종료 Job
           <select aria-label="실행 모니터링 Job" className={control} value={selectedJobId} disabled={listedJobs.length === 0}
-            onChange={(event) => setSelectedJobId(event.target.value)}>
+            onChange={(event) => { followLatest.current = false; setFollowingLatest(false); setSelectedJobId(event.target.value) }}>
             <option value="" disabled>{listedJobs.length === 0 ? '선택할 Job 없음' : '모니터링할 Job을 선택하세요'}</option>
             {listedJobs.map((job) => <option key={job.jobId} value={job.jobId}>{job.domainTerminal ? '[종료] ' : '[활성] '}{job.profileKey} · {job.domainJobStatus} · {job.jobId}</option>)}
           </select>
         </label>
         <button type="button" className={secondaryButton} disabled={loadingJobs} onClick={() => setListReload((value) => value + 1)}>{loadingJobs ? '조회 중' : '목록 새로고침'}</button>
+        <button type="button" className={secondaryButton} aria-pressed={followingLatest} onClick={() => {
+          followLatest.current = !followingLatest
+          setFollowingLatest(!followingLatest)
+          if (!followingLatest) {
+            const latestActive = jobs.find((job) => !job.domainTerminal)
+            if (latestActive) setSelectedJobId(latestActive.jobId)
+          }
+        }}>최신 활성 Job 자동 추적 {followingLatest ? '켜짐' : '꺼짐'}</button>
       </div>
       {listFailure && <p role="alert" className="mt-3 text-xs text-fail-fg">{listFailure}</p>}
-      <p className="mt-3 text-xs text-muted-2">목록은 화면이 보이는 동안 5초마다 갱신됩니다. 종료된 Job도 선택해 마지막 실행 상태를 확인할 수 있습니다.</p>
+      {snapshotFailure && !selectedJob && <p role="alert" className="mt-3 text-xs text-fail-fg">요청한 Job을 불러오지 못했습니다. {snapshotFailure}</p>}
+      <p className="mt-3 text-xs text-muted-2">목록은 화면이 보이는 동안 5초마다, 실행 상태는 1초마다 갱신됩니다. 자동 추적은 최근 상태가 갱신된 활성 Job을 표시합니다. 직접 선택한 Job은 그대로 유지됩니다.</p>
       {!loadingJobs && !listFailure && listedJobs.length === 0 && <p className="mt-3 text-xs text-muted-2">현재 표시할 Job이 없습니다.</p>}
     </section>
 
