@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 
 /**
  * 관광 포털 화면이 함께 쓰는 작은 조각들. `TourPortal`·`PortalResultCard`·`ChatWidget`이
@@ -9,6 +9,28 @@ import type { ReactNode } from 'react'
 export function Placeholder({ label, className = '', children }: { label: string; className?: string; children?: ReactNode }) {
   return <div className={`relative grid place-items-center overflow-hidden bg-[repeating-linear-gradient(45deg,var(--site-ph)_0_12px,var(--site-ph-line)_12px_24px)] ${className}`}>
     <span className="max-w-full overflow-hidden text-ellipsis whitespace-nowrap px-2 text-center font-mono text-[0.625rem] text-site-ph-ink">{label}</span>
+    {children}
+  </div>
+}
+
+/**
+ * 원천 대표 사진 한 장. 사진이 없거나(코퍼스 500건 중 95건) 외부 CDN 로드가 실패하면
+ * 기존 빗금 플레이스홀더로 되돌린다 — 시연 중 네트워크가 끊겨도 깨진 이미지 아이콘이 아니라
+ * 빗금 상자가 남는다.
+ *
+ * <p>주소는 원천(TourAPI) 값 그대로라 http와 https가 섞여 있다. 스킴을 바꿔 적지 않는다:
+ * 원천에 없는 주소를 지어내는 것이 되고, 틀린 사진은 사진이 없는 것보다 나쁘다.
+ */
+export function CardPhoto({ name, img, className = '', children }: {
+  name: string; img?: string | null; className?: string; children?: ReactNode
+}) {
+  const [failed, setFailed] = useState(false)
+  if (!img || failed) {
+    return <Placeholder label={`사진 · ${name}`} className={className}>{children}</Placeholder>
+  }
+  return <div className={`relative overflow-hidden ${className}`}>
+    <img src={img} alt={name} loading="lazy" onError={() => setFailed(true)}
+      className="absolute inset-0 h-full w-full object-cover" />
     {children}
   </div>
 }
