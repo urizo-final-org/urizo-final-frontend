@@ -72,7 +72,7 @@ const handlerCatalog: Record<ProfileKey, HandlerDefinition[]> = {
     { key: 'coding.preview', type: 'tool', label: '변경 Preview', resultPorts: ['ready'], config: {} },
     { key: 'coding.preview_approval', type: 'approval', label: 'Preview Approval', resultPorts: ['approved', 'rejected'], config: { stage: 'CANDIDATE', requiredRole: 'GENERAL_ADMIN' } },
     { key: 'coding.pr_request', type: 'tool', label: 'PR 요청', resultPorts: ['requested'], config: {} },
-    { key: 'coding.pr_complete', type: 'tool', label: 'PR 완료 확인', resultPorts: ['completed'], config: {} },
+    { key: 'coding.pr_complete', type: 'tool', label: 'PR 완료 확인', resultPorts: ['completed', 'closed'], config: { completionMode: 'deployment-capability' } },
     { key: 'coding.deploy_request', type: 'tool', label: '배포 요청 기록', resultPorts: ['recorded'], config: { mode: 'request_record_only' } },
     { key: 'coding.dev_merge_check', type: 'check', label: 'dev 병합 확인', resultPorts: ['merged', 'not_merged', 'blocked'], config: {} },
     { key: 'coding.deploy', type: 'tool', label: '배포', resultPorts: ['completed', 'blocked'], config: {} },
@@ -316,7 +316,7 @@ function nodeDisplayName(profileKey: ProfileKey, node: ProfileSnapshotNode) {
 const resultPortLabels: Record<string, string> = {
   next: '다음', passed: '통과', failed: '실패', feasible: '진행 가능', infeasible: '진행 불가',
   approved: '승인', rejected: '거절', completed: '완료', changes_requested: '수정 요청', retry: '재시도',
-  handover: '인계', ready: '준비 완료', requested: '요청 완료', recorded: '기록 완료', merged: '병합 완료',
+  handover: '인계', closed: 'PR 완료 · 배포 없음', ready: '준비 완료', requested: '요청 완료', recorded: '기록 완료', merged: '병합 완료',
   not_merged: '미병합', blocked: '차단', discarded: '폐기', applied: '반영 완료',
 }
 
@@ -455,6 +455,12 @@ function profileToolPolicyViolations(profileKey: ProfileKey, nodes: WorkflowNode
     if (!portLeadsTo(selected.get('candidate')!.id, 'approved', selected.get('prRequest')!.id, nodes, edges)) violations.push('CANDIDATE Approval approved 결과가 coding.pr_request로 이어지지 않습니다.')
     if (!portCannotBypass(selected.get('candidate')!.id, 'rejected', selected.get('prRequest')!.id, nodes, edges)) violations.push('CANDIDATE Approval rejected 결과가 coding.pr_request를 우회하지 않습니다.')
     if (!portLeadsTo(selected.get('github')!.id, 'approved', selected.get('prComplete')!.id, nodes, edges)) violations.push('GITHUB Approval approved 결과가 coding.pr_complete로 이어지지 않습니다.')
+    const prComplete = selected.get('prComplete')!
+    if (prComplete.resultPorts.includes('closed')) {
+      const end = nodes.find((node) => node.type === 'end')
+      if (!end || !edges.some((edge) => edge.from === prComplete.id && edge.resultPort === 'closed' && edge.to === end.id)) violations.push('PR 완료 · 배포 없음 결과는 종료로 직접 연결해야 합니다.')
+      if (!portLeadsTo(prComplete.id, 'completed', selected.get('deployRequest')!.id, nodes, edges)) violations.push('PR 완료 completed 결과는 배포 요청으로 연결해야 합니다.')
+    }
     if (!portLeadsTo(selected.get('deployApproval')!.id, 'approved', selected.get('mergeCheck')!.id, nodes, edges)) violations.push('DEPLOY Approval approved 결과가 coding.dev_merge_check로 이어지지 않습니다.')
   }
   if (start && profileKey === 'NATURAL_CMS' && requires('analyze', 'preview', 'approval', 'apply', 'discard')) {
@@ -502,7 +508,7 @@ export const starterSnapshots: Record<ProfileKey, ProfileAuthoringSnapshot> = {
       { id: 'preview_approval', type: 'approval', handlerKey: 'coding.preview_approval', resultPorts: ['approved', 'rejected'], config: { stage: 'CANDIDATE', requiredRole: 'GENERAL_ADMIN' } },
       { id: 'pr_request', type: 'tool', handlerKey: 'coding.pr_request', resultPorts: ['requested'], config: {} },
       { id: 'github_approval', type: 'approval', handlerKey: 'coding.approval', resultPorts: ['approved'], config: { stage: 'GITHUB', requiredRole: 'SUPER_ADMIN' } },
-      { id: 'pr_complete', type: 'tool', handlerKey: 'coding.pr_complete', resultPorts: ['completed'], config: {} },
+      { id: 'pr_complete', type: 'tool', handlerKey: 'coding.pr_complete', resultPorts: ['completed', 'closed'], config: { completionMode: 'deployment-capability' } },
       { id: 'deploy_request', type: 'tool', handlerKey: 'coding.deploy_request', resultPorts: ['recorded'], config: { mode: 'request_record_only' } },
       { id: 'deploy_approval', type: 'approval', handlerKey: 'coding.approval', resultPorts: ['approved'], config: { stage: 'DEPLOY', requiredRole: 'SUPER_ADMIN' } },
       { id: 'dev_merge_check', type: 'check', handlerKey: 'coding.dev_merge_check', resultPorts: ['merged', 'not_merged', 'blocked'], config: {} },
@@ -527,6 +533,7 @@ export const starterSnapshots: Record<ProfileKey, ProfileAuthoringSnapshot> = {
       { from: 'pr_request', resultPort: 'requested', to: 'github_approval' },
       { from: 'github_approval', resultPort: 'approved', to: 'pr_complete' },
       { from: 'pr_complete', resultPort: 'completed', to: 'deploy_request' },
+      { from: 'pr_complete', resultPort: 'closed', to: 'end' },
       { from: 'deploy_request', resultPort: 'recorded', to: 'deploy_approval' },
       { from: 'deploy_approval', resultPort: 'approved', to: 'dev_merge_check' },
       { from: 'dev_merge_check', resultPort: 'not_merged', to: 'deploy_request' },
@@ -2019,6 +2026,15 @@ function definitionFor(profileKey: ProfileKey, handlerKey: string) {
 
 function matchesDefinition(profileKey: ProfileKey, node: ProfileSnapshotNode) {
   const definition = definitionFor(profileKey, node.handlerKey)
+  if (profileKey === 'LLM_OPS' && node.handlerKey === 'coding.pr_complete') {
+    const legacy = Object.keys(node.config).length === 0
+    const configured = Object.keys(node.config).length === 1
+      && node.config.completionMode === 'deployment-capability'
+    const expectedPorts = legacy ? ['completed'] : ['completed', 'closed']
+    return node.type === 'tool' && (legacy || configured)
+      && node.resultPorts.length === expectedPorts.length
+      && expectedPorts.every((port) => node.resultPorts.includes(port))
+  }
   return definition !== null
     && definition.type === node.type
     && definition.resultPorts.length === node.resultPorts.length
