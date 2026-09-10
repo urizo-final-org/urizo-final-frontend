@@ -10,6 +10,7 @@ import { KnowledgeAdminApi } from '../features/knowledge/admin-api'
 import { usePendingApprovals } from '../features/knowledge/pending-approvals'
 import OpsWorkspace from '../features/ops/OpsWorkspace'
 import AgentSettingsWorkspace from '../features/orchestration/AgentSettingsWorkspace'
+import ActiveJobMonitoringLink from '../features/orchestration/ActiveJobMonitoringLink'
 import { ProfileVersionApi } from '../features/orchestration/api'
 import PublicSite from '../features/site/PublicSite'
 import { CmsApi } from '../features/cms/api'
@@ -120,6 +121,7 @@ function AuthenticatedAdmin({ session, theme, onToggleTheme, onRefresh, onExpire
   const navigate = useNavigate()
   const location = useLocation()
   const [menuOpen, setMenuOpen] = useState(false)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const fallback = defaultRouteForRole(session.actor.role)
   const visible = routeIdForPath(location.pathname) ?? fallback
   const permitted = routesForRole(session.actor.role)
@@ -131,42 +133,61 @@ function AuthenticatedAdmin({ session, theme, onToggleTheme, onRefresh, onExpire
   const codingApi = useMemo(() => new CodingConsoleApi(session.sessionToken, lifecycle.refreshed, lifecycle.expired), [session.sessionToken, lifecycle])
   const knowledgeApi = useMemo(() => new KnowledgeAdminApi(session.sessionToken, lifecycle.refreshed, lifecycle.expired), [session.sessionToken, lifecycle])
   // 승인 대기는 화면에 들어가야만 보였다. 메뉴에 건수를 띄워 들어가기 전에 알린다.
-  // 두 역할 모두 본다 — 발견은 일반 관리자도 하고, 못 하는 것은 처리뿐이다.
-  const pendingApprovals = usePendingApprovals(knowledgeApi, permitted.some((route) => route.id === 'rag'))
-  const navBadges = useMemo(
-    () => (pendingApprovals ? { rag: { count: pendingApprovals, title: `승인 대기 ${pendingApprovals}건` } } : undefined),
-    [pendingApprovals],
-  )
+  //
+  // **최고 관리자만 본다.** 이 뱃지가 세는 둘(승인 대기 빌드·갱신 요청)은 모두 SUPER_ADMIN이
+  // 처리하는 일이다. 같은 숫자를 일반 관리자에게 띄우면 눌러 들어가도 할 수 있는 것이 없어,
+  // 알림이 아니라 잡음이 된다. 일반 관리자 몫은 "자동 감지된 갱신 필요" 알림인데 그것을
+  // 만드는 쪽(스케줄러)이 아직 없으므로, 셀 것이 생길 때까지 0을 띄우지 않고 숨긴다.
+  const showsRagBadge = session.actor.role === 'SUPER_ADMIN'
+    && permitted.some((route) => route.id === 'rag')
+  const pendingApprovals = usePendingApprovals(knowledgeApi, showsRagBadge)
+  // 두 축을 한 숫자로 합산한다. 답하는 질문이 "들어가 볼 일이 있나" 하나이기 때문이다.
+  // 어느 쪽인지는 툴팁이 나눠 말하고, 화면 안에서 각각 따로 보인다.
+  const navBadges = useMemo(() => {
+    if (!pendingApprovals) return undefined
+    const { approvals, requests } = pendingApprovals
+    const title = [
+      approvals > 0 ? `승인 대기 ${approvals}건` : null,
+      requests > 0 ? `갱신 요청 ${requests}건` : null,
+    ].filter(Boolean).join(' · ')
+    return { rag: { count: approvals + requests, title } }
+  }, [pendingApprovals])
 
   function go(route: RouteId) { navigate(pathForRoute(route)); setMenuOpen(false) }
 
   const initials = session.actor.name.replace(/\s+/g, '').slice(0, 2)
   const onMockScreen = routes.find((item) => item.id === visible)?.mock === true
+  const query = new URLSearchParams(location.search)
+  const requestedJobId = query.get('jobId') ?? ''
+  const monitoringJobId = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(requestedJobId) ? requestedJobId : ''
+  const canMonitor = permitted.some((route) => route.id === 'models')
+  const monitoringAction = (profileKey: 'LLM_OPS' | 'NATURAL_CMS') => canMonitor
+    ? <ActiveJobMonitoringLink api={profileApi} profileKey={profileKey} /> : undefined
 
   return <div className="admin-app flex min-h-screen bg-page" data-admin-theme={theme}>
     {/* text-sb-item is the sidebar's base colour: anything inside inherits light-on-navy by default. */}
-    <aside className={`sticky top-0 z-30 flex h-screen w-[14.75rem] shrink-0 flex-col border-r border-sb-border bg-sb-bg text-sb-item transition-transform max-[900px]:fixed max-[900px]:inset-y-0 max-[900px]:left-0 ${menuOpen ? 'max-[900px]:translate-x-0' : 'max-[900px]:-translate-x-full'}`}>
+    <aside id="admin-sidebar" data-collapsed={sidebarCollapsed} className={`sticky top-0 z-30 flex h-screen w-[14.75rem] shrink-0 flex-col border-r border-sb-border bg-sb-bg text-sb-item transition-transform ${sidebarCollapsed ? 'min-[901px]:w-16' : ''} max-[900px]:fixed max-[900px]:inset-y-0 max-[900px]:left-0 ${menuOpen ? 'max-[900px]:translate-x-0' : 'max-[900px]:-translate-x-full'}`}>
       <div className="flex items-center gap-[0.5625rem] px-4 pb-[0.875rem] pt-4">
         {/* Canvas draws this navy-on-white; on the navy sidebar the pair is flipped so it stays visible. */}
         <div className="grid h-[1.625rem] w-[1.625rem] shrink-0 place-items-center rounded-[0.3125rem] bg-accent text-sb-bg" aria-hidden="true">
           <Icon name="sparkles" size={15} />
         </div>
-        <div className="min-w-0">
+        <div className={`min-w-0 ${sidebarCollapsed ? 'min-[901px]:hidden' : ''}`}>
           <b className="block text-[0.8125rem] tracking-[-.01em] text-sb-strong">AX Module Studio</b>
           <small className="block text-[0.625rem] tracking-[.04em] text-sb-muted">AI OPERATIONS PLATFORM</small>
         </div>
         <button type="button" className="ml-auto text-sb-muted min-[901px]:hidden" onClick={() => setMenuOpen(false)} aria-label="메뉴 닫기">✕</button>
       </div>
 
-      <AppNavigation activeRoute={visible} role={session.actor.role} onNavigate={go} badges={navBadges} />
+      <AppNavigation activeRoute={visible} role={session.actor.role} onNavigate={go} badges={navBadges} compact={sidebarCollapsed} />
 
       <div className="border-t border-sb-border px-3 pb-3 pt-[0.625rem]">
-        <a className="flex w-full items-center gap-2 rounded-[0.3125rem] px-2 py-[0.4375rem] text-[0.71875rem] text-sb-muted hover:bg-sb-active hover:text-white" href="/" target="_blank" rel="noreferrer">
-          <Icon name="globe-2" />사용자 사이트 열기<span className="ml-auto flex"><Icon name="arrow-up-right" size={13} /></span>
+        <a className="flex w-full items-center gap-2 rounded-[0.3125rem] px-2 py-[0.4375rem] text-[0.71875rem] text-sb-muted hover:bg-sb-active hover:text-white" href="/" target="_blank" rel="noreferrer" title="사용자 사이트 열기">
+          <Icon name="globe-2" /><span className={sidebarCollapsed ? 'min-[901px]:sr-only' : ''}>사용자 사이트 열기</span><span className={`ml-auto flex ${sidebarCollapsed ? 'min-[901px]:hidden' : ''}`}><Icon name="arrow-up-right" size={13} /></span>
         </a>
         <div className="flex items-center gap-2 px-2 pb-[0.125rem] pt-2">
           <div className="grid h-[1.5625rem] w-[1.5625rem] shrink-0 place-items-center rounded-full bg-teal-bg text-[0.59375rem] font-bold text-teal-ink" aria-hidden="true">{initials}</div>
-          <div className="min-w-0 flex-1">
+          <div className={`min-w-0 flex-1 ${sidebarCollapsed ? 'min-[901px]:sr-only' : ''}`}>
             <b className="block truncate text-[0.71875rem] text-sb-strong">{session.actor.name}</b>
             <small className="block text-[0.59375rem] text-sb-muted">{session.actor.role}</small>
           </div>
@@ -180,6 +201,9 @@ function AuthenticatedAdmin({ session, theme, onToggleTheme, onRefresh, onExpire
     <div className="flex min-w-0 flex-1 flex-col">
       <header className="sticky top-0 z-20 flex h-14 shrink-0 items-center gap-4 border-b border-line bg-panel px-7 max-[900px]:px-4">
         <button type="button" className="text-lg leading-none text-muted min-[901px]:hidden" onClick={() => setMenuOpen(true)} aria-label="메뉴 열기">☰</button>
+        <button type="button" className="grid h-8 w-8 shrink-0 place-items-center rounded text-muted hover:bg-sub max-[900px]:hidden" onClick={() => setSidebarCollapsed((value) => !value)} aria-label={sidebarCollapsed ? '사이드바 펼치기' : '사이드바 접기'} title={sidebarCollapsed ? '사이드바 펼치기' : '사이드바 접기'} aria-expanded={!sidebarCollapsed} aria-controls="admin-sidebar">
+          <Icon name={sidebarCollapsed ? 'chevron-right' : 'chevron-left'} size={18} />
+        </button>
         <div className="flex items-center gap-[0.4375rem] text-xs text-muted">
           <span className="max-[560px]:hidden">{groupForRoute(visible)}</span>
           <span className="flex max-[560px]:hidden"><Icon name="chevron-right" size={12} className="text-muted-4" /></span>
@@ -221,11 +245,11 @@ function AuthenticatedAdmin({ session, theme, onToggleTheme, onRefresh, onExpire
             key={route.id}
             path={route.path}
             element={isCmsRouteId(route.id)
-              ? <CmsWorkspace route={route.id} api={cmsApi} assistantApi={naturalCmsApi} />
+              ? <CmsWorkspace route={route.id} api={cmsApi} assistantApi={naturalCmsApi} monitoringAction={monitoringAction('NATURAL_CMS')} />
               : route.id === 'models'
-                ? <AgentSettingsWorkspace api={profileApi} />
+                ? <AgentSettingsWorkspace api={profileApi} openMonitoring={query.get('tab') === 'monitoring'} monitoringJobId={monitoringJobId} />
               : route.id === 'devops'
-                ? <CodingWorkspace api={codingApi} role={session.actor.role} />
+                ? <CodingWorkspace api={codingApi} role={session.actor.role} monitoringAction={monitoringAction('LLM_OPS')} />
               : route.id === 'guardrail'
                 ? <GuardrailWorkspace api={codingApi} />
               : <OpsWorkspace route={route.id} actorName={session.actor.name} roleLabel={ROLE_LABELS[session.actor.role]} role={session.actor.role} knowledgeApi={knowledgeApi} profileApi={profileApi} siteSettingsApi={siteSettingsApi} />}

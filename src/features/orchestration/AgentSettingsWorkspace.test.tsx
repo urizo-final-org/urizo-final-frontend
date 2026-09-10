@@ -203,6 +203,17 @@ function profileApi(overrides: Partial<AgentSettingsApiClient> = {}): AgentSetti
   }
 }
 
+test('incoming monitoring navigation selects its tab and returning to the plain route restores the default tab', async () => {
+  const api = profileApi({ getMonitoringJobSnapshot: vi.fn().mockRejectedValue(new Error('Job unavailable')) })
+  const view = render(<AgentSettingsWorkspace api={api} openMonitoring monitoringJobId="linked-job" />)
+  expect(screen.getByRole('tab', { name: '실행 모니터링' })).toHaveAttribute('aria-selected', 'true')
+  await waitFor(() => expect(api.getMonitoringJobSnapshot).toHaveBeenCalledWith('linked-job', expect.any(AbortSignal)))
+  expect(await screen.findByRole('alert')).toHaveTextContent('요청한 Job을 불러오지 못했습니다.')
+  view.rerender(<AgentSettingsWorkspace api={api} />)
+  expect(screen.getByRole('tab', { name: 'Agent·Workflow' })).toHaveAttribute('aria-selected', 'true')
+  await waitFor(() => expect(api.list).toHaveBeenCalled())
+})
+
 test('the six Agent settings tabs separate live monitoring from observability and fake scores', async () => {
   render(<AgentSettingsWorkspace api={profileApi()} />)
 

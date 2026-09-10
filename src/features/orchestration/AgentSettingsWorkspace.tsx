@@ -65,8 +65,11 @@ const providerStatePresentation: Record<ProviderCredentialState, { label: string
   PROVIDER_UNAVAILABLE: { label: 'Provider 응답 없음', tone: 'fail' },
 }
 
-export default function AgentSettingsWorkspace({ api }: { api: AgentSettingsApiClient }) {
-  const [activeTab, setActiveTab] = useState<TabId>('workflow')
+export default function AgentSettingsWorkspace({ api, monitoringJobId = '', openMonitoring = false }: {
+  api: AgentSettingsApiClient; monitoringJobId?: string; openMonitoring?: boolean
+}) {
+  const [activeTab, setActiveTab] = useState<TabId>(openMonitoring ? 'monitoring' : 'workflow')
+  useEffect(() => { setActiveTab(openMonitoring ? 'monitoring' : 'workflow') }, [openMonitoring, monitoringJobId])
   const [selectedProfileKey, setSelectedProfileKey] = useState<ProfileKey>('LLM_OPS')
 
   function moveTabFocus(event: ReactKeyboardEvent<HTMLButtonElement>, index: number) {
@@ -115,7 +118,7 @@ export default function AgentSettingsWorkspace({ api }: { api: AgentSettingsApiC
       onSelect={setSelectedProfileKey}
     />}
     {activeTab === 'policy' && <PolicyPanel />}
-    {activeTab === 'monitoring' && <ActiveJobMonitoringPanel api={api} />}
+    {activeTab === 'monitoring' && <ActiveJobMonitoringPanel api={api} requestedJobId={monitoringJobId} />}
     {activeTab === 'usage' && <UsagePanel api={api} />}
   </>
 }

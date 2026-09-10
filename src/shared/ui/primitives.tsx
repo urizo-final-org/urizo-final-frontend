@@ -47,13 +47,13 @@ export function PanelTitle({ title, sub, children }: { title: string; sub?: stri
   </div>
 }
 
-export function PageHead({ title, description, children }: { title: string; description?: string; children?: ReactNode }) {
-  return <div className="mb-4 flex items-start justify-between gap-6">
+export function PageHead({ title, description, children, wrapActions = false }: { title: string; description?: string; children?: ReactNode; wrapActions?: boolean }) {
+  return <div className={`mb-4 flex items-start justify-between gap-6 ${wrapActions ? 'flex-wrap' : ''}`}>
     <div>
       <h1 className="text-[1.375rem] font-semibold tracking-[-.02em]">{title}</h1>
       {description && <p className="mt-[0.3125rem] text-[0.8125rem] text-muted">{description}</p>}
     </div>
-    {children && <div className="flex shrink-0 gap-2">{children}</div>}
+    {children && <div className={`flex shrink-0 gap-2 ${wrapActions ? 'max-w-full flex-wrap' : ''}`}>{children}</div>}
   </div>
 }
 

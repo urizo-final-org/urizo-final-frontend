@@ -10,12 +10,14 @@ export function AppNavigation({
   role,
   onNavigate,
   badges,
+  compact = false,
 }: {
   activeRoute: RouteId
   role: AdminRole
   onNavigate: (route: RouteId) => void
   /** 메뉴에 띄울 "볼 게 있다" 표시. 0이나 없음이면 아무것도 그리지 않는다. */
   badges?: Partial<Record<RouteId, { count: number; title: string }>>
+  compact?: boolean
 }) {
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
   let renderedGroup: string | null = null
@@ -38,7 +40,7 @@ export function AppNavigation({
             {groupHeading && (foldable ? (
               <button
                 type="button"
-                className="flex w-full items-center gap-[0.375rem] bg-transparent px-[0.625rem] pb-[0.3125rem] pt-[0.875rem] text-left text-[0.59375rem] font-bold tracking-[.09em] text-sb-muted"
+                className={`flex w-full items-center gap-[0.375rem] bg-transparent px-[0.625rem] pb-[0.3125rem] pt-[0.875rem] text-left text-[0.59375rem] font-bold tracking-[.09em] text-sb-muted ${compact ? 'min-[901px]:hidden' : ''}`}
                 onClick={() => toggle(route.group)}
                 aria-expanded={open}
               >
@@ -46,25 +48,26 @@ export function AppNavigation({
                 <span className={`flex transition-transform ${open ? '' : '-rotate-90'}`}><Icon name="chevron-down" size={13} /></span>
               </button>
             ) : (
-              <p className="m-0 px-[0.625rem] pb-[0.3125rem] pt-[0.875rem] text-[0.59375rem] font-bold tracking-[.09em] text-sb-muted">{groupHeading}</p>
+              <p className={`m-0 px-[0.625rem] pb-[0.3125rem] pt-[0.875rem] text-[0.59375rem] font-bold tracking-[.09em] text-sb-muted ${compact ? 'min-[901px]:hidden' : ''}`}>{groupHeading}</p>
             ))}
-            {(!foldable || open) && (
+            {(compact || !foldable || open) && (
               <button
                 type="button"
-                className={`flex w-full items-center gap-[0.5625rem] rounded-[0.3125rem] px-[0.625rem] py-[0.4375rem] text-left text-[0.78125rem] ${
+                className={`flex w-full items-center gap-[0.5625rem] rounded-[0.3125rem] px-[0.625rem] py-[0.4375rem] text-left text-[0.78125rem] ${compact ? 'min-[901px]:justify-center min-[901px]:min-h-9' : ''} ${compact && foldable && !open ? 'max-[900px]:hidden' : ''} ${
                   active ? 'bg-sb-active font-semibold text-white' : 'font-medium text-sb-item hover:bg-sb-active/60 hover:text-white'
                 }`}
                 onClick={() => onNavigate(route.id)}
+                title={compact ? `${route.label}${badge?.count ? ` · ${badge.title}` : ''}` : undefined}
               >
                 <Icon name={route.icon} size={15} />
-                <span className="flex-1 truncate">{route.label}</span>
+                <span className={`flex-1 truncate ${compact ? 'min-[901px]:sr-only' : ''}`}>{route.label}</span>
                 {badge != null && badge.count > 0 && <span
-                  className="shrink-0 rounded-full bg-[#d97706] px-[0.375rem] py-[0.0625rem] text-[0.5625rem] font-bold text-white"
+                  className={`shrink-0 rounded-full bg-[#d97706] px-[0.375rem] py-[0.0625rem] text-[0.5625rem] font-bold text-white ${compact ? 'min-[901px]:sr-only' : ''}`}
                   title={badge.title}
                   aria-label={badge.title}
                 >{badge.count}</span>}
                 {route.mock && <span
-                  className="shrink-0 rounded border border-[#49657d] bg-[#233b50] px-[0.3125rem] py-[0.0625rem] text-[0.53125rem] font-semibold text-[#cfe2ef]"
+                  className={`shrink-0 rounded border border-[#49657d] bg-[#233b50] px-[0.3125rem] py-[0.0625rem] text-[0.53125rem] font-semibold text-[#cfe2ef] ${compact ? 'min-[901px]:sr-only' : ''}`}
                   title={temporaryMockTitle}
                 >임시</span>}
               </button>

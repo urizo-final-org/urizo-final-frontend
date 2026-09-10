@@ -18,7 +18,20 @@ test('the public URL renders the tour portal home without login, isolated from t
   vi.stubGlobal('fetch', publicFetch())
   render(<AppShell />)
   expect(await screen.findByRole('heading', { name: '어디로 떠나볼까요?' })).toBeInTheDocument()
-  expect(screen.getByRole('link', { name: 'CMS 관리자' })).toHaveAttribute('href', '/admin')
+  const header = within(screen.getByRole('banner'))
+  expect(header.getByRole('link', { name: /AX Bio Studio/ })).toHaveAttribute('href', '/')
+  expect(header.getByText('Technology · Trust · Growth')).toBeInTheDocument()
+  expect(header.getByRole('link', { name: 'CMS 관리자' })).toHaveAttribute('href', '/admin')
+  const menu = within(header.getByRole('navigation', { name: '주 메뉴' }))
+  expect(menu.getByRole('link', { name: '소개' })).toHaveAttribute('href', '/about')
+  expect(menu.getByRole('link', { name: '회사 소개' })).toHaveAttribute('href', '/about/company')
+  const cmsHero = within(screen.getByRole('region', { name: 'CLASSIC 템플릿 메인' }))
+  expect(cmsHero.getByRole('heading', { name: 'Technology for a Better Tomorrow' })).toBeInTheDocument()
+  expect(cmsHero.getByText('사람과 기술을 연결합니다.')).toBeInTheDocument()
+  expect(cmsHero.getByRole('link', { name: /회사 소개/ })).toHaveAttribute('href', '/about/company')
+  const footer = within(screen.getByRole('contentinfo'))
+  expect(footer.getByText('AX Bio Studio | 서울특별시 디지털로 123')).toBeInTheDocument()
+  expect(footer.getByText('© 2026 AX Bio Studio. Local CMS Demo.')).toBeInTheDocument()
   // 홈 섹션은 코퍼스 집계 상위 3개 카테고리다. 근거 없는 큐레이션 제목을 쓰지 않는다.
   for (const section of ['관광지', '음식', '숙박']) {
     expect(screen.getByRole('heading', { name: section, level: 2 })).toBeInTheDocument()
@@ -241,7 +254,13 @@ test('the tour helper shows a refusal without an evidence section', async () => 
   expect(panel().queryByText('답변 근거')).not.toBeInTheDocument()
 })
 
-// 루트 사이트는 관광 포털(I8)이므로 Template Layout은 publicPath가 지정된 부속 사이트에서 확인한다.
+test.each(['MINIMAL', 'BOLD', 'CLASSIC'])('the tour portal renders its CMS %s hero layout', async (layout) => {
+  vi.stubGlobal('fetch', publicFetch({ ...siteTemplate(), layout }))
+  render(<AppShell />)
+  expect(await screen.findByRole('region', { name: `${layout} 템플릿 메인` })).toBeInTheDocument()
+})
+
+// publicPath가 지정된 부속 사이트의 기존 Template Renderer도 계속 유지한다.
 test.each(['MINIMAL', 'BOLD', 'CLASSIC'])('a configured sub-site home renders the %s template layout', async (layout) => {
   window.history.pushState({}, '', '/campaign')
   vi.stubGlobal('fetch', publicFetch({ ...siteTemplate(), layout }, '/campaign'))
@@ -249,21 +268,32 @@ test.each(['MINIMAL', 'BOLD', 'CLASSIC'])('a configured sub-site home renders th
   expect(await screen.findByRole('region', { name: `${layout} 템플릿 메인` })).toBeInTheDocument()
 })
 
-test('an open public page refreshes when CMS data changes', async () => {
-  window.history.pushState({}, '', '/campaign')
+test('an open portal refreshes its CMS presentation when CMS data changes', async () => {
   let template = siteTemplate()
   vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => {
     const path = String(input)
-    if (path.startsWith('/api/site/context?path=')) return Promise.resolve(json(siteContext(template, '/campaign')))
+    if (path.startsWith('/api/site/context?path=')) return Promise.resolve(json(siteContext(template)))
     if (path === '/api/site/menus' || path === '/api/site/boards') return Promise.resolve(json([]))
     return Promise.resolve(json([]))
   }))
   render(<AppShell />)
   expect(await screen.findByRole('heading', { name: 'Technology for a Better Tomorrow' })).toBeInTheDocument()
 
-  template = { ...template, heroTitle: 'CMS 변경 즉시 반영' }
-  window.dispatchEvent(new Event(SITE_UPDATE_EVENT))
+  template = {
+    ...template,
+    primaryColor: '#6b3fa0',
+    siteName: 'CMS 여행 포털',
+    headerText: 'CMS 헤더 변경',
+    footerText: 'CMS 푸터 변경',
+    heroTitle: 'CMS 변경 즉시 반영',
+  }
+  act(() => window.dispatchEvent(new Event(SITE_UPDATE_EVENT)))
   expect(await screen.findByRole('heading', { name: 'CMS 변경 즉시 반영' })).toBeInTheDocument()
+  expect(within(screen.getByRole('banner')).getByRole('link', { name: /CMS 여행 포털/ })).toBeInTheDocument()
+  expect(within(screen.getByRole('banner')).getByText('CMS 헤더 변경')).toBeInTheDocument()
+  expect(within(screen.getByRole('contentinfo')).getByText('CMS 푸터 변경')).toBeInTheDocument()
+  const portal = document.querySelector('.site-app > div') as HTMLElement
+  expect(portal.style.getPropertyValue('--primary')).toBe('#6b3fa0')
 })
 
 test('an initial public Site failure is visible and retry recovers the page', async () => {
@@ -758,9 +788,10 @@ test('an administrator sees a clear template save failure', async () => {
 
 test('a menu URL renders its mapped static content', async () => {
   window.history.pushState({}, '', '/about/company')
-  vi.stubGlobal('fetch', publicFetch())
+  vi.stubGlobal('fetch', publicFetch({ ...siteTemplate(), siteName: 'CMS 여행 포털' }))
   render(<AppShell />)
   expect(await screen.findByRole('heading', { name: '회사 소개', level: 1 })).toBeInTheDocument()
+  expect(screen.getByText('CMS 여행 포털', { selector: 'p' })).toBeInTheDocument()
   expect(await screen.findByRole('heading', { name: '사람과 기술을 연결합니다', level: 2 }))
       .toBeInTheDocument()
 })
@@ -840,9 +871,137 @@ function session(role: 'SUPER_ADMIN' | 'GENERAL_ADMIN' = 'GENERAL_ADMIN', name =
   return { sessionToken: 'signed-access-jwt-value', expiresAt: new Date(Date.now() + 60_000).toISOString(), actor: { actorId, name, role } }
 }
 
+/**
+ * 뱃지가 세는 둘(승인 대기 빌드 · 갱신 요청)은 모두 최고 관리자가 처리하는 일이다.
+ * 한 숫자로 합치고 툴팁이 축을 나눠 말한다.
+ */
+test('the RAG badge counts approvals and requests together for a super administrator', async () => {
+  window.history.pushState({}, '', '/admin/rag')
+  vi.stubGlobal('fetch', ragBadgeFetch('SUPER_ADMIN'))
+  render(<AppShell />)
+
+  const menu = within(await screen.findByRole('navigation', { name: '관리자 메뉴' }))
+  expect(await menu.findByLabelText('승인 대기 1건 · 갱신 요청 2건')).toHaveTextContent('3')
+})
+
+/**
+ * 일반 관리자에게 같은 숫자를 띄우면 눌러 들어가도 할 수 있는 것이 없다 — 쓰기 3종이 전부
+ * SUPER_ADMIN 전용이기 때문이다. 일반 관리자 몫은 "자동 감지된 갱신 필요" 알림인데 그것을
+ * 만드는 쪽(스케줄러)이 아직 없다. 셀 것이 생길 때까지 0을 띄우지 않고 숨긴다.
+ */
+test('a general administrator gets no RAG badge even when the counts are there to read', async () => {
+  window.history.pushState({}, '', '/admin/rag')
+  vi.stubGlobal('fetch', ragBadgeFetch('GENERAL_ADMIN'))
+  render(<AppShell />)
+
+  const menu = within(await screen.findByRole('navigation', { name: '관리자 메뉴' }))
+  await menu.findByRole('button', { name: /RAG 관리/ })
+  expect(menu.queryByLabelText(/승인 대기|갱신 요청/)).not.toBeInTheDocument()
+})
+
+/** 뱃지가 셀 것을 다 내려주는 스텁. 역할만 바꿔 두 경로를 같은 데이터로 비교한다. */
+function ragBadgeFetch(role: 'SUPER_ADMIN' | 'GENERAL_ADMIN') {
+  return vi.fn((input: RequestInfo | URL) => {
+    const url = String(input)
+    if (url === '/api/auth/refresh') {
+      return Promise.resolve(json(session(role, role === 'SUPER_ADMIN' ? '최고 관리자' : '일반 관리자')))
+    }
+    if (url === '/api/projects') {
+      return Promise.resolve(json({ items: [{ projectId: 'p-1', name: '관광 포털', status: 'ACTIVE' }] }))
+    }
+    if (url.startsWith('/api/knowledge-bases?')) {
+      return Promise.resolve(json({ items: [{ knowledgeBaseId: 'kb-1', projectId: 'p-1', name: '관광 정보 지식베이스' }] }))
+    }
+    if (url.endsWith('/versions')) {
+      return Promise.resolve(json({ items: [{ status: 'APPROVAL_PENDING' }, { status: 'ACTIVE' }] }))
+    }
+    if (url.endsWith('/activation-requests')) {
+      return Promise.resolve(json({ items: [{ requestId: 'r-1' }, { requestId: 'r-2' }] }))
+    }
+    return Promise.resolve(json([]))
+  })
+}
+
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
 }
+
+test('collapses the desktop sidebar without losing navigation and preserves the mobile drawer controls', async () => {
+  window.history.pushState({}, '', '/admin/menus')
+  vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => Promise.resolve(json(
+    String(input) === '/api/auth/refresh' ? session() : [],
+  ))))
+  render(<AppShell />)
+  const toggle = await screen.findByRole('button', { name: '사이드바 접기' })
+  expect(toggle).toHaveAttribute('aria-expanded', 'true')
+  fireEvent.click(toggle)
+  expect(document.getElementById('admin-sidebar')).toHaveAttribute('data-collapsed', 'true')
+  const navigation = within(screen.getByRole('navigation', { name: '관리자 메뉴' }))
+  const contents = navigation.getByRole('button', { name: '컨텐츠 관리' })
+  expect(contents).toHaveAttribute('title', '컨텐츠 관리')
+  fireEvent.click(contents)
+  expect(await screen.findByRole('heading', { name: '컨텐츠 관리' })).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: '사이드바 펼치기' })).toHaveAttribute('aria-expanded', 'false')
+  expect(screen.getByRole('button', { name: '메뉴 열기' })).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: '메뉴 닫기' })).toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: '사이드바 펼치기' }))
+  expect(document.getElementById('admin-sidebar')).toHaveAttribute('data-collapsed', 'false')
+})
+
+test.each([
+  ['/admin/llm-devops', 'LLM DevOps', 'LLM_OPS'],
+  ['/admin/menus', '메뉴 관리', 'NATURAL_CMS'],
+  ['/admin/contents', '컨텐츠 관리', 'NATURAL_CMS'],
+  ['/admin/boards', '게시판 관리', 'NATURAL_CMS'],
+  ['/admin/templates', '템플릿 관리', 'NATURAL_CMS'],
+])('%s links a super administrator directly to the matching active Job', async (path, title, profileKey) => {
+  const jobId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+  window.history.pushState({}, '', path)
+  vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => {
+    const url = String(input)
+    if (url === '/api/auth/refresh') return Promise.resolve(json(session('SUPER_ADMIN')))
+    if (url === '/api/admin/ai/monitoring/jobs') return Promise.resolve(json({ jobs: [
+      { jobId: 'unrelated', profileKey: profileKey === 'LLM_OPS' ? 'NATURAL_CMS' : 'LLM_OPS', domainTerminal: false },
+      { jobId, profileKey, domainTerminal: false },
+    ] }))
+    if (url.startsWith('/api/admin/coding/jobs')) return Promise.resolve(json({ jobs: [], notifications: [] }))
+    return Promise.resolve(json([]))
+  }))
+  render(<AppShell />)
+  const heading = await screen.findByRole('heading', { name: title })
+  const link = await screen.findByRole('link', { name: '실시간 모니터링' })
+  expect(link).toHaveAttribute('href', `/admin/models?tab=monitoring&jobId=${jobId}`)
+  expect(heading.parentElement?.parentElement).toContainElement(link)
+})
+
+test('a general administrator gets neither a monitoring shortcut nor its privileged API request', async () => {
+  window.history.pushState({}, '', '/admin/menus')
+  const fetcher = vi.fn((input: RequestInfo | URL) => Promise.resolve(json(
+    String(input) === '/api/auth/refresh' ? session() : [],
+  )))
+  vi.stubGlobal('fetch', fetcher)
+  render(<AppShell />)
+  await screen.findByRole('heading', { name: '메뉴 관리' })
+  expect(screen.queryByRole('link', { name: '실시간 모니터링' })).not.toBeInTheDocument()
+  expect(fetcher.mock.calls.some(([url]) => String(url).startsWith('/api/admin/ai/monitoring/'))).toBe(false)
+})
+
+test('a monitoring deep link opens the tab and requests its exact Job even outside the list', async () => {
+  const jobId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+  window.history.pushState({}, '', `/admin/models?tab=monitoring&jobId=${jobId}`)
+  const fetcher = vi.fn((input: RequestInfo | URL) => {
+    const url = String(input)
+    if (url === '/api/auth/refresh') return Promise.resolve(json(session('SUPER_ADMIN')))
+    if (url === '/api/admin/ai/monitoring/jobs') return Promise.resolve(json({ jobs: [] }))
+    if (url === `/api/admin/ai/monitoring/jobs/${jobId}`) return Promise.resolve(json({ detail: 'Not found' }, 404))
+    return Promise.resolve(json([]))
+  })
+  vi.stubGlobal('fetch', fetcher)
+  render(<AppShell />)
+  expect(await screen.findByRole('tab', { name: '실행 모니터링' })).toHaveAttribute('aria-selected', 'true')
+  await waitFor(() => expect(fetcher.mock.calls.some(([url]) => String(url) === `/api/admin/ai/monitoring/jobs/${jobId}`)).toBe(true))
+  expect(screen.getByRole('button', { name: '최신 활성 Job 자동 추적 꺼짐' })).toHaveAttribute('aria-pressed', 'false')
+})
 
 function deferred<T>() {
   let resolve!: (value: T) => void

@@ -136,3 +136,30 @@ export type KnowledgeTarget =
     kind: 'choose'; what: 'project' | 'knowledgeBase'
     projects: Project[]; project?: Project; bases?: KnowledgeBase[]
   }
+
+/**
+ * 자료 갱신 요청. 권한 없는 관리자가 최고 관리자에게 남기는 한 줄이다.
+ *
+ * <p>`knowledgeVersionId`가 **nullable**이다 — "이 버전을 켜 주세요"와 "새로 만들어
+ * 주세요"를 한 계약으로 받는데, 후자는 대상 버전이 아직 없다.
+ *
+ * <p>`status`는 `OPEN`·`RESOLVED` 둘뿐이고 목록은 `OPEN`만 내려준다. **닫는 것은 화면의
+ * 일이 아니다** — 활성화·롤백이 곧 처리이고 서버가 그때 닫는다.
+ */
+export type ActivationRequest = {
+  requestId: string
+  knowledgeBaseId: string
+  knowledgeVersionId: string | null
+  reason: string | null
+  status: 'OPEN' | 'RESOLVED'
+  /** 서버가 세션에서 읽는다. 본문에 자리가 없어 위조할 수 없다. */
+  requestedBy: string
+  requestedByName: string
+  createdAt: string
+}
+
+export type ActivationRequestList = {
+  schemaVersion: string
+  traceId: string
+  items: ActivationRequest[]
+}
