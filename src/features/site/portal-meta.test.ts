@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest'
-import { addressLine, homepageLine, overviewText, PORTAL_TABS } from './portal-meta'
+import { describe, expect, it, test } from 'vitest'
+import { addressLine, festivalBadge, highlightTitles, homepageLine, overviewText, PORTAL_TABS } from './portal-meta'
 
 describe('PORTAL_TABS', () => {
   // 코퍼스 접두 10종(AC/C01/EV/EX/FD/HS/LS/NA/SH/VE)이 빠짐없이, 겹침 없이 배정돼야
@@ -91,4 +91,33 @@ describe('overviewText', () => {
     expect(overviewText(raw)).toBe(raw)
     expect(overviewText('[개요]\n[상세정보]')).toBe('[개요]\n[상세정보]')
   })
+})
+
+test('a festival badge is computed from the period, not frozen into the copy', () => {
+  const during = new Date(2026, 8, 10)
+  expect(festivalBadge('2026-05-01', '2026-11-01', during)).toBe('진행 중')
+  expect(festivalBadge('2026-10-03', '2026-10-18', during)).toBe('D-23')
+  expect(festivalBadge('2026-08-28', '2026-08-30', during)).toBe('종료')
+  // 시작일·종료일 당일은 아직 진행 중이다.
+  expect(festivalBadge('2026-09-10', '2026-09-10', during)).toBe('진행 중')
+})
+
+test('a summary bolds only the cited titles and keeps the segments glued together', () => {
+  const answer = '전주에서는 객리단길의 한옥 독채 스테이 도원이 근거 문서에서 확인됩니다. 대동고택도 참고하세요.'
+  const parts = highlightTitles(answer, ['도원', '대동고택', '없는문서'])
+  // 이어 붙이면 원문 그대로여야 한다 — 조사 앞에 공백이 생기면 "도원 이"가 된다.
+  expect(parts.map((part) => part.text).join('')).toBe(answer)
+  expect(parts.filter((part) => part.bold).map((part) => part.text)).toEqual(['도원', '대동고택'])
+})
+
+test('a title that only appears inside a longer word is left alone', () => {
+  // 실호출 사례 — 인용 제목은 "도원"인데 답변 문장은 "다가도원은"으로 시작한다.
+  const parts = highlightTitles('다가도원은 객리단길에 위치한 한옥독채스테이다.', ['도원'])
+  expect(parts.some((part) => part.bold)).toBe(false)
+  // 조사는 그대로 붙는다 — 낱말 첫머리의 제목은 계속 굵어져야 한다.
+  expect(highlightTitles('도원은 한옥이다.', ['도원']).filter((part) => part.bold)).toEqual([{ text: '도원', bold: true }])
+})
+
+test('a summary with no cited title in it stays one plain segment', () => {
+  expect(highlightTitles('근거를 찾지 못했습니다.', ['도원'])).toEqual([{ text: '근거를 찾지 못했습니다.', bold: false }])
 })

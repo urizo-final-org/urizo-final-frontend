@@ -84,3 +84,46 @@ export function homepageLine(excerpt: string): string | null {
   const value = line?.slice('[홈페이지]'.length).trim().split(/\s+/)[0]
   return value && /^https?:\/\//.test(value) ? value : null
 }
+
+/**
+ * 홈 축제 스트립의 뱃지. `진행 중` · `D-n` · `종료` 중 하나다.
+ *
+ * <p>시안은 `D-23`을 고정 문자열로 썼지만 그대로 옮기면 시연 날짜가 하루만 지나도 거짓이 된다.
+ * 기간에서 계산해 화면이 스스로 맞게 둔다.
+ *
+ * <p>비교는 `YYYY-MM-DD` 문자열끼리 한다 — `Date.parse`는 UTC 자정으로 읽어서 KST 오전에는
+ * 하루 전으로 밀린다. 남은 일수만 두 UTC 자정의 차이로 구하므로 시간대에 영향받지 않는다.
+ */
+export function festivalBadge(start: string, end: string, today: Date = new Date()): string {
+  const now = `${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`
+  if (now > end) return '종료'
+  if (now >= start) return '진행 중'
+  return `D-${Math.round((Date.parse(start) - Date.parse(now)) / 86_400_000)}`
+}
+
+function pad(value: number) {
+  return String(value).padStart(2, '0')
+}
+
+/**
+ * AI 요약 문장에서 근거 문서 제목만 굵게 나눈다. 굵은 조각과 평문 조각을 순서대로 돌려준다.
+ *
+ * <p>돌려준 조각은 **사이에 공백 없이 이어 붙여야 한다.** 렌더에서 줄바꿈이나 공백 텍스트 노드가
+ * 끼면 "도원 이", "고택 ," 처럼 조사 앞에 공백이 생긴다.
+ *
+ * <p>같은 제목이 다른 제목의 접두인 경우가 있어 긴 제목부터 맞춘다. 답변에 없는 제목은 버린다 —
+ * 서버가 근거로 올린 문서라도 문장에 이름이 안 나오는 경우가 있다.
+ */
+export function highlightTitles(answer: string, titles: string[]): { text: string; bold: boolean }[] {
+  const found = titles.filter((title) => title !== '' && answer.includes(title)).sort((a, b) => b.length - a.length)
+  if (found.length === 0) return [{ text: answer, bold: false }]
+  // 앞쪽만 막는다. 뒤는 조사가 붙으므로("도원이") 열어 둬야 하고, 앞을 열어 두면 "다가도원은"의
+  // 꼬리가 제목 "도원"으로 잡혀 낱말 중간이 굵어진다(9/10 실호출에서 확인).
+  const pattern = new RegExp(`(?<![가-힣A-Za-z0-9])(${found.map(escapeForRegExp).join('|')})`, 'g')
+  return answer.split(pattern).filter((part) => part !== '').map((part) => ({ text: part, bold: found.includes(part) }))
+}
+
+/** 문서 제목에 `(`·`?` 같은 글자가 들어와도 패턴이 깨지지 않게 한다. */
+function escapeForRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
