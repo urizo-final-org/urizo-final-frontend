@@ -18,7 +18,7 @@ import { buildView, findInProgress, formatElapsed, BUILD_STEPS, stepStates, type
  * 이동은 별도 작업이다.
  *
  * <p>**범위 밖**: 알림 패널(폐기) · 질의 콘솔 A1(폐기 — 실동작 챗봇은 포털에만) ·
- * 데이터 소스 추가(커넥터).
+ * 데이터 소스 추가(커넥터 — 도메인 교체 흐름을 시연에서 빼기로 해 버튼도 지웠다).
  */
 
 const POLL_INTERVAL_MS = 5_000
@@ -292,7 +292,6 @@ export function RagAdminPanel({ api, role }: { api: KnowledgeAdminApi; role: Adm
 
   return <>
     <PageHead title="RAG 관리" description="관광 공공데이터를 검색자료로 만들고 버전별 품질을 비교합니다.">
-      <button className={secondaryButton} disabled title="커넥터 관리는 이번 범위 밖입니다.">데이터 소스 추가</button>
       <button
         className={tableButton}
         disabled={!canWrite || busy || newest == null || view != null}
