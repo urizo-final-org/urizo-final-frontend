@@ -24,6 +24,14 @@ export type PublicCitation = {
    * 서버는 아직 싣지 않는다 — optional로 두고 배포 후 `string | null`로 좁힌다.
    */
   eventStatus?: string | null
+  /**
+   * 원천 대표 사진 주소. 사진이 없는 문서는 null이다(코퍼스 500건 중 95건). 백엔드
+   * axms-ai02-012가 추가하는 필드라 배포 전 서버는 싣지 않는다 — optional로 둔다.
+   *
+   * <p>`sourceUrl`과 달리 원천이 준 실제 주소라 열린다. 대신 http가 섞여 있어 https 페이지에서는
+   * 혼합 콘텐츠로 차단될 수 있고, 그때는 `CardPhoto`가 플레이스홀더로 되돌린다.
+   */
+  imageUrl?: string | null
 }
 
 export type PublicChatRequest = {

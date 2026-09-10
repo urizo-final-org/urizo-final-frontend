@@ -3,7 +3,7 @@ import { useRagQuery } from '../knowledge/useRagQuery'
 import type { PublicCitation } from '../knowledge/types'
 import { homepageLine } from './portal-meta'
 import { describePortalStatus } from './portal-status'
-import { Placeholder, SampleNotice } from './portal-primitives'
+import { CardPhoto, SampleNotice } from './portal-primitives'
 
 /**
  * 우하단 상시 노출 플로팅 챗봇. 버튼·패널 사양은 시안 `Portal-Chatbot.dc.html`을 따른다
@@ -180,7 +180,7 @@ export function ChatWidget() {
 function EvidenceCard({ citation }: { citation: PublicCitation }) {
   const homepage = homepageLine(citation.excerpt)
   return <div className="flex items-center gap-[0.625rem] rounded-[0.5625rem] border border-line-soft bg-white px-[0.625rem] py-2">
-    <Placeholder label="사진" className="h-9 w-9 flex-none rounded-md" />
+    <CardPhoto name={citation.title} img={citation.imageUrl} className="h-9 w-9 flex-none rounded-md" />
     <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-[0.78125rem] font-bold text-ink">{citation.title}</span>
     {homepage && <a href={homepage} target="_blank" rel="noopener noreferrer" className="flex-none text-[0.6875rem] font-bold text-primary underline underline-offset-2">홈페이지 ↗</a>}
     {citation.categoryLabel != null && <span className="flex-none rounded border border-line px-[0.375rem] py-[0.125rem] text-[0.625rem] font-bold text-primary">{citation.categoryLabel.split('>')[0].trim()}</span>}

@@ -1,5 +1,5 @@
 import { homepageLine, overviewText } from './portal-meta'
-import { Placeholder, PhotoTag } from './portal-primitives'
+import { CardPhoto, PhotoTag } from './portal-primitives'
 
 /**
  * 검색 결과 카드 1건. 시안 `Portal-Search.dc.html`의 결과 카드를 그대로 옮겼다 —
@@ -17,7 +17,7 @@ import { Placeholder, PhotoTag } from './portal-primitives'
  * <p>`address`는 계약에 없는 값이다. `addressLine(citation.excerpt)`으로 본문의 `[주소]`
  * 줄에서 뽑아 넘긴다(`portal-meta.ts`).
  */
-export function PortalResultCard({ title, excerpt, categoryLabel, address, eventStatus }: {
+export function PortalResultCard({ title, excerpt, categoryLabel, address, eventStatus, imageUrl }: {
   title: string
   excerpt: string
   categoryLabel?: string
@@ -32,12 +32,17 @@ export function PortalResultCard({ title, excerpt, categoryLabel, address, event
    * 참고 정보라 결과에서 빼지 않고, 빼면 검색 지표까지 흔들린다.
    */
   eventStatus?: string | null
+  /**
+   * 원천 대표 사진. 없거나 로드에 실패하면 `CardPhoto`가 빗금 플레이스홀더로 되돌린다 —
+   * 코퍼스 500건 중 95건은 원천에 사진이 없고, 그건 정상이라 지어내지 않는다.
+   */
+  imageUrl?: string | null
 }) {
   const homepage = homepageLine(excerpt)
   const ended = eventStatus === 'ENDED'
   return <article className="grid grid-cols-[15rem_minmax(0,1fr)] overflow-hidden rounded-xl border border-line-soft bg-panel max-[680px]:grid-cols-1">
     <div className="relative">
-      <Placeholder label={`사진 · ${title}`} className="h-full min-h-[12.25rem] w-60 max-[680px]:aspect-[16/9] max-[680px]:h-auto max-[680px]:min-h-0 max-[680px]:w-full" />
+      <CardPhoto name={title} img={imageUrl} className="h-full min-h-[12.25rem] w-60 max-[680px]:aspect-[16/9] max-[680px]:h-auto max-[680px]:min-h-0 max-[680px]:w-full" />
       <PhotoTag />
     </div>
     <div className="flex flex-col gap-[0.4375rem] px-[1.625rem] py-[1.375rem]">

@@ -6,7 +6,7 @@ import { useRagQuery } from '../knowledge/useRagQuery'
 import { withParticle } from './particle'
 import { addressLine, festivalBadge, highlightTitles, PORTAL_TABS } from './portal-meta'
 import { describePortalStatus } from './portal-status'
-import { Placeholder, PhotoTag, SampleNotice } from './portal-primitives'
+import { CardPhoto, Placeholder, PhotoTag, SampleNotice } from './portal-primitives'
 import { PortalResultCard } from './PortalResultCard'
 
 /**
@@ -94,7 +94,7 @@ function searchUrl(category: string) {
   return category === 'all' ? '/search' : `/search?category=${category}`
 }
 
-type CurationCard = { name: string; cat: string; desc: string }
+type CurationCard = { name: string; cat: string; desc: string; img?: string }
 type CurationSection = { id: string; title: string; total: number; cards: CurationCard[] }
 
 /**
@@ -104,21 +104,32 @@ type CurationSection = { id: string; title: string; total: number; cards: Curati
  * <p>"이번 주 인기"(조회수 없음)나 "가을 축제"(계절 축 없음)처럼 근거를 못 대는 제목·부제는 쓰지
  * 않는다. 제목은 카테고리명, 부제는 집계한 건수뿐이다.
  */
+// img는 코퍼스 fixture(tourism-sample-documents-500.json) metadata.firstimage의 TourAPI 원본 URL
+// 그대로다 — 합성 주소가 아니므로 R26(합성 sourceUrl 금지)과 무관하다. 반도식당은 원천에 이미지가
+// 없다(500건 중 95건이 그렇다). 지어내지 않고 플레이스홀더로 남긴다.
 const HOME_SECTIONS: CurationSection[] = [
   { id: 'attraction', title: '관광지', total: 192, cards: [
-    { name: '송파책박물관', cat: '문화관광 > 전시시설', desc: '전국 최초의 공립 책 박물관으로, 책을 주제로 한 전시·교육·연구를 한다.' },
-    { name: '세계조개박물관', cat: '문화관광 > 전시시설', desc: '신안군 자은도에 있으며 갯벌의 환경지표인 조개와 고동류를 전시한다.' },
-    { name: '세계물포럼기념센터', cat: '문화관광 > 전시시설', desc: '안동시 성곡동에 있는 2015 대구경북세계물포럼 기념 시설이다.' },
+    { name: '송파책박물관', cat: '문화관광 > 전시시설', desc: '전국 최초의 공립 책 박물관으로, 책을 주제로 한 전시·교육·연구를 한다.',
+      img: 'https://tong.visitkorea.or.kr/cms/resource/16/3499716_image2_1.jpg' },
+    { name: '세계조개박물관', cat: '문화관광 > 전시시설', desc: '신안군 자은도에 있으며 갯벌의 환경지표인 조개와 고동류를 전시한다.',
+      img: 'https://tong.visitkorea.or.kr/cms/resource/40/3385440_image2_1.jpg' },
+    { name: '세계물포럼기념센터', cat: '문화관광 > 전시시설', desc: '안동시 성곡동에 있는 2015 대구경북세계물포럼 기념 시설이다.',
+      img: 'https://tong.visitkorea.or.kr/cms/resource/40/3587140_image2_1.jpg' },
   ] },
   { id: 'food', title: '음식', total: 95, cards: [
     { name: '반도식당', cat: '음식 > 한식', desc: '경주에서 오래된 갈비 맛집으로, 연탄불에 한우 생갈비를 구워 먹는 노포다.' },
-    { name: '발산삼계탕', cat: '음식 > 한식', desc: '지하철 5호선 6번 출구 부근에 있고 상가 건물 앞에 자체 주차장이 있다.' },
-    { name: '바타타식탁', cat: '음식 > 한식', desc: '표선해수욕장 앞 해산물 요리 전문점으로 제주산 해산물 메뉴가 다양하다.' },
+    { name: '발산삼계탕', cat: '음식 > 한식', desc: '지하철 5호선 6번 출구 부근에 있고 상가 건물 앞에 자체 주차장이 있다.',
+      img: 'http://tong.visitkorea.or.kr/cms/resource/63/2849263_image2_1.jpg' },
+    { name: '바타타식탁', cat: '음식 > 한식', desc: '표선해수욕장 앞 해산물 요리 전문점으로 제주산 해산물 메뉴가 다양하다.',
+      img: 'http://tong.visitkorea.or.kr/cms/resource/82/2876482_image2_1.JPG' },
   ] },
   { id: 'stay', title: '숙박', total: 72, cards: [
-    { name: '도원', cat: '숙박 > 펜션/민박', desc: '객리단길에 위치한 한옥독채스테이로, 마당에서 실외 욕조를 쓸 수 있다.' },
-    { name: '더블힐링펜션', cat: '숙박 > 펜션/민박', desc: '모든 객실에 스파를 갖췄고 부안 고사포 해변이 한눈에 들어온다.' },
-    { name: '더존펜션', cat: '숙박 > 펜션/민박', desc: '월악산국립공원 내에 있고 청정 1급수 용하구곡을 앞에 두고 있다.' },
+    { name: '도원', cat: '숙박 > 펜션/민박', desc: '객리단길에 위치한 한옥독채스테이로, 마당에서 실외 욕조를 쓸 수 있다.',
+      img: 'http://tong.visitkorea.or.kr/cms/resource/22/2573622_image2_1.PNG' },
+    { name: '더블힐링펜션', cat: '숙박 > 펜션/민박', desc: '모든 객실에 스파를 갖췄고 부안 고사포 해변이 한눈에 들어온다.',
+      img: 'http://tong.visitkorea.or.kr/cms/resource/27/2568227_image2_1.jpg' },
+    { name: '더존펜션', cat: '숙박 > 펜션/민박', desc: '월악산국립공원 내에 있고 청정 1급수 용하구곡을 앞에 두고 있다.',
+      img: 'http://tong.visitkorea.or.kr/cms/resource/45/3547045_image2_1.jpg' },
   ] },
 ]
 
@@ -129,11 +140,12 @@ const HOME_SECTIONS: CurationSection[] = [
  * <p>다만 뱃지는 고정하지 않는다. 시연 날짜가 바뀌면 "D-23"이 곧 거짓이 되므로 기간에서
  * 계산한다(`festivalBadge`). 날짜는 코퍼스 문서의 `event_start_date`·`event_end_date` 값이다.
  */
+// img는 큐레이션 카드와 같은 원천(fixture metadata.firstimage) 값이다.
 const FESTIVALS = [
-  { name: '2026 화성행궁 야간개장', start: '2026-05-01', end: '2026-11-01', place: '수원' },
-  { name: '진주남강유등축제', start: '2026-10-03', end: '2026-10-18', place: '진주' },
-  { name: '광주 추억의 충장축제', start: '2026-10-07', end: '2026-10-11', place: '광주' },
-  { name: '임실N치즈축제', start: '2026-10-08', end: '2026-10-11', place: '임실' },
+  { name: '2026 화성행궁 야간개장', start: '2026-05-01', end: '2026-11-01', place: '수원' , img: 'https://tong.visitkorea.or.kr/cms/resource/63/4081263_image2_1.jpg' },
+  { name: '진주남강유등축제', start: '2026-10-03', end: '2026-10-18', place: '진주' , img: 'https://tong.visitkorea.or.kr/cms/resource/57/4082657_image2_1.png' },
+  { name: '광주 추억의 충장축제', start: '2026-10-07', end: '2026-10-11', place: '광주' , img: 'https://tong.visitkorea.or.kr/cms/resource/71/3584471_image2_1.jpg' },
+  { name: '임실N치즈축제', start: '2026-10-08', end: '2026-10-11', place: '임실' , img: 'https://tong.visitkorea.or.kr/cms/resource/54/3377054_image2_1.png' },
 ]
 
 const TAB_PLACEHOLDERS: Record<string, string> = {
@@ -221,7 +233,7 @@ export function PortalHome({ template, menus = [], notices = [] }: { template: S
         <div className="mt-6 grid gap-5 [grid-template-columns:repeat(auto-fit,minmax(13.125rem,1fr))]">
           {FESTIVALS.map((festival) => <article key={festival.name}>
             <div className="relative overflow-hidden rounded-xl border border-line-soft">
-              <Placeholder label={`포스터 · ${festival.name}`} className="aspect-[3/4]" />
+              <CardPhoto name={festival.name} img={festival.img} className="aspect-[3/4]" />
               <span className="pointer-events-none absolute left-[0.625rem] top-[0.625rem] rounded-md bg-white/95 px-[0.5625rem] py-1 text-[0.6875rem] font-extrabold text-ink">{festivalBadge(festival.start, festival.end)}</span>
               <PhotoTag />
             </div>
@@ -245,10 +257,10 @@ export function PortalHome({ template, menus = [], notices = [] }: { template: S
         <div className="mt-[1.375rem] grid gap-5 [grid-template-columns:repeat(auto-fit,minmax(16.25rem,1fr))]">
           {page === 1
             ? hero.cards.map((card) => <article key={card.name} className="relative overflow-hidden rounded-xl border border-line-soft">
-              <Placeholder label={`사진 · ${card.name}`} className="aspect-[1/1.05]">
+              <CardPhoto name={card.name} img={card.img} className="aspect-[1/1.05]">
                 <span className="absolute inset-0 bg-[linear-gradient(to_top,rgba(0,0,0,0.72),rgba(0,0,0,0.08)_55%,transparent)]" aria-hidden="true" />
                 <strong className="absolute inset-x-[1.375rem] bottom-[1.375rem] text-[1.3125rem] font-extrabold tracking-[-.03em] text-white">{card.name}</strong>
-              </Placeholder>
+              </CardPhoto>
               <PhotoTag />
             </article>)
             : [0, 1, 2].map((slot) => <div key={slot} className="grid aspect-[1/1.05] place-items-center rounded-xl border border-line-soft bg-[repeating-linear-gradient(45deg,var(--site-ph)_0_12px,var(--site-ph-line)_12px_24px)] px-4 text-center text-[0.6875rem] text-site-ph-ink">
@@ -273,7 +285,7 @@ export function PortalHome({ template, menus = [], notices = [] }: { template: S
         <div className="mt-[1.375rem] grid gap-5 [grid-template-columns:repeat(auto-fit,minmax(16.25rem,1fr))]">
           {section.cards.map((card) => <article key={card.name}>
             <div className="relative overflow-hidden rounded-xl border border-line-soft">
-              <Placeholder label={`사진 · ${card.name}`} className="aspect-[4/3]" />
+              <CardPhoto name={card.name} img={card.img} className="aspect-[4/3]" />
               <PhotoTag />
             </div>
             <strong className="mt-[0.875rem] block text-base font-bold tracking-[-.02em] text-ink">{card.name}</strong>
@@ -500,6 +512,7 @@ function SearchResults({ state, onRetry, hasQuery }: {
         excerpt={citation.excerpt}
         categoryLabel={citation.categoryLabel}
         eventStatus={citation.eventStatus}
+        imageUrl={citation.imageUrl}
         address={addressLine(citation.excerpt) ?? undefined}
       />)}
     </div>
