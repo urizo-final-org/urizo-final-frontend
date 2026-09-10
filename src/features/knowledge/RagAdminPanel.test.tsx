@@ -544,6 +544,54 @@ test('the source label never collapses even though the raw numbers do', async ()
   expect(raw).toBeVisible()
 })
 
+test('a freshly built version inherits the measurement of an identical index configuration', async () => {
+  // 빌드마다 UUID가 새로 생긴다. 그래서 방금 만든 버전은 UUID 표에 없다 — 그런데 같은
+  // 커넥터로 같은 문서·청크 수가 나왔으면 색인이 같고, 검색 정확도도 같다. 최고 관리자가
+  // 활성화를 판단하려면 이 칸이 비어 있으면 안 된다.
+  show(<RagAdminPanel api={api({
+    listVersions: vi.fn().mockResolvedValue({
+      items: [
+        version({
+          versionNumber: 19, status: 'APPROVAL_PENDING', knowledgeVersionId: 'kv-fresh-build',
+          connectorVersionId: 'd52ab2fa-7b84-4132-8dec-f688144f9287',
+          documentCount: 500, chunkCount: 500, activatedAt: undefined,
+        }),
+        version({ versionNumber: 12, knowledgeVersionId: DEMO.v12, connectorVersionId: 'd52ab2fa-7b84-4132-8dec-f688144f9287' }),
+      ],
+    }),
+  })} role="SUPER_ADMIN" />)
+  const table = within((await screen.findByText('RAG 버전')).closest('section') as HTMLElement)
+
+  expect(table.queryByText('측정 전')).not.toBeInTheDocument()
+  // 활성본과 같은 색인이므로 델타가 0이고 기준선을 통과한다.
+  expect(table.getByText('검색 정확도 ±0.00%p')).toBeInTheDocument()
+  expect(table.getAllByText('기준선 통과')).toHaveLength(2)
+  // 방금 잰 값이 아니라는 사실을 라벨이 밝힌다 — 이 구분이 없으면 화면이 거짓말을 한다.
+  expect(table.getByText('오프라인 측정 · 9/9 · 같은 구성 재사용 ▾')).toBeInTheDocument()
+})
+
+test('a version measured differently keeps its own numbers even if the index size matches', async () => {
+  // v17은 색인 전략만 바꿔 문서·청크 수가 그대로다. 지문만 보면 물려받아야 할 것처럼 보이지만
+  // UUID 고정이 먼저다 — 여기서 밀리면 미달 버전이 통과로 뒤집힌다.
+  show(<RagAdminPanel api={api({
+    listVersions: vi.fn().mockResolvedValue({
+      items: [
+        version({
+          versionNumber: 17, status: 'APPROVAL_PENDING', knowledgeVersionId: DEMO.v17,
+          connectorVersionId: 'd52ab2fa-7b84-4132-8dec-f688144f9287',
+          documentCount: 500, chunkCount: 500, activatedAt: undefined,
+        }),
+        version({ versionNumber: 12, knowledgeVersionId: DEMO.v12, connectorVersionId: 'd52ab2fa-7b84-4132-8dec-f688144f9287' }),
+      ],
+    }),
+  })} role="SUPER_ADMIN" />)
+  const table = within((await screen.findByText('RAG 버전')).closest('section') as HTMLElement)
+
+  expect(table.getByText('기준선 미달')).toBeInTheDocument()
+  expect(table.getByText('검색 정확도 ▼ -2.01%p')).toBeInTheDocument()
+  expect(table.queryByText(/같은 구성 재사용/)).not.toBeInTheDocument()
+})
+
 test('a failed build gets no measurement even when its id is in the table', async () => {
   show(<RagAdminPanel api={api({
     listVersions: vi.fn().mockResolvedValue({
