@@ -12,10 +12,9 @@ import { Placeholder, SampleNotice } from './portal-primitives'
  * <p>공개 챗봇 API(`POST /api/public/chat/query`)에 실제로 연결돼 있다. 검색(A)과 **같은
  * 엔드포인트·같은 훅**을 쓰므로 상태 처리도 같다 — 다른 것은 결과를 말풍선으로 그린다는 것뿐이다.
  *
- * <p>**직전 한 턴까지 이어진다.** 질문과 함께 직전 질문을 `previousQuery`로 실어 보내고,
- * 백엔드는 둘을 합쳐 검색 임베딩만 만든다(`RagStore.searchText`). 그래서 "거기 주차 되나요?"처럼
- * 대명사만 남은 질문도 직전 주제의 문서를 찾아온다. 그 이상은 잇지 않는다 — 서버가 대화를
- * 저장하지 않으므로 두 턴 전은 사라진다.
+ * <p>**각 질문은 단독으로 검색된다.** 직전 질문을 `previousQuery`로 싣지 않는다 — 서버가 두
+ * 질문을 한 문장으로 합쳐 임베딩하므로(`RagStore.searchText`) 자립적인 질문까지 앞 주제로
+ * 끌려갔다. 대명사 질문("거기 주차 되나요?")은 문맥이 필요한지 판정하는 장치가 생긴 뒤에 되살린다.
  *
  * <p>`conversationId`는 여전히 보내지 않는다. 백엔드가 받아서 그대로 돌려주기만 할 뿐
  * 아무 것도 하지 않으므로, 보내면 "서버가 대화를 기억한다"는 잘못된 인상을 준다.
@@ -23,7 +22,6 @@ import { Placeholder, SampleNotice } from './portal-primitives'
  * <p>거절(REFUSED)은 오류가 아니다. 근거 섹션을 숨기고 문구만 바꾼다 — 경고색을 쓰지 않는다.
  */
 
-/** 직전 한 턴만 다음 질문의 검색에 얹힌다. 두 턴 전은 서버가 보지 않는다. */
 type Turn = {
   question: string
   answer?: string
@@ -85,11 +83,12 @@ export function ChatWidget() {
   function send(question: string) {
     if (!question || sending || locked) return
     setDraft('')
-    // 직전 질문은 turns를 갱신하기 전 값에서 읽는다. setTurns 뒤에 읽으면 방금 넣은
-    // 이번 질문이 잡혀 자기 자신을 문맥으로 보내게 된다.
-    const previousQuery = turns[turns.length - 1]?.question
+    // 직전 질문을 싣지 않는다. 서버는 두 질문을 한 문장으로 합쳐 검색 임베딩을 만들므로
+    // (`RagStore.searchText`) 자립적인 질문까지 앞 주제로 끌려간다 — "제주 오름 추천" 다음의
+    // "가족이 즐길 축제"가 제주 가족 놀이공원을 근거로 잡았다. 대명사 질문을 살리려면
+    // 문맥이 필요한지 판정하는 쪽이 먼저다. 클라이언트의 previousQuery 지원은 남겨 둔다.
     setTurns((previous) => [...previous, { question }])
-    ask({ query: question, previousQuery })
+    ask({ query: question })
   }
 
   function submit(event: FormEvent) {
@@ -122,7 +121,7 @@ export function ChatWidget() {
 
     {/* 스크롤 영역 밖에 둬서 대화를 내려도 고지가 사라지지 않는다(F8-a). */}
     <div className="flex-none bg-sub px-[0.875rem] pt-[0.875rem]">
-      <SampleNotice label="근거 문서에서 찾은 내용만 답합니다 · 직전 질문까지 이어집니다" />
+      <SampleNotice label="근거 문서에서 찾은 내용만 답합니다" />
     </div>
 
     <div ref={scroller} className="flex flex-1 flex-col gap-3 overflow-y-auto bg-sub px-[0.875rem] py-4">
@@ -175,6 +174,8 @@ export function ChatWidget() {
 
 /**
  * 근거 카드 — 검색 결과 카드의 축소형. 같은 `citations[]`를 그리므로 표시 규칙도 같다.
+ * `종료된 행사` 칩도 `PortalResultCard`와 같은 조건(`eventStatus === 'ENDED'`)을 쓴다 —
+ * 카테고리 라벨의 "(유효)"는 수집 분류명이지 행사 상태가 아니므로 이 칩이 없으면 종료를 알 길이 없다.
  * 「홈페이지」는 `excerpt`의 `[홈페이지]` 줄에서 나오고 `sourceUrl`은 쓰지 않는다(R26).
  */
 function EvidenceCard({ citation }: { citation: PublicCitation }) {
@@ -184,5 +185,6 @@ function EvidenceCard({ citation }: { citation: PublicCitation }) {
     <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-[0.78125rem] font-bold text-ink">{citation.title}</span>
     {homepage && <a href={homepage} target="_blank" rel="noopener noreferrer" className="flex-none text-[0.6875rem] font-bold text-primary underline underline-offset-2">홈페이지 ↗</a>}
     {citation.categoryLabel != null && <span className="flex-none rounded border border-line px-[0.375rem] py-[0.125rem] text-[0.625rem] font-bold text-primary">{citation.categoryLabel.split('>')[0].trim()}</span>}
+    {citation.eventStatus === 'ENDED' && <span className="flex-none rounded border border-line px-[0.375rem] py-[0.125rem] text-[0.625rem] font-bold text-muted">종료된 행사</span>}
   </div>
 }

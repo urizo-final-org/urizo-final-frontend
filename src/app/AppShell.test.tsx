@@ -209,7 +209,30 @@ test('the tour helper answers a question with its citations', async () => {
   expect(screen.queryByText(/api-test\.local/)).not.toBeInTheDocument()
 })
 
-test('the tour helper carries the previous question into the next turn', async () => {
+test('the tour helper marks an ended event on its evidence card', async () => {
+  // 시연의 v1 → v3 대조가 이 칩 하나로 드러난다. 카테고리 라벨의 "(유효)"는 수집 분류명이라
+  // 종료 여부를 말해 주지 않는다 — 칩이 빠지면 두 버전이 화면에서 같아 보인다.
+  const ended = chatAnswer({
+    citations: [{
+      title: '수원 국가유산야행',
+      excerpt: '[분류] 축제/공연/행사(유효) 수원화성 일원에서 열리는 야간형 문화유산 축제이다.',
+      sourceUrl: 'https://api-test.local/documents/3301281',
+      categoryLabel: '축제/공연/행사(유효)',
+      eventStatus: 'ENDED',
+    }],
+  })
+  vi.stubGlobal('fetch', publicFetch(siteTemplate(), '/', { body: ended }))
+  render(<AppShell />)
+  fireEvent.click(await screen.findByRole('button', { name: '관광 도우미 열기' }))
+  const panel = () => within(screen.getByRole('complementary', { name: '관광 도우미' }))
+
+  fireEvent.change(panel().getByLabelText('관광 도우미 메시지'), { target: { value: '수원 국가유산야행 알려줘' } })
+  fireEvent.click(panel().getByRole('button', { name: '전송' }))
+
+  expect(await panel().findByText('종료된 행사')).toBeInTheDocument()
+})
+
+test('the tour helper never carries the previous question into the next turn', async () => {
   const fetcher = publicFetch()
   vi.stubGlobal('fetch', fetcher)
   render(<AppShell />)
@@ -228,10 +251,11 @@ test('the tour helper carries the previous question into the next turn', async (
       .filter(([input]) => String(input) === '/api/public/chat/query')
       .map(([, init]) => JSON.parse(String((init as RequestInit).body)))
     expect(bodies).toHaveLength(2)
-    // 첫 턴에는 문맥이 없다. 여기에 값이 실리면 자기 질문을 자기 문맥으로 보낸 것이다.
+    // 어느 턴에도 문맥을 싣지 않는다. 서버가 두 질문을 한 문장으로 합쳐 임베딩하므로
+    // 자립적인 질문까지 앞 주제로 끌려간다("제주 오름 추천" → "가족이 즐길 축제").
     expect('previousQuery' in bodies[0]).toBe(false)
-    // 대명사만 남은 후속 질문이 직전 주제를 찾으려면 이 값이 서버까지 가야 한다.
-    expect(bodies[1]).toMatchObject({ query: '거기 주차 되나요?', previousQuery: '전주 한옥스테이 추천해줘' })
+    expect('previousQuery' in bodies[1]).toBe(false)
+    expect(bodies[1]).toMatchObject({ query: '거기 주차 되나요?' })
     // 문맥은 클라이언트가 들고 온다 — 서버가 대화를 기억하는 것처럼 보이면 안 된다.
     expect(bodies[1].conversationId).toBeNull()
   }, { timeout: 3000 })
