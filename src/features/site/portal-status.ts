@@ -34,8 +34,10 @@ export function describePortalStatus(state: AsyncState<unknown>): PortalStatus |
   switch (state.phase) {
     case 'refused':
       return {
-        title: '근거 문서를 찾지 못했습니다',
-        detail: '수집된 관광 문서에 있는 내용만 답합니다.',
+        // 실패가 아니라 RAG가 제대로 동작한 결과다. 사과하는 톤 대신 "정확성을 지킨다"는
+        // 톤으로 쓴다 — 챗봇 답변의 톤 규칙(PublicAnswerComposer 규칙 6)과 같은 결이다.
+        title: '아직 갖고 있는 정보로는 답을 드리기 어려워요.',
+        detail: '정확하지 않은 내용을 안내하지 않으려고, 확인된 관광 정보 안에서만 말씀드리고 있어요.',
         retry: false,
       }
     case 'rate_limited':

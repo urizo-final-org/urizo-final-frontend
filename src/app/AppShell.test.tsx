@@ -110,7 +110,7 @@ test('the results screen keeps a refusal out of the error path', async () => {
   }))
   render(<AppShell />)
   // 거절은 RAG가 제대로 동작한 결과다. 장애 문구·재시도 버튼을 붙이면 성과가 장애로 보인다.
-  expect(await screen.findByText('근거 문서를 찾지 못했습니다', undefined, { timeout: 3000 })).toBeInTheDocument()
+  expect(await screen.findByText('아직 갖고 있는 정보로는 답을 드리기 어려워요.', undefined, { timeout: 3000 })).toBeInTheDocument()
   expect(screen.queryByRole('button', { name: '다시 시도' })).not.toBeInTheDocument()
   expect(screen.queryByRole('article')).not.toBeInTheDocument()
 })
@@ -291,7 +291,7 @@ test('the tour helper shows a refusal without an evidence section', async () => 
   fireEvent.change(panel().getByLabelText('관광 도우미 메시지'), { target: { value: '비트코인 시세 알려줘' } })
   fireEvent.click(panel().getByRole('button', { name: '전송' }))
 
-  expect(await screen.findByText('근거 문서를 찾지 못했습니다')).toBeInTheDocument()
+  expect(await screen.findByText('아직 갖고 있는 정보로는 답을 드리기 어려워요.')).toBeInTheDocument()
   expect(panel().queryByText('답변 근거')).not.toBeInTheDocument()
 })
 
