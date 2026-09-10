@@ -65,6 +65,23 @@ function guardrailApi(overrides: Partial<CodingConsoleApiClient> = {}): CodingCo
  * The pipeline skips the path check entirely when nothing is allowed, so an unconfigured
  * system is wide open rather than locked. Saying so is the reason this screen exists.
  */
+test('guardrail tabs separate the CMS placeholder and preserve unsaved LLM Ops settings', async () => {
+  const api = guardrailApi()
+  render(<GuardrailWorkspace api={api} />)
+  const cmsFolder = await screen.findByRole('checkbox', { name: /CMS 화면/ })
+  fireEvent.click(cmsFolder)
+  fireEvent.click(screen.getByRole('tab', { name: '자연어 CMS' }))
+  expect(screen.getByRole('tabpanel', { name: '자연어 CMS' })).toBeVisible()
+  expect(screen.getByText(/설정 항목과 저장 기능은 아직 연결되지 않았습니다/)).toBeVisible()
+  expect(screen.queryByRole('button', { name: '저장' })).not.toBeInTheDocument()
+  fireEvent.keyDown(screen.getByRole('tab', { name: '자연어 CMS' }), { key: 'ArrowLeft' })
+  expect(screen.getByRole('tab', { name: 'LLM Ops' })).toHaveFocus()
+  expect(screen.getByRole('checkbox', { name: /CMS 화면/ })).toBeChecked()
+  expect(api.startGuardrailScan).toHaveBeenCalledTimes(2)
+  expect(api.saveGuardrailSelections).not.toHaveBeenCalled()
+  expect(api.saveGuardrailRules).not.toHaveBeenCalled()
+})
+
 test('an empty fence is reported as the open door it is', async () => {
   render(<GuardrailWorkspace api={guardrailApi()} />)
 
