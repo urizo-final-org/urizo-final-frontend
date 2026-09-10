@@ -160,6 +160,22 @@
   100% { opacity: 0; transform: translateY(-12px) scale(0.98); }
 }
 .admin-app .cms-success-toast { animation: cms-success-toast 2.6s ease-in-out both; }
+@keyframes job-copy-backdrop {
+  0%, 100% { opacity: 0; }
+  12%, 78% { opacity: 1; }
+}
+@keyframes job-copy-dismiss {
+  to { opacity: 0; transform: translateY(-12px) scale(0.98); }
+}
+@keyframes job-copy-backdrop-dismiss {
+  to { opacity: 0; }
+}
+.admin-app .job-copy-alert::backdrop { animation: job-copy-backdrop 2.6s ease-in-out both; }
+.admin-app .job-copy-alert[data-closing='true'] { animation: job-copy-dismiss 572ms ease-in-out both; }
+.admin-app .job-copy-alert[data-closing='true']::backdrop { animation: job-copy-backdrop-dismiss 572ms ease-in-out both; }
+@media (prefers-reduced-motion: reduce) {
+  .admin-app .job-copy-alert, .admin-app .job-copy-alert::backdrop { animation: none; }
+}
 .admin-app .cms-ai-scrollbar { scrollbar-color: var(--muted-4) transparent; scrollbar-width: thin; }
 .admin-app .cms-ai-scrollbar::-webkit-scrollbar { width: 6px; }
 .admin-app .cms-ai-scrollbar::-webkit-scrollbar-track { background: transparent; }
