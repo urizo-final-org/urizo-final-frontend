@@ -121,6 +121,26 @@ test('loads Metrics and Observations with the same encoded UTC range', async () 
   expect(new Headers(fetcher.mock.calls[1][1].headers).get('X-Trace-Id')).toBe('trace-id')
 })
 
+test('encodes Job filters and opaque cursors without changing endpoints and forwards cancellation', async () => {
+  const fetcher = vi.fn().mockImplementation(() => Promise.resolve(new Response('{}')))
+  vi.stubGlobal('fetch', fetcher)
+  vi.stubGlobal('crypto', { randomUUID: () => 'trace-id' })
+  const api = new ProfileVersionApi('token', vi.fn(), vi.fn())
+  const controller = new AbortController()
+  const jobId = '11111111-1111-4111-8111-111111111111'
+  await api.getObservabilityMetrics('from', 'to', jobId, controller.signal)
+  await api.getObservations('from', 'to', { jobId, kind: 'NODE', limit: 50, cursor: 'a+/=' }, controller.signal)
+  expect(fetcher.mock.calls[0][0]).toContain(`&jobId=${jobId}`)
+  const url = new URL(fetcher.mock.calls[1][0], 'http://localhost')
+  expect(url.pathname).toBe('/api/admin/ai/observability/observations')
+  expect(url.searchParams.get('cursor')).toBe('a+/=')
+  expect(url.searchParams.get('jobId')).toBe(jobId)
+  expect(url.searchParams.get('kind')).toBe('NODE')
+  expect(url.searchParams.get('limit')).toBe('50')
+  expect(fetcher.mock.calls[0][1].signal).toBe(controller.signal)
+  expect(fetcher.mock.calls[1][1].signal).toBe(controller.signal)
+})
+
 test('reads monitoring jobs, one full snapshot, and only a server-provided occurrence observation path', async () => {
   const list = { schemaVersion: '1.0', observedAt: '2026-09-07T00:00:00Z', jobs: [] }
   const detail = { schemaVersion: '1.0', observedAt: '2026-09-07T00:00:01Z', job: { jobId: 'job-1' }, latestNodeStates: [], occurrences: [], truncated: false }

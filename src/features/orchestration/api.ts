@@ -168,6 +168,15 @@ export interface ObservabilityResponse {
   to: string
   environment: string
   observations: ObservabilityRow[]
+  nextCursor?: string | null
+  limit?: number
+}
+
+export interface ObservabilityQuery {
+  jobId?: string
+  cursor?: string
+  limit?: number
+  kind?: 'ALL' | 'NODE' | 'PROVIDER'
 }
 
 export interface ProviderCredentialStatus {
@@ -324,8 +333,8 @@ export interface AgentSettingsApiClient extends ProfileVersionApiClient, Profile
   listMonitoringJobs(signal?: AbortSignal): Promise<MonitoringJobListResponse>
   getMonitoringJobSnapshot(jobId: string, signal?: AbortSignal): Promise<MonitoringJobSnapshotResponse>
   getMonitoringOccurrenceObservations(path: string, signal?: AbortSignal): Promise<SelectedObservationsResponse>
-  getObservabilityMetrics(from: string, to: string): Promise<ObservabilityMetricsResponse>
-  getObservations(from: string, to: string): Promise<ObservabilityResponse>
+  getObservabilityMetrics(from: string, to: string, jobId?: string, signal?: AbortSignal): Promise<ObservabilityMetricsResponse>
+  getObservations(from: string, to: string, query?: ObservabilityQuery, signal?: AbortSignal): Promise<ObservabilityResponse>
   listProviderCredentials(): Promise<ProviderCredentialOverview>
   storeProviderCredential(provider: ModelProvider, credential: string, csrfToken: string): Promise<ProviderCredentialStatus>
   testProviderCredential(provider: ModelProvider, csrfToken: string): Promise<ProviderConnectionTestResult>
@@ -420,13 +429,17 @@ export class ProfileVersionApi implements AgentSettingsApiClient {
     return this.request<SelectedObservationsResponse>(path, { signal })
   }
 
-  getObservabilityMetrics = (from: string, to: string) => this.request<ObservabilityMetricsResponse>(
-    `/api/admin/ai/observability/metrics?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
+  getObservabilityMetrics = (from: string, to: string, jobId?: string, signal?: AbortSignal) => this.request<ObservabilityMetricsResponse>(
+    `/api/admin/ai/observability/metrics?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}${jobId ? `&jobId=${encodeURIComponent(jobId)}` : ''}`, { signal },
   )
 
-  getObservations = (from: string, to: string) => this.request<ObservabilityResponse>(
-    `/api/admin/ai/observability/observations?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
-  )
+  getObservations = (from: string, to: string, query: ObservabilityQuery = {}, signal?: AbortSignal) => {
+    const options = Object.entries(query).filter(([, value]) => value !== undefined && value !== '')
+      .map(([key, value]) => `&${key}=${encodeURIComponent(String(value))}`).join('')
+    return this.request<ObservabilityResponse>(
+      `/api/admin/ai/observability/observations?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}${options}`, { signal },
+    )
+  }
 
   listProviderCredentials = () => this.request<ProviderCredentialOverview>(
     '/internal/dev/provider-credentials',

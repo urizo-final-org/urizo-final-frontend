@@ -244,7 +244,7 @@ test('the six Agent settings tabs separate live monitoring from observability an
   fireEvent.click(screen.getByRole('tab', { name: /사용량·평가/ }))
   expect(screen.getByText('Node와 Provider 계측을 조회하고 있습니다.')).toBeInTheDocument()
   await waitFor(() => expect(screen.getByText('관측 대기')).toBeInTheDocument())
-  expect(screen.getByText('최근 최대 50건의 Observation 조회 결과입니다.')).toBeInTheDocument()
+  expect(screen.getByText('선택한 조건의 Node·Tool·Check 관측 · 페이지당 최대 50건 · 최신순')).toBeInTheDocument()
   expect(screen.getByText('이번 조회 결과에 Node·Tool·Check 관측이 없습니다.')).toBeInTheDocument()
   fireEvent.click(screen.getByRole('tab', { name: '품질 평가' }))
   expect(screen.getByText('평가 미설정')).toBeInTheDocument()
@@ -285,20 +285,110 @@ test('uses one UTC range for Node and Provider telemetry and preserves nullable 
   await waitFor(() => expect(screen.getByRole('region', { name: 'Node 계측 결과' })).toHaveTextContent('job-1'))
   expect(getObservabilityMetrics).toHaveBeenCalledTimes(1)
   expect(getObservations).toHaveBeenCalledTimes(1)
-  expect(getObservabilityMetrics.mock.calls[0]).toEqual(getObservations.mock.calls[0])
+  expect(getObservabilityMetrics.mock.calls[0].slice(0, 2)).toEqual(getObservations.mock.calls[0].slice(0, 2))
+  expect(getObservations.mock.calls[0][2]).toMatchObject({ kind: 'NODE', limit: 50 })
   expect(getObservabilityMetrics.mock.calls[0][0]).toMatch(/Z$/)
   expect(screen.getByText(/environment=local/)).toBeInTheDocument()
 
   fireEvent.click(screen.getByRole('tab', { name: 'Provider 계측' }))
-  const provider = screen.getByRole('region', { name: 'Provider 계측 결과' })
+  const provider = await screen.findByRole('region', { name: 'Provider 계측 결과' })
   expect(provider).toHaveTextContent('gpt-5.6-sol')
   expect(provider).toHaveTextContent('0.0042')
   expect(provider).toHaveTextContent('실제 Provider 호출')
-  expect(provider).toHaveTextContent('최근 최대 50건의 Observation 조회 결과입니다.')
+  expect(provider).toHaveTextContent('선택한 조건의 Provider 관측 · 페이지당 최대 50건')
   expect(provider).toHaveTextContent('OPENAI')
   expect(provider).toHaveTextContent('job-1')
   expect(provider).toHaveTextContent('otel-trace')
   expect(within(provider).getAllByText('제공되지 않음').length).toBeGreaterThan(0)
+})
+
+test('searches full Job IDs on the server and keeps conditions while paging then resets on changes', async () => {
+  const jobId = '11111111-1111-4111-8111-111111111111'
+  const getObservabilityMetrics = vi.fn().mockImplementation((from, to) => Promise.resolve({
+    status: 'AVAILABLE', errorCode: null, from, to, environment: 'local', rows: [],
+  }))
+  const getObservations = vi.fn().mockImplementation((from, to, query) => Promise.resolve({
+    status: 'AVAILABLE', errorCode: null, from, to, environment: 'local', observations: [],
+    nextCursor: query.cursor ? null : 'cGFnZTI=', limit: 50,
+  }))
+  render(<AgentSettingsWorkspace api={profileApi({ getObservabilityMetrics, getObservations })} />)
+  fireEvent.click(screen.getByRole('tab', { name: /사용량·평가/ }))
+  await waitFor(() => expect(screen.getByRole('button', { name: '검색' })).toBeEnabled())
+  fireEvent.change(screen.getByLabelText('Job ID 검색'), { target: { value: jobId } })
+  fireEvent.click(screen.getByRole('button', { name: '검색' }))
+  await waitFor(() => expect(screen.getByRole('button', { name: '다음' })).toBeEnabled())
+  expect(getObservations.mock.lastCall?.[2]).toEqual({ jobId, kind: 'NODE', limit: 50, cursor: undefined })
+  expect(getObservabilityMetrics.mock.lastCall?.[2]).toBe(jobId)
+  const from = getObservations.mock.lastCall?.[0]
+  const to = getObservations.mock.lastCall?.[1]
+  fireEvent.click(screen.getByRole('button', { name: '다음' }))
+  await waitFor(() => expect(screen.getByText('2 페이지 · 현재 0건')).toBeInTheDocument())
+  expect(getObservations.mock.lastCall?.slice(0, 3)).toEqual([from, to, { jobId, kind: 'NODE', limit: 50, cursor: 'cGFnZTI=' }])
+  expect(screen.getByRole('button', { name: '다음' })).toBeDisabled()
+  fireEvent.click(screen.getByRole('button', { name: '이전' }))
+  await waitFor(() => expect(screen.getByRole('button', { name: '다음' })).toBeEnabled())
+  expect(getObservations.mock.lastCall?.[2].cursor).toBeUndefined()
+  expect(screen.getByRole('button', { name: '이전' })).toBeDisabled()
+  fireEvent.click(screen.getByRole('button', { name: '다음' }))
+  await waitFor(() => expect(screen.getByText('2 페이지 · 현재 0건')).toBeInTheDocument())
+  fireEvent.click(screen.getByRole('tab', { name: 'Provider 계측' }))
+  await waitFor(() => expect(screen.getByText('1 페이지 · 현재 0건')).toBeInTheDocument())
+  expect(getObservations.mock.lastCall?.[2]).toEqual({ jobId, kind: 'PROVIDER', limit: 50, cursor: undefined })
+  expect(screen.getByText(/상단 집계는 전체 조회 기간 기준/)).toBeInTheDocument()
+  fireEvent.change(screen.getByLabelText('Job ID 검색'), { target: { value: '' } })
+  fireEvent.change(screen.getByLabelText('조회 시작 UTC'), { target: { value: '2026-09-01T00:00' } })
+  fireEvent.change(screen.getByLabelText('조회 종료 UTC'), { target: { value: '2026-09-02T00:00' } })
+  fireEvent.click(screen.getByRole('button', { name: '검색' }))
+  await waitFor(() => expect(screen.getByRole('button', { name: '다음' })).toBeEnabled())
+  expect(getObservations.mock.lastCall?.slice(0, 3)).toEqual([
+    '2026-09-01T00:00:00.000Z', '2026-09-02T00:00:00.000Z',
+    { jobId: undefined, kind: 'PROVIDER', limit: 50, cursor: undefined },
+  ])
+  expect(getObservabilityMetrics.mock.lastCall?.[2]).toBeUndefined()
+})
+
+test('rejects partial Job IDs without a request and ignores aborted stale pages after tab changes', async () => {
+  let resolveFirst!: (value: unknown) => void
+  let firstFrom = ''
+  let firstTo = ''
+  const getObservations = vi.fn().mockImplementationOnce((from, to) => {
+    firstFrom = from; firstTo = to
+    return new Promise((resolve) => { resolveFirst = resolve })
+  }).mockImplementation((from, to) => Promise.resolve({
+    status: 'AVAILABLE', errorCode: null, from, to, environment: 'local', observations: [], nextCursor: null,
+  }))
+  const view = render(<AgentSettingsWorkspace api={profileApi({ getObservations })} />)
+  fireEvent.click(screen.getByRole('tab', { name: /사용량·평가/ }))
+  fireEvent.click(screen.getByRole('tab', { name: 'Provider 계측' }))
+  await waitFor(() => expect(screen.getByRole('region', { name: 'Provider 계측 결과' })).toBeInTheDocument())
+  expect(getObservations.mock.calls[0][3].aborted).toBe(true)
+  await act(async () => resolveFirst({
+    status: 'AVAILABLE', errorCode: null, from: firstFrom, to: firstTo, environment: 'local', observations: [], nextCursor: 'stale',
+  }))
+  expect(screen.getByRole('button', { name: '다음' })).toBeDisabled()
+  fireEvent.change(screen.getByLabelText('Job ID 검색'), { target: { value: 'partial' } })
+  fireEvent.click(screen.getByRole('button', { name: '검색' }))
+  expect(screen.getByRole('alert')).toHaveTextContent('Job ID는 전체 UUID를 입력해 주세요.')
+  expect(getObservations).toHaveBeenCalledTimes(2)
+  view.unmount()
+  expect(getObservations.mock.calls[1][3].aborted).toBe(true)
+})
+
+test('a failed later page hides old rows, disables next, and retries the same cursor', async () => {
+  const getObservations = vi.fn().mockImplementation((from, to) => Promise.resolve({
+    status: 'AVAILABLE', errorCode: null, from, to, environment: 'local', observations: [], nextCursor: 'cGFnZTI=',
+  }))
+  render(<AgentSettingsWorkspace api={profileApi({ getObservations })} />)
+  fireEvent.click(screen.getByRole('tab', { name: /사용량·평가/ }))
+  await waitFor(() => expect(screen.getByRole('button', { name: '다음' })).toBeEnabled())
+  getObservations.mockRejectedValueOnce(new Error('Page unavailable'))
+  fireEvent.click(screen.getByRole('button', { name: '다음' }))
+  await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Page unavailable'))
+  expect(screen.queryByRole('region', { name: 'Node 계측 결과' })).not.toBeInTheDocument()
+  expect(screen.getByRole('button', { name: '다음' })).toBeDisabled()
+  fireEvent.click(screen.getByRole('button', { name: '다시 조회' }))
+  await waitFor(() => expect(screen.getByText('2 페이지 · 현재 0건')).toBeInTheDocument())
+  expect(getObservations.mock.lastCall?.[2].cursor).toBe('cGFnZTI=')
 })
 
 test('shows disabled, unavailable, and permission failure states without inventing telemetry', async () => {
