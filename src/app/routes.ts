@@ -37,7 +37,7 @@ export const routes: RouteDefinition[] = [
   // Super administrators only, because the server refuses the guardrail endpoints to anyone
   // else. A general administrator asks for a change; deciding where the AI may write is not
   // the same decision.
-  { id: 'guardrail', path: '/admin/llm-devops/guardrail', group: 'AI 운영', label: '울타리 설정', glyph: '▢', icon: 'shield-check', allowedRoles: superAdmins },
+  { id: 'guardrail', path: '/admin/llm-devops/guardrail', group: 'AI 운영', label: '가드레일 설정', glyph: '▢', icon: 'shield-check', allowedRoles: superAdmins },
   { id: 'approvals', path: '/admin/approvals', group: '거버넌스', label: '승인 관리', glyph: '◍', icon: 'shield-check', allowedRoles: admins, mock: true },
   { id: 'runs', path: '/admin/runs', group: '거버넌스', label: '실행 이력', glyph: '◌', icon: 'history', allowedRoles: admins, mock: true },
   { id: 'settings', path: '/admin/settings', group: '환경', label: '설정', glyph: '⚙', icon: 'settings', allowedRoles: admins, mock: true },

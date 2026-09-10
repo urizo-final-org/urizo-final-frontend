@@ -167,15 +167,18 @@ function AuthenticatedAdmin({ session, theme, onToggleTheme, onRefresh, onExpire
   return <div className="admin-app flex min-h-screen bg-page" data-admin-theme={theme}>
     {/* text-sb-item is the sidebar's base colour: anything inside inherits light-on-navy by default. */}
     <aside id="admin-sidebar" data-collapsed={sidebarCollapsed} className={`sticky top-0 z-30 flex h-screen w-[14.75rem] shrink-0 flex-col border-r border-sb-border bg-sb-bg text-sb-item transition-transform ${sidebarCollapsed ? 'min-[901px]:w-16' : ''} max-[900px]:fixed max-[900px]:inset-y-0 max-[900px]:left-0 ${menuOpen ? 'max-[900px]:translate-x-0' : 'max-[900px]:-translate-x-full'}`}>
-      <div className="flex items-center gap-[0.5625rem] px-4 pb-[0.875rem] pt-4">
+      <div className="flex items-center gap-1.5 px-3 pb-[0.875rem] pt-4">
         {/* Canvas draws this navy-on-white; on the navy sidebar the pair is flipped so it stays visible. */}
-        <div className="grid h-[1.625rem] w-[1.625rem] shrink-0 place-items-center rounded-[0.3125rem] bg-accent text-sb-bg" aria-hidden="true">
+        <div className={`grid h-[1.625rem] w-[1.625rem] shrink-0 place-items-center rounded-[0.3125rem] bg-accent text-sb-bg ${sidebarCollapsed ? 'min-[901px]:hidden' : ''}`} aria-hidden="true">
           <Icon name="sparkles" size={15} />
         </div>
         <div className={`min-w-0 ${sidebarCollapsed ? 'min-[901px]:hidden' : ''}`}>
           <b className="block text-[0.8125rem] tracking-[-.01em] text-sb-strong">AX Module Studio</b>
           <small className="block text-[0.625rem] tracking-[.04em] text-sb-muted">AI OPERATIONS PLATFORM</small>
         </div>
+        <button type="button" className={`grid h-7 w-7 shrink-0 place-items-center rounded text-sb-muted hover:bg-sb-active hover:text-sb-strong focus-visible:outline focus-visible:outline-2 focus-visible:outline-sb-strong max-[900px]:hidden ${sidebarCollapsed ? 'mx-auto' : 'ml-auto'}`} onClick={() => setSidebarCollapsed((value) => !value)} aria-label={sidebarCollapsed ? '사이드바 펼치기' : '사이드바 접기'} title={sidebarCollapsed ? '사이드바 펼치기' : '사이드바 접기'} aria-expanded={!sidebarCollapsed} aria-controls="admin-sidebar">
+          <Icon name={sidebarCollapsed ? 'chevrons-right' : 'chevrons-left'} size={18} />
+        </button>
         <button type="button" className="ml-auto text-sb-muted min-[901px]:hidden" onClick={() => setMenuOpen(false)} aria-label="메뉴 닫기">✕</button>
       </div>
 
@@ -201,9 +204,6 @@ function AuthenticatedAdmin({ session, theme, onToggleTheme, onRefresh, onExpire
     <div className="flex min-w-0 flex-1 flex-col">
       <header className="sticky top-0 z-20 flex h-14 shrink-0 items-center gap-4 border-b border-line bg-panel px-7 max-[900px]:px-4">
         <button type="button" className="text-lg leading-none text-muted min-[901px]:hidden" onClick={() => setMenuOpen(true)} aria-label="메뉴 열기">☰</button>
-        <button type="button" className="grid h-8 w-8 shrink-0 place-items-center rounded text-muted hover:bg-sub max-[900px]:hidden" onClick={() => setSidebarCollapsed((value) => !value)} aria-label={sidebarCollapsed ? '사이드바 펼치기' : '사이드바 접기'} title={sidebarCollapsed ? '사이드바 펼치기' : '사이드바 접기'} aria-expanded={!sidebarCollapsed} aria-controls="admin-sidebar">
-          <Icon name={sidebarCollapsed ? 'chevron-right' : 'chevron-left'} size={18} />
-        </button>
         <div className="flex items-center gap-[0.4375rem] text-xs text-muted">
           <span className="max-[560px]:hidden">{groupForRoute(visible)}</span>
           <span className="flex max-[560px]:hidden"><Icon name="chevron-right" size={12} className="text-muted-4" /></span>

@@ -1,9 +1,26 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { beforeEach, expect, test, vi } from 'vitest'
+import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from 'vitest'
 import { SITE_UPDATE_EVENT } from '../features/cms/api'
 import AppShell from './AppShell'
 
 const actorId = '11111111-1111-4111-8111-111111111111'
+const originalClipboard = Object.getOwnPropertyDescriptor(navigator, 'clipboard')
+
+beforeAll(() => {
+  Object.defineProperties(HTMLDialogElement.prototype, {
+    showModal: { configurable: true, value() { this.setAttribute('open', '') } },
+    close: { configurable: true, value() { this.removeAttribute('open') } },
+  })
+})
+afterAll(() => {
+  Reflect.deleteProperty(HTMLDialogElement.prototype, 'showModal')
+  Reflect.deleteProperty(HTMLDialogElement.prototype, 'close')
+})
+
+afterEach(() => {
+  if (originalClipboard) Object.defineProperty(navigator, 'clipboard', originalClipboard)
+  else Reflect.deleteProperty(navigator, 'clipboard')
+})
 
 beforeEach(() => {
   window.localStorage.clear()
@@ -933,6 +950,12 @@ test('collapses the desktop sidebar without losing navigation and preserves the 
   ))))
   render(<AppShell />)
   const toggle = await screen.findByRole('button', { name: '사이드바 접기' })
+  const sidebar = document.getElementById('admin-sidebar')!
+  expect(sidebar).toContainElement(toggle)
+  expect(toggle.parentElement).toContainElement(screen.getByText('AX Module Studio'))
+  expect(within(screen.getByRole('banner')).queryByRole('button', { name: '사이드바 접기' })).not.toBeInTheDocument()
+  expect(toggle.querySelectorAll('svg path')).toHaveLength(2)
+  expect(toggle).toHaveAttribute('aria-controls', 'admin-sidebar')
   expect(toggle).toHaveAttribute('aria-expanded', 'true')
   fireEvent.click(toggle)
   expect(document.getElementById('admin-sidebar')).toHaveAttribute('data-collapsed', 'true')
@@ -942,6 +965,7 @@ test('collapses the desktop sidebar without losing navigation and preserves the 
   fireEvent.click(contents)
   expect(await screen.findByRole('heading', { name: '컨텐츠 관리' })).toBeInTheDocument()
   expect(screen.getByRole('button', { name: '사이드바 펼치기' })).toHaveAttribute('aria-expanded', 'false')
+  expect(sidebar).toContainElement(screen.getByRole('button', { name: '사이드바 펼치기' }))
   expect(screen.getByRole('button', { name: '메뉴 열기' })).toBeInTheDocument()
   expect(screen.getByRole('button', { name: '메뉴 닫기' })).toBeInTheDocument()
   fireEvent.click(screen.getByRole('button', { name: '사이드바 펼치기' }))
@@ -955,6 +979,8 @@ test.each([
   ['/admin/boards', '게시판 관리', 'NATURAL_CMS'],
   ['/admin/templates', '템플릿 관리', 'NATURAL_CMS'],
 ])('%s links a super administrator directly to the matching active Job', async (path, title, profileKey) => {
+  const writeText = vi.fn().mockResolvedValue(undefined)
+  Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
   const jobId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
   window.history.pushState({}, '', path)
   vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => {
@@ -972,6 +998,17 @@ test.each([
   const link = await screen.findByRole('link', { name: '실시간 모니터링' })
   expect(link).toHaveAttribute('href', `/admin/models?tab=monitoring&jobId=${jobId}`)
   expect(heading.parentElement?.parentElement).toContainElement(link)
+  const copy = screen.getByRole('button', { name: '전체 Job ID 복사' })
+  expect(heading.parentElement?.parentElement).toContainElement(copy)
+  expect(writeText).not.toHaveBeenCalled()
+  await act(async () => fireEvent.click(copy))
+  expect(writeText).toHaveBeenCalledExactlyOnceWith(jobId)
+  expect(copy).toHaveAttribute('title', 'Job ID 복사 완료')
+  const copiedDialog = screen.getByRole('alertdialog', { name: '복사 완료' })
+  expect(copiedDialog).toHaveTextContent('Job ID가 복사되었습니다.')
+  fireEvent.click(within(copiedDialog).getByRole('button', { name: '확인' }))
+  expect(copiedDialog).toHaveAttribute('data-closing', 'true')
+  await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument())
 })
 
 test('a general administrator gets neither a monitoring shortcut nor its privileged API request', async () => {
@@ -983,6 +1020,7 @@ test('a general administrator gets neither a monitoring shortcut nor its privile
   render(<AppShell />)
   await screen.findByRole('heading', { name: '메뉴 관리' })
   expect(screen.queryByRole('link', { name: '실시간 모니터링' })).not.toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: '전체 Job ID 복사' })).not.toBeInTheDocument()
   expect(fetcher.mock.calls.some(([url]) => String(url).startsWith('/api/admin/ai/monitoring/'))).toBe(false)
 })
 

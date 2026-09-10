@@ -21,6 +21,10 @@ import type {
  */
 
 const REPOSITORIES: GuardrailRepository[] = ['frontend', 'backend']
+const GUARDRAIL_TABS = [
+  { id: 'llm-ops', label: 'LLM Ops' },
+  { id: 'natural-cms', label: '자연어 CMS' },
+] as const
 
 const REPOSITORY_TITLES: Record<GuardrailRepository, string> = {
   frontend: '프론트엔드',
@@ -109,6 +113,7 @@ function cautionFor(repository: GuardrailRepository, path: string): string | und
 }
 
 export default function GuardrailWorkspace({ api }: { api: CodingConsoleApiClient }) {
+  const [activeTab, setActiveTab] = useState<'llm-ops' | 'natural-cms'>('llm-ops')
   const [repos, setRepos] = useState<Record<GuardrailRepository, RepositoryState>>({
     frontend: initialRepository,
     backend: initialRepository,
@@ -302,9 +307,36 @@ export default function GuardrailWorkspace({ api }: { api: CodingConsoleApiClien
 
   return <>
     <PageHead
-      title="울타리 설정"
-      description="AI 가 들어갈 수 있는 폴더를 정합니다. 여기 없는 곳은 건드릴 수 없고, 로그인·DB 구조·AI 통제 장치는 아예 목록에 나오지 않습니다."
+      title="가드레일 설정"
+      description="LLM Ops와 자연어 CMS의 가드레일을 구분하여 관리합니다."
     />
+
+    <div className="mb-[1.125rem] flex gap-[1.375rem] overflow-x-auto border-b border-line" role="tablist" aria-label="가드레일 적용 영역">
+      {GUARDRAIL_TABS.map((tab, index) => <button
+        key={tab.id}
+        type="button"
+        role="tab"
+        id={`guardrail-tab-${tab.id}`}
+        aria-controls={`guardrail-panel-${tab.id}`}
+        aria-selected={activeTab === tab.id}
+        tabIndex={activeTab === tab.id ? 0 : -1}
+        className={`shrink-0 whitespace-nowrap bg-transparent px-[0.125rem] pb-[0.625rem] text-[0.8125rem] ${activeTab === tab.id ? 'font-semibold text-ink shadow-[inset_0_-2px_var(--primary)]' : 'font-medium text-muted'}`}
+        onClick={() => setActiveTab(tab.id)}
+        onKeyDown={(event) => {
+          let next = index
+          if (event.key === 'ArrowRight' || event.key === 'ArrowLeft') next = 1 - index
+          else if (event.key === 'Home') next = 0
+          else if (event.key === 'End') next = 1
+          else return
+          event.preventDefault()
+          setActiveTab(GUARDRAIL_TABS[next].id)
+          event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>('[role="tab"]')[next]?.focus()
+        }}
+      >{tab.label}</button>)}
+    </div>
+
+    <div role="tabpanel" id="guardrail-panel-llm-ops" aria-labelledby="guardrail-tab-llm-ops" hidden={activeTab !== 'llm-ops'}>
+    <p className="text-[0.8125rem] leading-5 text-muted">AI 가 들어갈 수 있는 폴더를 정합니다. 여기 없는 곳은 건드릴 수 없고, 로그인·DB 구조·AI 통제 장치는 아예 목록에 나오지 않습니다.</p>
 
     {/* The reason this screen exists. An empty list reads as "no restriction" to the
       * pipeline, so nothing is protecting the repositories until a folder is ticked. */}
@@ -474,6 +506,16 @@ export default function GuardrailWorkspace({ api }: { api: CodingConsoleApiClien
         onClick={() => void save()}
       >{saving ? '저장하는 중입니다…' : '저장'}</button>
       {changed && <span className="text-[0.6875rem] text-muted-2">저장하지 않은 변경이 있습니다.</span>}
+    </div>
+    </div>
+
+    <div role="tabpanel" id="guardrail-panel-natural-cms" aria-labelledby="guardrail-tab-natural-cms" hidden={activeTab !== 'natural-cms'}>
+      <section className={panel}>
+        <PanelTitle title="자연어 CMS 가드레일" sub="설정 준비 중" />
+        <p className="px-4 pb-4 text-[0.8125rem] leading-6 text-muted">
+          자연어 CMS 전용 가드레일 설정은 준비 중입니다. 현재는 탭만 분리되어 있으며, 설정 항목과 저장 기능은 아직 연결되지 않았습니다.
+        </p>
+      </section>
     </div>
   </>
 }

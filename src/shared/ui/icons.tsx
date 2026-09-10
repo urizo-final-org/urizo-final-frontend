@@ -6,6 +6,7 @@ import type { ReactNode } from 'react'
  */
 export type IconName =
   | 'sparkles' | 'chevrons-up-down' | 'chevron-down' | 'chevron-right' | 'chevron-left'
+  | 'chevrons-left' | 'chevrons-right' | 'copy'
   | 'globe-2' | 'arrow-up-right' | 'settings' | 'search' | 'bell' | 'circle-help'
   | 'layout-dashboard' | 'users' | 'menu' | 'file-text' | 'message-square' | 'layout-template'
   | 'bot' | 'boxes' | 'database' | 'code-2' | 'shield-check' | 'history'
@@ -20,6 +21,9 @@ const paths: Record<IconName, ReactNode> = {
   'chevron-down': <path d="m6 9 6 6 6-6" />,
   'chevron-right': <path d="m9 18 6-6-6-6" />,
   'chevron-left': <path d="m15 18-6-6 6-6" />,
+  'chevrons-left': <><path d="m11 17-5-5 5-5" /><path d="m18 17-5-5 5-5" /></>,
+  'chevrons-right': <><path d="m6 17 5-5-5-5" /><path d="m13 17 5-5-5-5" /></>,
+  'copy': <><rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></>,
   'globe-2': <><circle cx="12" cy="12" r="10" /><path d="M2 12h20" /><path d="M12 2a15.3 15.3 0 0 1 0 20 15.3 15.3 0 0 1 0-20Z" /></>,
   'arrow-up-right': <><path d="M7 7h10v10" /><path d="M7 17 17 7" /></>,
   'settings': <><path d="M12.2 2h-.4a2 2 0 0 0-2 2v.2a2 2 0 0 1-1 1.7l-.4.2a2 2 0 0 1-2 0l-.1-.1a2 2 0 0 0-2.7.7l-.3.5a2 2 0 0 0 .7 2.8l.1.1a2 2 0 0 1 1 1.7v.4a2 2 0 0 1-1 1.7l-.1.1a2 2 0 0 0-.7 2.8l.3.5a2 2 0 0 0 2.7.7l.1-.1a2 2 0 0 1 2 0l.4.2a2 2 0 0 1 1 1.7v.2a2 2 0 0 0 2 2h.4a2 2 0 0 0 2-2v-.2a2 2 0 0 1 1-1.7l.4-.2a2 2 0 0 1 2 0l.1.1a2 2 0 0 0 2.7-.7l.3-.5a2 2 0 0 0-.7-2.8l-.1-.1a2 2 0 0 1-1-1.7v-.4a2 2 0 0 1 1-1.7l.1-.1a2 2 0 0 0 .7-2.8l-.3-.5a2 2 0 0 0-2.7-.7l-.1.1a2 2 0 0 1-2 0l-.4-.2a2 2 0 0 1-1-1.7V4a2 2 0 0 0-2-2Z" /><circle cx="12" cy="12" r="3" /></>,
