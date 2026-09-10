@@ -303,7 +303,8 @@ function nodeRole(node: ProfileSnapshotNode): { key: string; label: string; deta
   return { key: 'flow', label: 'Flow', detail: node.type === 'start' ? '흐름 시작 Node' : '흐름 종료 Node', icon: node.type === 'start' ? 'play' : 'inbox' }
 }
 
-function nodeDisplayName(profileKey: ProfileKey, node: ProfileSnapshotNode) {
+/** The name the settings canvas shows for a node; the monitoring canvas uses the same one. */
+export function nodeDisplayName(profileKey: ProfileKey, node: ProfileSnapshotNode) {
   if (node.type === 'start') return '시작'
   if (node.type === 'end') return '종료'
   if (node.type === 'guardrail') return '잠금 가드레일'
