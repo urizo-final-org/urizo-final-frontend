@@ -70,8 +70,6 @@ const screens: [OpsRouteId, string][] = [
   ['home', '안녕하세요, 일반 관리자님'],
   ['agents', 'Agent 관리'],
   ['rag', 'RAG 관리'],
-  ['approvals', '승인 관리'],
-  ['runs', '실행 이력'],
   ['settings', '설정'],
   ['system-settings', '시스템 설정'],
   ['sites', '사이트 관리'],
@@ -222,14 +220,4 @@ test('general settings removes fake organization, key, permission, and alert con
   expect(screen.getByText('API Key·알림 설정')).toBeInTheDocument()
   expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
   expect(screen.queryByRole('button')).not.toBeInTheDocument()
-})
-
-test.each([
-  ['approvals' as const, /가짜 요청·건수·처리 버튼을 표시하지 않습니다/, '승인 처리·이력 API'],
-  ['runs' as const, /가짜 실행 기록, 로딩 수치, CSV 버튼을 표시하지 않습니다/, '이력 조회·통계 API'],
-])('%s exposes only current runtime status', (route, notice, missingContract) => {
-  render(<OpsWorkspace route={route} actorName="일반 관리자" roleLabel="일반관리자" role="SUPER_ADMIN" knowledgeApi={knowledgeApi()} profileApi={profileApi()} siteSettingsApi={siteSettingsApi()} />)
-  expect(screen.getByText(notice)).toBeInTheDocument()
-  expect(screen.getByText(missingContract)).toBeInTheDocument()
-  expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
 })

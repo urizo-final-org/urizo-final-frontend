@@ -38,8 +38,8 @@ export const routes: RouteDefinition[] = [
   // else. A general administrator asks for a change; deciding where the AI may write is not
   // the same decision.
   { id: 'guardrail', path: '/admin/llm-devops/guardrail', group: 'AI 운영', label: '가드레일 설정', glyph: '▢', icon: 'shield-check', allowedRoles: superAdmins },
-  { id: 'approvals', path: '/admin/approvals', group: '거버넌스', label: '승인 관리', glyph: '◍', icon: 'shield-check', allowedRoles: admins, mock: true },
-  { id: 'runs', path: '/admin/runs', group: '거버넌스', label: '실행 이력', glyph: '◌', icon: 'history', allowedRoles: admins, mock: true },
+  { id: 'approvals', path: '/admin/approvals', group: '거버넌스', label: '승인 내역', glyph: '◍', icon: 'shield-check', allowedRoles: admins },
+  { id: 'runs', path: '/admin/runs', group: '거버넌스', label: '실행 이력', glyph: '◌', icon: 'history', allowedRoles: admins },
   { id: 'settings', path: '/admin/settings', group: '환경', label: '설정', glyph: '⚙', icon: 'settings', allowedRoles: admins, mock: true },
   { id: 'system-settings', path: '/admin/system-settings', group: '환경', label: '시스템 설정', glyph: '◫', icon: 'sliders-horizontal', allowedRoles: superAdmins },
   { id: 'sites', path: '/admin/sites', group: '환경', label: '사이트 관리', glyph: '◎', icon: 'globe-2', allowedRoles: superAdmins },

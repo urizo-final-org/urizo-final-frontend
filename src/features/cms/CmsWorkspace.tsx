@@ -1,4 +1,4 @@
-import { type CSSProperties, type FormEvent, type ReactNode, useEffect, useRef, useState } from 'react'
+import { type FormEvent, type ReactNode, useEffect, useRef, useState } from 'react'
 import type { CmsRouteId } from '../../app/routes'
 import { describeFailure } from '../../shared/api/error'
 import { Icon } from '../../shared/ui/icons'
@@ -6,7 +6,8 @@ import {
   Badge, EmptyState, PageHead, PanelTitle,
   control, fieldLabel, panel, primaryButton, secondaryButton, smallButton, textarea, type Tone,
 } from '../../shared/ui/primitives'
-import { CmsApi, CMS_CHANGED_EVENT, notifySiteUpdated, type Article, type Board, type Member, type Menu, type MenuTargetType, type Post, type SiteTemplate } from './api'
+import { CmsApi, SiteApi, CMS_CHANGED_EVENT, notifySiteUpdated, type Article, type Board, type Member, type Menu, type MenuTargetType, type Post, type PublicSiteContext, type SiteTemplate } from './api'
+import { TemplatePreview } from './TemplatePreview'
 import CmsAiAssistant, { NEW_BOARD_TARGET, NEW_CONTENT_TARGET, NEW_MENU_TARGET, postTargetId, type CmsAssistantTarget } from './assistant/CmsAiAssistant'
 import ContentEditor from './ContentEditor'
 import type { NaturalCmsApi } from './assistant/api'
@@ -515,12 +516,33 @@ function Boards({ api, onSelect, onCandidates, onMenus, monitoringAction }: {
   </>
 }
 
-function Templates({ api, monitoringAction }: { api: CmsApi; monitoringAction?: ReactNode }) {
+export function Templates({ api, monitoringAction }: { api: CmsApi; monitoringAction?: ReactNode }) {
   const [items, setItems] = useState<SiteTemplate[]>([])
   const [value, setValue] = useState<SiteTemplate | null>(null)
   const [preview, setPreview] = useState<SiteTemplate | null>(null)
   const [failure, setFailure] = useState<string | null>(null)
-  const load = () => api.templates().then((next) => { setItems(next); setValue((current) => current ? next.find((item) => item.key === current.key) ?? current : next[0]) }).catch((e) => setFailure(`불러오지 못했습니다. ${describeFailure(e)}`))
+  const [mainSite, setMainSite] = useState<PublicSiteContext | null>(null)
+  const [menus, setMenus] = useState<Menu[]>([])
+  const [contextWarning, setContextWarning] = useState<string | null>(null)
+  const load = async () => {
+    const siteApi = new SiteApi()
+    const context = siteApi.site('/').then((site) => {
+      if (!site.template?.key) throw new Error('메인 사이트 정보가 없습니다.')
+      setMainSite(site)
+      setContextWarning(null)
+      return site
+    }).catch(() => {
+      setMainSite(null)
+      setContextWarning('메인 적용 정보를 확인하지 못했습니다. 미리보기는 템플릿 예시값을 사용합니다.')
+      return null
+    })
+    void siteApi.menus().then(setMenus).catch(() => setMenus([]))
+    try {
+      const [next, site] = await Promise.all([api.templates(), context])
+      setItems(next)
+      setValue((current) => current ? next.find((item) => item.key === current.key) ?? current : next.find((item) => item.key === site?.template.key) ?? next[0] ?? null)
+    } catch (e) { setFailure(`불러오지 못했습니다. ${describeFailure(e)}`) }
+  }
   useCmsList(api, load)
   async function submit(event: FormEvent) {
     event.preventDefault()
@@ -533,12 +555,14 @@ function Templates({ api, monitoringAction }: { api: CmsApi; monitoringAction?: 
   return <>
     <Heading title="템플릿 관리" description="공통 디자인과 메인 화면, Header, Footer를 한곳에서 관리합니다.">{monitoringAction}</Heading>
     <Failure value={failure} />
+    <p className="mb-4 text-xs text-muted">{contextWarning ?? (mainSite ? `메인 사이트: ${mainSite.name} (/) · 적용 템플릿: ${mainSite.template.key}` : '메인 적용 정보를 확인하고 있습니다.')}</p>
     <div className="mb-[0.875rem] grid gap-[0.875rem] md:grid-cols-3">
       {items.map((item) => <article key={item.key} className={`${panel} grid content-start gap-3 p-4 ${value?.key === item.key ? 'border-primary ring-2 ring-[#eef2f7]' : ''}`}>
         <button type="button" className="text-left" aria-label={`${item.key} 템플릿 선택`} onClick={() => select(item)}>
           <span className="flex items-center gap-2 text-[0.65625rem] font-semibold text-run-fg">{item.key}</span>
           <h2 className="mb-1 mt-2 text-base font-semibold">{item.siteName}</h2>
           <span className="text-[0.6875rem] text-muted-2">{item.layout}</span>
+          {item.key === mainSite?.template.key && <span className="mt-2 block text-xs font-semibold text-primary">메인에 적용 중</span>}
         </button>
         <button type="button" className={`${secondaryButton} justify-center`} aria-label={`${item.key} 템플릿 미리보기`} onClick={() => setPreview(item)}>미리보기</button>
       </article>)}
@@ -547,15 +571,16 @@ function Templates({ api, monitoringAction }: { api: CmsApi; monitoringAction?: 
       <PanelTitle title={`${value.key} 템플릿 설정`} sub="저장한 내용은 이 템플릿을 사용하는 사이트에 반영됩니다.">
         <button type="button" className={smallButton} onClick={() => setPreview(value)}>현재 입력값 미리보기</button>
       </PanelTitle>
+      <p className="mx-4 text-xs text-muted">템플릿 선택은 편집 대상 선택입니다. 메인 적용 템플릿은 사이트 관리에서 변경합니다.</p>
       <div className="grid gap-4 p-4 md:grid-cols-2">
-        <TemplateField label="레이아웃" description="Header와 메인 영역의 배치·여백·강조 방식을 선택합니다.">
+        <TemplateField label="레이아웃" description="메인 관광 포털은 공통 배치를 유지하며 제목의 굵기·영문 대문자 강조가 달라집니다. 하위 사이트는 각 레이아웃의 배치를 사용합니다.">
           <select className={control} value={value.layout} onChange={(e) => setValue({ ...value, layout: e.target.value })}><option value="CLASSIC">Corporate</option><option value="MINIMAL">Minimal</option><option value="BOLD">Bold</option></select>
         </TemplateField>
         <TemplateField label="대표 색상" description="버튼, 링크, 강조 요소에 공통 적용되는 브랜드 색상입니다.">
           <input className={`${control} p-1`} type="color" value={value.primaryColor} onChange={(e) => setValue({ ...value, primaryColor: e.target.value })} />
         </TemplateField>
-        <TemplateField label="사이트명" description="사이트명은 사이트 관리에서 변경하며 여기서는 미리보기 값만 표시합니다.">
-          <div className="rounded-md border border-line bg-sub px-3 py-2 text-xs text-muted-2">{value.siteName}</div>
+        <TemplateField label="사이트명" description="사이트명은 사이트 관리에서 변경합니다. 메인 포털 미리보기에는 실제 메인 사이트명을 사용합니다.">
+          <div className="rounded-md border border-line bg-sub px-3 py-2 text-xs text-muted-2">{mainSite?.name ?? value.siteName}</div>
         </TemplateField>
         <TemplateField label="Header 보조 문구" description="사용자 화면 맨 위 안내 영역에 표시되는 짧은 문구입니다.">
           <input className={control} value={value.headerText} onChange={(e) => setValue({ ...value, headerText: e.target.value })} />
@@ -583,38 +608,12 @@ function Templates({ api, monitoringAction }: { api: CmsApi; monitoringAction?: 
         </div>
       </div>
     </form>}
-    {preview && <TemplatePreview value={preview} onClose={() => setPreview(null)} />}
+    {preview && <TemplatePreview value={preview} siteName={mainSite?.name} menus={menus} onClose={() => setPreview(null)} />}
   </>
 }
 
 function TemplateField({ label, description, wide = false, children }: { label: string; description: string; wide?: boolean; children: ReactNode }) {
   return <label className={`block text-[0.71875rem] font-semibold text-body ${wide ? 'md:col-span-2' : ''}`}><span>{label}</span>{children}<span className="mt-[0.375rem] block font-normal leading-[1.6] text-muted-2">{description}</span></label>
-}
-
-export function TemplatePreview({ value, onClose }: { value: SiteTemplate; onClose: () => void }) {
-  const style = { '--preview-brand': value.primaryColor } as CSSProperties
-  const minimal = value.layout === 'MINIMAL'
-  const bold = value.layout === 'BOLD'
-  return <div className="fixed inset-0 z-50 grid place-items-center bg-[#16293c]/70 p-4" role="presentation" onMouseDown={(event) => { if (event.currentTarget === event.target) onClose() }}>
-    <section className="max-h-[92vh] w-[min(980px,96vw)] overflow-auto rounded-md bg-white shadow-2xl" role="dialog" aria-modal="true" aria-label={`${value.key} 템플릿 미리보기`} style={style}>
-      <div className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-line-soft bg-white px-4 py-[0.875rem]"><div><b className="block text-[0.84375rem] font-semibold">{value.key} 템플릿 미리보기</b><small className="mt-[0.125rem] block text-[0.6875rem] text-muted-2">저장 전 화면 구성 예시입니다.</small></div><button type="button" className={smallButton} onClick={onClose}>닫기</button></div>
-      <div className={`overflow-hidden ${minimal ? 'bg-white' : 'bg-[#f5f7f6]'}`}>
-        <div className="border-b border-[#e5e9e7] bg-white px-7 py-3 text-[0.625rem] text-[#64716c]">{value.headerText}</div>
-        <header className={`flex items-center gap-6 bg-white px-7 ${bold ? 'py-6' : 'py-4'}`}><span className="grid h-10 w-10 place-items-center rounded-full text-xs font-black text-white" style={{ background: value.primaryColor }}>AX</span><strong className={`${bold ? 'text-xl uppercase tracking-tight' : 'text-lg'}`}>{value.siteName}</strong><nav className="ml-auto hidden gap-5 text-xs font-bold sm:flex"><span>소개</span><span>Products</span><span>Service</span><span>고객지원</span></nav></header>
-        <main className={`relative overflow-hidden ${minimal ? 'grid min-h-[24.375rem] items-center bg-white md:grid-cols-2' : 'min-h-[26.875rem] text-white'}`}>
-          <div className={`${minimal ? 'order-2 min-h-[18.75rem]' : 'absolute inset-0'} bg-cover bg-center`} style={{ backgroundImage: `url(${value.heroImageUrl})` }} />
-          {!minimal && <div className={`absolute inset-0 ${bold ? 'bg-[linear-gradient(90deg,rgba(20,18,34,.94),rgba(20,18,34,.28))]' : 'bg-[linear-gradient(90deg,rgba(13,47,36,.9),rgba(13,47,36,.22))]'}`} />}
-          <div className={`relative z-[1] p-10 ${minimal ? 'order-1 text-[#1c2924]' : 'max-w-[40.625rem] py-20'}`}>
-            <span className="text-[0.625rem] font-bold tracking-[.2em]" style={{ color: minimal ? value.primaryColor : '#cce8dc' }}>{value.layout} TEMPLATE</span>
-            <h2 className={`${bold ? 'text-5xl uppercase' : 'text-4xl'} mb-4 mt-5 leading-tight tracking-[-.05em]`}>{value.heroTitle}</h2>
-            <p className={`max-w-[35rem] text-sm leading-7 ${minimal ? 'text-[#62706a]' : 'text-white/75'}`}>{value.heroSubtitle}</p>
-            <span className="mt-5 inline-flex rounded-full px-5 py-3 text-xs font-bold text-white" style={{ background: value.primaryColor }}>{value.heroButtonLabel || '버튼 문구'}</span>
-          </div>
-        </main>
-        <footer className="bg-[#17241f] px-7 py-7 text-white"><strong>{value.siteName}</strong><p className="mb-0 mt-2 text-xs text-white/60">{value.footerText}</p></footer>
-      </div>
-    </section>
-  </div>
 }
 
 /**

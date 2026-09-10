@@ -9,6 +9,8 @@ import GuardrailWorkspace from '../features/coding/GuardrailWorkspace'
 import { KnowledgeAdminApi } from '../features/knowledge/admin-api'
 import { usePendingApprovals } from '../features/knowledge/pending-approvals'
 import OpsWorkspace from '../features/ops/OpsWorkspace'
+import GovernanceWorkspace from '../features/governance/GovernanceWorkspace'
+import { HistoryApi } from '../features/governance/api'
 import AgentSettingsWorkspace from '../features/orchestration/AgentSettingsWorkspace'
 import ActiveJobMonitoringLink from '../features/orchestration/ActiveJobMonitoringLink'
 import { ProfileVersionApi } from '../features/orchestration/api'
@@ -127,6 +129,7 @@ function AuthenticatedAdmin({ session, theme, onToggleTheme, onRefresh, onExpire
   const permitted = routesForRole(session.actor.role)
   const lifecycle = useMemo(() => sessionLifecycle(session.sessionToken, onRefresh, onExpired), [session.sessionToken, onRefresh, onExpired])
   const cmsApi = useMemo(() => new CmsApi(session.sessionToken, lifecycle.refreshed, lifecycle.expired), [session.sessionToken, lifecycle])
+  const historyApi = useMemo(() => new HistoryApi(session.sessionToken, lifecycle.refreshed, lifecycle.expired), [session.sessionToken, lifecycle])
   const profileApi = useMemo(() => new ProfileVersionApi(session.sessionToken, lifecycle.refreshed, lifecycle.expired), [session.sessionToken, lifecycle])
   const siteSettingsApi = useMemo(() => new CmsSiteSettingsApi(session.sessionToken, lifecycle.refreshed, lifecycle.expired), [session.sessionToken, lifecycle])
   const naturalCmsApi = useMemo(() => new NaturalCmsApi(session.sessionToken, lifecycle.refreshed, lifecycle.expired), [session.sessionToken, lifecycle])
@@ -252,6 +255,8 @@ function AuthenticatedAdmin({ session, theme, onToggleTheme, onRefresh, onExpire
                 ? <CodingWorkspace api={codingApi} role={session.actor.role} monitoringAction={monitoringAction('LLM_OPS')} />
               : route.id === 'guardrail'
                 ? <GuardrailWorkspace api={codingApi} />
+              : route.id === 'approvals' || route.id === 'runs'
+                ? <GovernanceWorkspace route={route.id} api={historyApi} role={session.actor.role} />
               : <OpsWorkspace route={route.id} actorName={session.actor.name} roleLabel={ROLE_LABELS[session.actor.role]} role={session.actor.role} knowledgeApi={knowledgeApi} profileApi={profileApi} siteSettingsApi={siteSettingsApi} />}
           />)}
           <Route path="/admin/*" element={<Navigate to={pathForRoute(fallback)} replace />} />

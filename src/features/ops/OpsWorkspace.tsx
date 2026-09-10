@@ -19,8 +19,6 @@ export default function OpsWorkspace({ route, actorName, roleLabel, role, knowle
   if (route === 'agents') return <Agents />
   if (route === 'rag') return <RagAdminPanel api={knowledgeApi} role={role} />
   if (route === 'devops') return <Devops />
-  if (route === 'approvals') return <Approvals />
-  if (route === 'runs') return <Runs />
   if (route === 'system-settings') return <SystemSettings profileApi={profileApi} siteSettingsApi={siteSettingsApi} />
   if (route === 'sites') return <Sites api={siteSettingsApi} />
   return <Settings roleLabel={roleLabel} />
@@ -241,44 +239,6 @@ function RuntimeFact({ label, state, tone, description }: {
     </div>
     <p className="mt-3 text-[0.6875rem] leading-5 text-muted-2">{description}</p>
   </article>
-}
-
-function Approvals() {
-  return <>
-    <PageHead title="승인 관리" description="현재 Runtime의 승인 대기 경계와 향후 연결 범위를 확인합니다.">
-      <Badge tone="run" dot={false}>임시 목업</Badge>
-    </PageHead>
-    <RuntimeMockNotice>승인·반려 목록과 처리 이력 API가 없어 가짜 요청·건수·처리 버튼을 표시하지 않습니다.</RuntimeMockNotice>
-
-    <section className={panel}>
-      <PanelTitle title="현재 Runtime 연결 상태" sub="실제 Job 계약 기준" />
-      <div className="grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-3">
-        <RuntimeFact label="Spring Job 상태" state="구현됨" tone="ok" description="Job 상태에 WAITING_APPROVAL 경계가 있습니다." />
-        <RuntimeFact label="Checkpoint 대기·재개" state="기반 있음" tone="wait" description="Runner의 checkpoint 경로는 있으나 공통 Approval Handler 연결은 후속 작업입니다." />
-        <RuntimeFact label="승인 처리·이력 API" state="미연결" tone="idle" description="승인·반려 callback과 운영 이력 화면 계약은 아직 없습니다." />
-      </div>
-    </section>
-  </>
-}
-
-/* ------------------------------------------------------------------ 실행 이력 */
-
-function Runs() {
-  return <>
-    <PageHead title="실행 이력" description="현재 Runtime의 Job 실행 경계와 향후 조회 범위를 확인합니다.">
-      <Badge tone="run" dot={false}>임시 목업</Badge>
-    </PageHead>
-    <RuntimeMockNotice>Job 조회·검색·통계 API가 없어 가짜 실행 기록, 로딩 수치, CSV 버튼을 표시하지 않습니다.</RuntimeMockNotice>
-
-    <section className={panel}>
-      <PanelTitle title="현재 Runtime 연결 상태" sub="Spring 소유 Job 기준" />
-      <div className="grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-3">
-        <RuntimeFact label="Job 상태 저장" state="구현됨" tone="ok" description="PostgreSQL Job이 실행 상태와 고정된 Profile Version을 소유합니다." />
-        <RuntimeFact label="Queue·Runner 연결" state="구현됨" tone="ok" description="Queue는 jobId만 전달하고 Runner는 Claim Context로 Snapshot을 조회합니다." />
-        <RuntimeFact label="이력 조회·통계 API" state="미연결" tone="idle" description="목록·필터·기간 통계·내보내기는 별도 조회 계약이 생긴 뒤 구현합니다." />
-      </div>
-    </section>
-  </>
 }
 
 /* ------------------------------------------------------------------ 사이트 관리 */
