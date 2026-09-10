@@ -1,60 +1,78 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { Fragment, useEffect, useState, type FormEvent, type ReactNode } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import type { Menu, SiteTemplate } from '../cms/api'
+import type { Menu, Post, SiteTemplate } from '../cms/api'
 import { tabToCategory } from '../knowledge/category'
 import { useRagQuery } from '../knowledge/useRagQuery'
 import { withParticle } from './particle'
-import { addressLine, PORTAL_TABS } from './portal-meta'
+import { addressLine, festivalBadge, highlightTitles, PORTAL_TABS } from './portal-meta'
 import { describePortalStatus } from './portal-status'
-import { Placeholder, SampleNotice } from './portal-primitives'
+import { Placeholder, PhotoTag, SampleNotice } from './portal-primitives'
 import { PortalResultCard } from './PortalResultCard'
 
 /**
- * 관광 포털 정적 화면(I8) — Claude Design 시안 `Travel Portal Redesign.dc.html`을 React로 옮겼다.
- * 검색 API 연동은 I7, 챗봇 실배선은 I6이 맡는다. 이 파일의 MOCK_* 데이터가 그 교체 지점이다.
+ * 관광 포털 3화면(홈·통합 검색·챗봇) — Claude Design 핸드오프
+ * `design_handoff_tour_portal_redesign`(Portal-Main·Portal-Search·Portal-Chatbot)을 React로 옮겼다.
  *
- * <p>시안의 색은 전부 기존 tokens.css 값과 일치해 새 토큰을 만들지 않았다. 시안이 px로 쓴 크기는
- * 루트 font-size가 유동(clamp)인 이 프로젝트 규약에 맞춰 rem으로 옮겼다.
+ * <p>바뀐 것은 마크업·클래스·문구뿐이다. 검색·챗봇의 공개 API 연동, CMS 계약값(`SiteTemplate`),
+ * 메뉴 API, 상태 6종 분기(`describePortalStatus`)는 이전 구현을 그대로 쓴다.
+ *
+ * <p>시안의 색은 전부 `site-theme.css` 토큰 값과 같아 새 토큰을 만들지 않았다. 시안이 px로 쓴
+ * 크기는 루트 font-size가 유동(clamp)인 이 프로젝트 규약에 맞춰 rem으로 옮겼다.
  */
 
-function SearchGlyph({ size = '1.25rem' }: { size?: string }) {
-  return <span className="relative box-border flex-none rounded-full border-[2.5px] border-ink" style={{ width: size, height: size }} aria-hidden="true">
-    <span className="absolute -bottom-[3px] -right-[5px] h-[2.5px] w-2 rotate-45 rounded-sm bg-ink" />
+/** 시안 검색바의 돋보기(원 + 손잡이). */
+function SearchGlyph({ size = 18 }: { size?: number }) {
+  return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="flex-none" aria-hidden="true">
+    <circle cx="11" cy="11" r="7" /><path d="m16.5 16.5 4 4" />
+  </svg>
+}
+
+/** 시안 헤더의 원형 로고 마크(종이비행기). */
+function BrandMark({ size = '2.125rem' }: { size?: string }) {
+  return <span className="grid flex-none place-items-center rounded-full bg-primary" style={{ width: size, height: size }} aria-hidden="true">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="#ffffff"><path d="M20 4 4 11l7 2 2 7z" /></svg>
   </span>
 }
 
-/** 시안 헤더의 원형 로고 마크(삼각형). */
-function BrandMark({ size = '2.125rem' }: { size?: string }) {
-  return <span className="relative grid flex-none place-items-center rounded-full bg-primary" style={{ width: size, height: size }} aria-hidden="true">
-    <span className="h-0 w-0 rotate-45 border-x-[0.375rem] border-b-[0.8125rem] border-x-transparent border-b-white" style={{ transform: 'rotate(45deg) translate(2px,-1px)' }} />
-  </span>
+/** 챗봇 버튼·패널·AI 요약이 함께 쓰는 말풍선 아이콘. */
+function ChatGlyph({ size = 22 }: { size?: number }) {
+  return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+    <path d="M4 6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5v7a2.5 2.5 0 0 1-2.5 2.5H9l-5 4z" />
+  </svg>
 }
 
 /**
  * 홈·검색 결과가 함께 쓰는 사이트 헤더.
  *
- * <p>시안의 고정 메뉴 3종·언어 선택·로그인 버튼 대신 실제 CMS 메뉴 계약을 표시한다. 우측 슬롯은
- * 실제로 동작하는 CMS 관리자 링크를 유지한다.
+ * <p>워드마크는 시안의 두 줄 스택이다. 윗줄은 CMS `siteName`을 그대로 쓰고 아랫줄만 화면 종류를
+ * 밝히는 고정 라틴 표기다 — 사이트 이름은 CMS 관리자가 정한다는 계약을 깨지 않는다.
+ *
+ * <p>시안의 고정 메뉴 4종 대신 실제 CMS 메뉴 계약을 표시한다. 우측 상단 슬롯은 실제로 동작하는
+ * CMS 관리자 링크를 유지한다.
  */
 export function PortalHeader({ template, menus }: { template: SiteTemplate; menus: Menu[] }) {
   const roots = menus.filter((menu) => menu.parentId === null)
 
   return <header className="border-b border-line-soft bg-panel">
     <div className="border-b border-line-soft bg-page">
-      <div className="mx-auto flex max-w-[80rem] items-center justify-between gap-4 px-7 py-2 text-[0.6875rem] text-muted max-[560px]:px-4">
+      <div className="mx-auto flex max-w-[75rem] items-center justify-between gap-4 px-7 py-2 text-[0.6875rem] text-muted max-[560px]:px-4">
         <span>{template.headerText}</span>
-        <Link className="whitespace-nowrap font-semibold text-body no-underline hover:text-ink" to="/admin">CMS 관리자</Link>
+        <Link className="whitespace-nowrap font-bold text-body no-underline hover:text-ink" to="/admin">CMS 관리자</Link>
       </div>
     </div>
-    <div className="mx-auto flex h-[4.75rem] max-w-[80rem] items-center gap-7 px-7 max-[560px]:h-16 max-[560px]:px-4">
-      <Link to="/" className="mr-auto flex items-center gap-[0.625rem] whitespace-nowrap text-[1.1875rem] font-extrabold tracking-[-.04em] text-ink no-underline">
-        <BrandMark />{template.siteName}
+    <div className="mx-auto flex h-[4.75rem] max-w-[75rem] items-center gap-7 px-7 max-[560px]:h-16 max-[560px]:px-4">
+      <Link to="/" className="mr-auto flex items-center gap-[0.625rem] whitespace-nowrap text-ink no-underline">
+        <BrandMark />
+        <span className="flex flex-col gap-1">
+          <span className="text-[1.375rem] font-black leading-none tracking-[-.06em]">{template.siteName}</span>
+          <span className="text-[0.59375rem] font-extrabold tracking-[.22em]">TOURISM PORTAL</span>
+        </span>
       </Link>
       <nav className="hidden h-full items-stretch lg:flex" aria-label="주 메뉴">
         {roots.map((root) => {
           const children = menus.filter((menu) => menu.parentId === root.id)
           return <div className="group relative flex items-center" key={root.id}>
-            <Link className="px-4 py-7 text-[0.8125rem] font-bold text-body no-underline hover:text-primary" to={portalUrl(root.path)}>{root.name}</Link>
+            <Link className="px-[0.8125rem] py-7 text-[0.8125rem] font-bold text-body no-underline hover:text-primary" to={portalUrl(root.path)}>{root.name}</Link>
             {children.length > 0 && <div className="invisible absolute left-1/2 top-[4.25rem] z-20 min-w-[11.875rem] -translate-x-1/2 translate-y-2 rounded-b-xl border-t-2 border-primary bg-panel p-2 opacity-0 shadow-[0_18px_45px_rgba(22,34,47,.14)] transition group-hover:visible group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:visible group-focus-within:translate-y-0 group-focus-within:opacity-100">
               {children.map((child) => <Link className="block rounded-lg px-4 py-[0.625rem] text-xs text-body no-underline hover:bg-page hover:text-primary" key={child.id} to={portalUrl(child.path)}>{child.name}</Link>)}
             </div>}
@@ -72,8 +90,12 @@ function portalUrl(path: string) {
   return path.startsWith('/') ? path : `/${path}`
 }
 
+function searchUrl(category: string) {
+  return category === 'all' ? '/search' : `/search?category=${category}`
+}
+
 type CurationCard = { name: string; cat: string; desc: string }
-type CurationSection = { title: string; total: number; cards: CurationCard[] }
+type CurationSection = { id: string; title: string; total: number; cards: CurationCard[] }
 
 /**
  * 코퍼스 500건을 탭 카테고리로 집계해 상위 3개(관광지 192·음식 95·숙박 72)를 섹션으로 삼는다.
@@ -83,21 +105,35 @@ type CurationSection = { title: string; total: number; cards: CurationCard[] }
  * 않는다. 제목은 카테고리명, 부제는 집계한 건수뿐이다.
  */
 const HOME_SECTIONS: CurationSection[] = [
-  { title: '관광지', total: 192, cards: [
+  { id: 'attraction', title: '관광지', total: 192, cards: [
     { name: '송파책박물관', cat: '문화관광 > 전시시설', desc: '전국 최초의 공립 책 박물관으로, 책을 주제로 한 전시·교육·연구를 한다.' },
     { name: '세계조개박물관', cat: '문화관광 > 전시시설', desc: '신안군 자은도에 있으며 갯벌의 환경지표인 조개와 고동류를 전시한다.' },
     { name: '세계물포럼기념센터', cat: '문화관광 > 전시시설', desc: '안동시 성곡동에 있는 2015 대구경북세계물포럼 기념 시설이다.' },
   ] },
-  { title: '음식', total: 95, cards: [
+  { id: 'food', title: '음식', total: 95, cards: [
     { name: '반도식당', cat: '음식 > 한식', desc: '경주에서 오래된 갈비 맛집으로, 연탄불에 한우 생갈비를 구워 먹는 노포다.' },
     { name: '발산삼계탕', cat: '음식 > 한식', desc: '지하철 5호선 6번 출구 부근에 있고 상가 건물 앞에 자체 주차장이 있다.' },
     { name: '바타타식탁', cat: '음식 > 한식', desc: '표선해수욕장 앞 해산물 요리 전문점으로 제주산 해산물 메뉴가 다양하다.' },
   ] },
-  { title: '숙박', total: 72, cards: [
+  { id: 'stay', title: '숙박', total: 72, cards: [
     { name: '도원', cat: '숙박 > 펜션/민박', desc: '객리단길에 위치한 한옥독채스테이로, 마당에서 실외 욕조를 쓸 수 있다.' },
     { name: '더블힐링펜션', cat: '숙박 > 펜션/민박', desc: '모든 객실에 스파를 갖췄고 부안 고사포 해변이 한눈에 들어온다.' },
     { name: '더존펜션', cat: '숙박 > 펜션/민박', desc: '월악산국립공원 내에 있고 청정 1급수 용하구곡을 앞에 두고 있다.' },
   ] },
+]
+
+/**
+ * 시안의 "지금 열리는 축제·행사" 스트립. 큐레이션 목록과 같은 고정 표본이다 — 코퍼스에 행사
+ * 목록 API가 없다.
+ *
+ * <p>다만 뱃지는 고정하지 않는다. 시연 날짜가 바뀌면 "D-23"이 곧 거짓이 되므로 기간에서
+ * 계산한다(`festivalBadge`). 날짜는 코퍼스 문서의 `event_start_date`·`event_end_date` 값이다.
+ */
+const FESTIVALS = [
+  { name: '2026 화성행궁 야간개장', start: '2026-05-01', end: '2026-11-01', place: '수원' },
+  { name: '진주남강유등축제', start: '2026-10-03', end: '2026-10-18', place: '진주' },
+  { name: '광주 추억의 충장축제', start: '2026-10-07', end: '2026-10-11', place: '광주' },
+  { name: '임실N치즈축제', start: '2026-10-08', end: '2026-10-11', place: '임실' },
 ]
 
 const TAB_PLACEHOLDERS: Record<string, string> = {
@@ -111,20 +147,22 @@ const TAB_PLACEHOLDERS: Record<string, string> = {
   event: '어떤 축제를 찾으시나요?',
 }
 
-function SectionHead({ title, total }: { title: string; total: number }) {
+/** 섹션 머리 — 근거를 댈 수 있는 부제는 집계 건수뿐이라 그것만 남긴다. */
+function SectionHead({ title, eyebrow, moreCategory }: { title: string; eyebrow: string; moreCategory?: string }) {
   return <div className="flex items-end justify-between gap-5">
     <div>
-      {/* 시안의 감성 부제 자리. 근거를 댈 수 있는 값은 집계 건수뿐이라 그것만 남긴다. */}
-      <p className="m-0 mb-[0.625rem] text-xs font-bold tracking-[.08em] text-muted">코퍼스 {total}건 중 3건</p>
-      <h2 className="m-0 text-[clamp(1.625rem,3vw,2.25rem)] font-extrabold tracking-[-.04em] text-ink">{title}</h2>
+      <p className="m-0 mb-2 text-xs font-bold text-muted">{eyebrow}</p>
+      <h2 className="m-0 text-[clamp(1.5rem,3vw,2rem)] font-extrabold tracking-[-.04em] text-ink">{title}</h2>
     </div>
+    {moreCategory && <Link className="whitespace-nowrap text-[0.8125rem] font-bold text-body no-underline hover:text-ink" to={searchUrl(moreCategory)}>전체 보기 →</Link>}
   </div>
 }
 
-export function PortalHome({ template }: { template: SiteTemplate }) {
+export function PortalHome({ template, menus = [], notices = [] }: { template: SiteTemplate; menus?: Menu[]; notices?: Post[] }) {
   const navigate = useNavigate()
   const [draft, setDraft] = useState('')
   const [tab, setTab] = useState('all')
+  const [page, setPage] = useState(1)
 
   function submit(event: FormEvent) {
     event.preventDefault()
@@ -137,103 +175,191 @@ export function PortalHome({ template }: { template: SiteTemplate }) {
   }
 
   const [hero, ...rest] = HOME_SECTIONS
+  const quickLinks = menus.filter((menu) => menu.parentId === null).slice(0, 4)
+  const notice = notices[0]
 
   return <main>
-    <PortalHero template={template} />
+    {/* 시안의 풀블리드 히어로. CMS 히어로 계약(사진·제목·부제·버튼)을 위에 두고, 통합 검색을
+        같은 사진 위에 이어 붙여 첫 화면에서 바로 검색이 시작되게 한다. */}
+    <div className="relative overflow-hidden bg-primary text-white">
+      <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: `url(${template.heroImageUrl})` }} aria-hidden="true" />
+      <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(16,28,42,.9)_0%,rgba(16,28,42,.78)_55%,rgba(16,28,42,.88)_100%)]" aria-hidden="true" />
+      <div className="relative mx-auto max-w-[75rem] px-7 pb-16 pt-14 text-center max-[560px]:px-4 max-[560px]:pt-10">
+        <PortalHero template={template} />
 
-    <section className="mx-auto max-w-[75rem] px-7 pb-2 pt-20 text-center max-[560px]:px-4 max-[560px]:pt-14">
-      <h1 className="m-0 text-[clamp(2.5rem,6vw,4.75rem)] font-extrabold leading-[1.12] tracking-[-.05em] text-ink">어디로 떠나볼까요?</h1>
+        <div className="mx-auto mt-9 max-w-[45rem] border-t border-white/15 pt-9">
+          <h2 className="m-0 text-[1.375rem] font-extrabold tracking-[-.04em] text-white">어디로 떠나볼까요?</h2>
 
-      {/* 탭 8종은 portal-meta의 확정 상수 그대로다. 시안은 6종이지만 확정안이 우선한다. */}
-      <div role="tablist" aria-label="여행 검색 카테고리" className="mt-12 flex flex-wrap items-center justify-center gap-1">
-        {PORTAL_TABS.map((item) => {
-          const on = item.id === tab
-          return <button
-            key={item.id}
-            type="button"
-            role="tab"
-            aria-selected={on}
-            onClick={() => setTab(item.id)}
-            className={`border-b-2 bg-transparent px-4 pb-3 pt-1 text-[0.9375rem] ${on ? 'border-ink font-extrabold text-ink' : 'border-transparent font-semibold text-muted'}`}
-          >{item.label}</button>
-        })}
+          {/* 탭 8종은 portal-meta의 확정 상수 그대로다. 시안이 6종이어도 확정안이 우선한다. */}
+          <div role="tablist" aria-label="여행 검색 카테고리" className="mt-6 flex flex-wrap items-center justify-center gap-1.5">
+            {PORTAL_TABS.map((item) => {
+              const on = item.id === tab
+              return <button
+                key={item.id}
+                type="button"
+                role="tab"
+                aria-selected={on}
+                onClick={() => setTab(item.id)}
+                className={`rounded-full border px-[1.0625rem] py-2 text-[0.8125rem] font-bold ${on ? 'border-white bg-white text-ink' : 'border-white/20 bg-white/10 text-white/90'}`}
+              >{item.label}</button>
+            })}
+          </div>
+
+          <form onSubmit={submit} className="mt-[1.625rem] flex h-14 items-center gap-3 rounded-full bg-panel py-0 pl-[1.375rem] pr-2 text-ink shadow-[0_2px_14px_rgba(22,34,47,0.14)]">
+            <SearchGlyph />
+            <input value={draft} onChange={(event) => setDraft(event.target.value)} aria-label="여행지 검색" placeholder={TAB_PLACEHOLDERS[tab] ?? TAB_PLACEHOLDERS.all} className="min-w-0 flex-1 border-0 bg-transparent text-[0.9375rem] text-ink outline-0" />
+            <button type="submit" className="h-11 flex-none rounded-full bg-primary px-7 text-sm font-bold text-white">검색</button>
+          </form>
+          <p className="m-0 mt-[0.875rem] text-xs text-white/65">수집된 관광 문서에서 근거를 찾아 답합니다 · 근거가 없으면 답하지 않습니다</p>
+        </div>
       </div>
+    </div>
 
-      <form onSubmit={submit} className="mx-auto mt-9 flex h-16 max-w-[45rem] items-center gap-3 rounded-full border border-field-line bg-panel py-0 pl-6 pr-2 shadow-[0_2px_14px_rgba(22,34,47,0.07)]">
-        <SearchGlyph />
-        <input value={draft} onChange={(event) => setDraft(event.target.value)} aria-label="여행지 검색" placeholder={TAB_PLACEHOLDERS[tab] ?? TAB_PLACEHOLDERS.all} className="min-w-0 flex-1 border-0 bg-transparent text-base text-ink outline-0" />
-        <button type="submit" className="h-12 flex-none rounded-full bg-primary px-8 text-[0.9375rem] font-bold text-white">검색</button>
-      </form>
+    <section className="border-b border-line-soft bg-page">
+      <div className="mx-auto max-w-[75rem] px-7 pb-[3.75rem] pt-14 max-[560px]:px-4">
+        <SectionHead title="지금 열리는 축제·행사" eyebrow={`${todayLabel()} 기준 · 진행·예정 19건`} moreCategory="event" />
+        <div className="mt-6 grid gap-5 [grid-template-columns:repeat(auto-fit,minmax(13.125rem,1fr))]">
+          {FESTIVALS.map((festival) => <article key={festival.name}>
+            <div className="relative overflow-hidden rounded-xl border border-line-soft">
+              <Placeholder label={`포스터 · ${festival.name}`} className="aspect-[3/4]" />
+              <span className="pointer-events-none absolute left-[0.625rem] top-[0.625rem] rounded-md bg-white/95 px-[0.5625rem] py-1 text-[0.6875rem] font-extrabold text-ink">{festivalBadge(festival.start, festival.end)}</span>
+              <PhotoTag />
+            </div>
+            <strong className="mt-3 block text-sm font-bold text-ink">{festival.name}</strong>
+            <span className="mt-1 block text-xs text-muted">{dayRange(festival.start, festival.end)} · {festival.place}</span>
+          </article>)}
+        </div>
+      </div>
     </section>
 
-    <div className="mx-auto max-w-[75rem] px-7 pb-28 max-[560px]:px-4">
-      {/* 첫 섹션만 1:1 대형 카드다. 플레이스홀더 위에 시안의 그라데이션을 덮어 흰 제목 대비를 확보한다. */}
+    <div className="mx-auto max-w-[75rem] px-7 max-[560px]:px-4">
       <section className="pt-16 max-[560px]:pt-12">
         {/* 검색·챗봇은 배선됐지만 이 큐레이션 목록은 여전히 고정이다 — 만들 API가 없다.
-            "검색 API 미배선"이라는 기본 라벨은 이제 사실이 아니므로 이 자리에 맞는 문구를 넘긴다. */}
+            시안에는 이 고지가 없지만, 실재하는 이름을 고정 표시하는 화면이라 구별 단서를 남긴다. */}
         <SampleNotice label="샘플 데이터 · 추천 목록은 고정입니다" className="mb-8">
           아래 카드는 코퍼스에 실재하는 문서를 카테고리별로 고정 표시한 것입니다. 조회수·계절 같은 큐레이션 축이 없어 집계 상위 카테고리와 코퍼스 순서로만 골랐습니다.
         </SampleNotice>
-        <SectionHead title={hero.title} total={hero.total} />
-        <div className="mt-8 grid grid-cols-3 gap-5 max-[900px]:grid-cols-2 max-[560px]:grid-cols-1">
-          {hero.cards.map((card) => <article key={card.name} className="relative overflow-hidden rounded-2xl">
-            <Placeholder label={`사진 · ${card.name}`} className="aspect-square">
-              <span className="absolute inset-0 bg-[linear-gradient(to_top,rgba(0,0,0,0.7),rgba(0,0,0,0.1)_55%,transparent)]" aria-hidden="true" />
-              <strong className="absolute inset-x-6 bottom-6 text-[1.625rem] font-extrabold leading-[1.25] text-white">{card.name}</strong>
-            </Placeholder>
-          </article>)}
+        <SectionHead title={hero.title} eyebrow={`코퍼스 ${hero.total}곳 · TourAPI 실사진 표시 예정`} moreCategory={hero.id} />
+
+        {/* 1페이지만 실재 문서다. 2페이지 이후는 만들 API가 없어 빈 자리로 두고 그렇게 밝힌다. */}
+        <div className="mt-[1.375rem] grid gap-5 [grid-template-columns:repeat(auto-fit,minmax(16.25rem,1fr))]">
+          {page === 1
+            ? hero.cards.map((card) => <article key={card.name} className="relative overflow-hidden rounded-xl border border-line-soft">
+              <Placeholder label={`사진 · ${card.name}`} className="aspect-[1/1.05]">
+                <span className="absolute inset-0 bg-[linear-gradient(to_top,rgba(0,0,0,0.72),rgba(0,0,0,0.08)_55%,transparent)]" aria-hidden="true" />
+                <strong className="absolute inset-x-[1.375rem] bottom-[1.375rem] text-[1.3125rem] font-extrabold tracking-[-.03em] text-white">{card.name}</strong>
+              </Placeholder>
+              <PhotoTag />
+            </article>)
+            : [0, 1, 2].map((slot) => <div key={slot} className="grid aspect-[1/1.05] place-items-center rounded-xl border border-line-soft bg-[repeating-linear-gradient(45deg,var(--site-ph)_0_12px,var(--site-ph-line)_12px_24px)] px-4 text-center text-[0.6875rem] text-site-ph-ink">
+              코퍼스 {hero.total}곳 · {page}페이지 문서는 배선 후 채워집니다
+            </div>)}
+        </div>
+
+        <div className="mt-[1.375rem] flex items-center justify-center gap-2">
+          {[1, 2, 3, 4].map((number) => <button
+            key={number}
+            type="button"
+            aria-label={`${number}페이지`}
+            aria-current={number === page ? 'true' : undefined}
+            onClick={() => setPage(number)}
+            className={`h-1.5 rounded-full ${number === page ? 'w-[1.125rem] bg-ink' : 'w-1.5 bg-[#c9d2dc]'}`}
+          />)}
         </div>
       </section>
 
-      {rest.map((section) => <section key={section.title} className="pt-24 max-[560px]:pt-14">
-        <SectionHead title={section.title} total={section.total} />
-        <div className="mt-8 grid grid-cols-3 gap-5 max-[900px]:grid-cols-2 max-[560px]:grid-cols-1">
+      {rest.map((section) => <section key={section.title} className="pt-[4.5rem] max-[560px]:pt-14 last:pb-[5.5rem]">
+        <SectionHead title={section.title} eyebrow={`코퍼스 ${section.total}곳`} moreCategory={section.id} />
+        <div className="mt-[1.375rem] grid gap-5 [grid-template-columns:repeat(auto-fit,minmax(16.25rem,1fr))]">
           {section.cards.map((card) => <article key={card.name}>
-            <Placeholder label={`사진 · ${card.name}`} className="aspect-[4/3] rounded-2xl" />
-            <strong className="mt-4 block text-lg font-bold tracking-[-.02em] text-ink">{card.name}</strong>
+            <div className="relative overflow-hidden rounded-xl border border-line-soft">
+              <Placeholder label={`사진 · ${card.name}`} className="aspect-[4/3]" />
+              <PhotoTag />
+            </div>
+            <strong className="mt-[0.875rem] block text-base font-bold tracking-[-.02em] text-ink">{card.name}</strong>
             <span className="mt-1 block text-[0.6875rem] font-semibold text-muted-2">{card.cat}</span>
-            <span className="mt-1 block text-sm leading-[1.6] text-muted">{card.desc}</span>
+            <span className="mt-1.5 block text-[0.8125rem] leading-[1.6] text-muted">{card.desc}</span>
           </article>)}
         </div>
       </section>)}
     </div>
+
+    {quickLinks.length > 0 && <section className="border-t border-line-soft bg-page">
+      <div className="mx-auto max-w-[75rem] px-7 pb-[4.5rem] pt-16 text-center max-[560px]:px-4">
+        <p className="m-0 mb-2 text-xs font-bold text-muted">CMS 메뉴 관리와 실시간 동기화</p>
+        <h2 className="m-0 mb-7 text-[clamp(1.5rem,3vw,2rem)] font-extrabold tracking-[-.04em] text-ink">여행 정보</h2>
+        <div className="grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(12.5rem,1fr))]">
+          {quickLinks.map((menu) => <Link key={menu.id} to={portalUrl(menu.path)} className="block rounded-xl border border-line bg-panel px-[1.125rem] py-[1.625rem] text-inherit no-underline hover:border-primary">
+            <span className="mx-auto grid h-10 w-10 place-items-center rounded-full bg-page">
+              <MenuGlyph target={menu.targetType} />
+            </span>
+            <strong className="mt-[0.875rem] block text-sm font-bold text-ink">{menu.name}</strong>
+            <span className="mt-1 block text-xs text-muted">{MENU_KIND[menu.targetType]}</span>
+          </Link>)}
+        </div>
+      </div>
+    </section>}
+
+    {/* 시안의 공지 배너 자리. 문구를 지어내지 않고 CMS 게시판의 최신 글 1건을 그대로 건다. */}
+    {notice && <div className="mx-auto max-w-[75rem] px-7 pb-11 pt-9 max-[560px]:px-4">
+      <Link to={`/posts/${notice.id}`} className="flex items-center gap-[0.875rem] rounded-[0.625rem] border border-[#efd8aa] bg-wait-bg px-[1.125rem] py-[0.875rem] no-underline">
+        <span className="grid h-7 w-7 flex-none place-items-center rounded-full bg-[rgba(150,101,42,.12)]" aria-hidden="true">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-wait-fg"><path d="M4 10v4h3l5 4V6L7 10z" /><path d="M16.5 9.5a4 4 0 0 1 0 5" /></svg>
+        </span>
+        <span className="min-w-0 flex-1">
+          <strong className="block text-[0.8125rem] font-bold text-wait-fg">공지 · {notice.title}</strong>
+          <span className="mt-0.5 block text-xs text-[#a9793c]">CMS 게시판의 최신 공지 1건이 이 자리에 자동 노출됩니다</span>
+        </span>
+        <span className="flex-none text-xs font-bold text-wait-fg">자세히 →</span>
+      </Link>
+    </div>}
   </main>
 }
 
-/** CMS의 단일 Hero 계약을 관광 포털의 둥근 카드형 시각 언어로 표현한다. */
+const MENU_KIND: Record<string, string> = { BOARD: '게시판', CONTENT: '콘텐츠 페이지', NONE: '메뉴' }
+
+function MenuGlyph({ target }: { target: string }) {
+  const path = target === 'BOARD'
+    ? 'M4 5h16v11H8l-4 3z M8 9h8M8 12h5'
+    : target === 'CONTENT'
+      ? 'M4 5h6a2 2 0 0 1 2 2v12a2 2 0 0 0-2-2H4zM20 5h-6a2 2 0 0 0-2 2v12a2 2 0 0 1 2-2h6z'
+      : 'M18 4a2 2 0 1 1 0 4H9a3 3 0 0 0 0 6h9a2 2 0 1 1 0 4H6'
+  return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-primary" aria-hidden="true"><path d={path} /></svg>
+}
+
+/** `2026-10-03` → `10.03`. 연도는 같은 해 행사만 묶여 있어 화면에서 뺀다. */
+function dayRange(start: string, end: string) {
+  const short = (value: string) => value.slice(5).replace('-', '.')
+  return `${short(start)} – ${short(end)}`
+}
+
+function todayLabel(today = new Date()) {
+  return `${today.getMonth() + 1}월 ${today.getDate()}일`
+}
+
+/**
+ * CMS의 단일 Hero 계약을 시안의 풀블리드 히어로 문안으로 표현한다.
+ *
+ * <p>배경 사진·제목·부제·버튼은 전부 CMS 값이다. 시안의 `2026 AUTUMN` 자리에는 지어낼 근거가
+ * 없어 계약에 있는 레이아웃 이름을 그대로 쓴다 — 관리자가 레이아웃을 바꾸면 화면이 따라간다.
+ */
 export function PortalHero({ template }: { template: SiteTemplate }) {
-  const label = `${template.layout} 템플릿 메인`
-
-  if (template.layout === 'MINIMAL') return <section className="mx-auto grid max-w-[75rem] gap-8 px-7 pt-8 max-[560px]:px-4 md:grid-cols-2" aria-label={label}>
-    <div className="flex min-h-[24rem] flex-col items-start justify-center rounded-[2rem] bg-page px-[clamp(2rem,5vw,4.5rem)] py-14">
-      <span className="mb-4 text-xs font-extrabold tracking-[.14em] text-primary">MINIMAL</span>
-      <h1 className="m-0 text-[clamp(2.25rem,5vw,4rem)] font-extrabold leading-[1.08] tracking-[-.055em] text-ink">{template.heroTitle}</h1>
-      <p className="mb-7 mt-5 max-w-xl text-base leading-[1.75] text-body">{template.heroSubtitle}</p>
-      <Link className="rounded-full bg-primary px-6 py-3 text-sm font-bold text-white no-underline" to={portalUrl(template.heroButtonUrl)}>{template.heroButtonLabel}<span className="ml-2">→</span></Link>
-    </div>
-    <div className="min-h-[24rem] rounded-[2rem] bg-site-ph bg-cover bg-center" style={{ backgroundImage: `url(${template.heroImageUrl})` }} />
-  </section>
-
   const bold = template.layout === 'BOLD'
-  return <section className="relative mx-auto mt-8 min-h-[29rem] max-w-[75rem] overflow-hidden rounded-[2rem] bg-primary text-white max-[1220px]:mx-7 max-[560px]:mx-4" aria-label={label}>
-    <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: `url(${template.heroImageUrl})` }} />
-    <div className={`absolute inset-0 ${bold ? 'bg-[linear-gradient(90deg,rgba(16,28,42,.96)_0%,rgba(16,28,42,.72)_58%,rgba(16,28,42,.2)_100%)]' : 'bg-[linear-gradient(90deg,rgba(16,28,42,.9)_0%,rgba(16,28,42,.62)_55%,rgba(16,28,42,.14)_100%)]'}`} />
-    <div className="relative z-10 flex min-h-[29rem] items-center px-[clamp(2rem,7vw,6rem)] py-16">
-      <div className="max-w-[43rem]">
-        <span className="mb-4 block text-xs font-extrabold tracking-[.16em] text-white/70">{bold ? 'BOLD' : 'CLASSIC'}</span>
-        <h1 className={`m-0 text-[clamp(2.5rem,6vw,4.75rem)] leading-[1.06] tracking-[-.06em] ${bold ? 'font-black uppercase' : 'font-extrabold'}`}>{template.heroTitle}</h1>
-        <p className="mb-7 mt-5 max-w-2xl text-base leading-[1.75] text-white/80">{template.heroSubtitle}</p>
-        <Link className="inline-flex rounded-full bg-primary px-6 py-3 text-sm font-bold text-white no-underline shadow-[0_10px_30px_rgba(0,0,0,.16)]" to={portalUrl(template.heroButtonUrl)}>{template.heroButtonLabel}<span className="ml-2">→</span></Link>
-      </div>
-    </div>
+  const minimal = template.layout === 'MINIMAL'
+  return <section aria-label={`${template.layout} 템플릿 메인`}>
+    <p className="m-0 mb-[0.875rem] text-xs font-extrabold tracking-[.2em] text-white/70">{template.layout}</p>
+    <h1 className={`m-0 text-[clamp(2rem,5vw,3.25rem)] leading-[1.14] tracking-[-.045em] ${bold ? 'font-black uppercase' : minimal ? 'font-semibold' : 'font-extrabold'}`}>{template.heroTitle}</h1>
+    <p className="mx-auto mt-4 max-w-2xl text-sm leading-[1.7] text-white/80">{template.heroSubtitle}</p>
+    <Link className="mt-5 inline-flex items-center gap-2 rounded-full border border-white/40 px-5 py-2 text-[0.8125rem] font-bold text-white no-underline hover:bg-white/10" to={portalUrl(template.heroButtonUrl)}>{template.heroButtonLabel}<span aria-hidden="true">→</span></Link>
   </section>
 }
 
 export function PortalFooter({ template }: { template: SiteTemplate }) {
   return <footer className="mt-auto border-t border-line-soft bg-panel">
-    <div className="mx-auto flex max-w-[75rem] flex-wrap items-start justify-between gap-8 px-7 py-10 text-xs leading-6 text-muted max-[560px]:px-4">
-      <div><strong className="block text-sm text-ink">{template.siteName}</strong><p className="m-0 mt-2 max-w-xl">{template.footerText}</p></div>
-      <span className="w-full border-t border-line-soft pt-5 text-[0.6875rem]">© 2026 {template.siteName}. Local CMS Demo.</span>
+    <div className="mx-auto max-w-[75rem] px-7 pb-12 py-10 text-xs leading-[1.7] text-muted max-[560px]:px-4">
+      <strong className="block text-sm text-ink">{template.siteName}</strong>
+      <p className="m-0 mt-2 max-w-[40rem]">{template.footerText}</p>
+      <span className="mt-5 block border-t border-line-soft pt-[1.125rem] text-[0.6875rem]">© 2026 {template.siteName}. Local CMS Demo.</span>
     </div>
   </footer>
 }
@@ -286,19 +412,19 @@ export function PortalSearch() {
   return <main className="flex flex-1 flex-col">
     <div className="border-b border-line-soft bg-panel">
       <div className="mx-auto max-w-[75rem] px-7 pb-7 pt-6 max-[560px]:px-4">
-        <form onSubmit={submit} className="flex h-14 max-w-[45rem] items-center gap-3 rounded-full border border-field-line bg-panel py-0 pl-[1.375rem] pr-2 shadow-[0_2px_14px_rgba(22,34,47,0.07)]">
-          <SearchGlyph size="1.125rem" />
+        <form onSubmit={submit} className="flex h-[3.25rem] max-w-[45rem] items-center gap-3 rounded-full border border-field-line bg-panel py-0 pl-5 pr-2 text-ink shadow-[0_2px_14px_rgba(22,34,47,0.07)]">
+          <SearchGlyph size={17} />
           <input value={draft} onChange={(event) => setDraft(event.target.value)} aria-label="여행지 검색" placeholder="어디로 떠나볼까요?" className="min-w-0 flex-1 border-0 bg-transparent text-[0.9375rem] text-ink outline-0" />
-          <button type="submit" className="h-[2.625rem] flex-none rounded-full bg-primary px-7 text-sm font-bold text-white">검색</button>
+          <button type="submit" className="h-10 flex-none rounded-full bg-primary px-[1.625rem] text-sm font-bold text-white">검색</button>
         </form>
       </div>
     </div>
 
     <div className="min-h-[70vh] flex-1 bg-page">
       <div className="mx-auto grid max-w-[75rem] grid-cols-[15.5rem_minmax(0,1fr)] items-start gap-9 px-7 pb-24 pt-10 max-[900px]:grid-cols-1 max-[900px]:gap-6 max-[560px]:px-4">
-        <aside aria-label="검색 필터" className="rounded-2xl border border-line-soft bg-panel px-[1.375rem] py-6">
-          <p className="m-0 mb-[1.125rem] text-base font-extrabold tracking-[-.03em] text-ink">필터링 결과</p>
-          <div className="flex flex-col gap-[2px] max-[900px]:flex-row max-[900px]:flex-wrap max-[900px]:gap-x-4">
+        <aside aria-label="검색 필터" className="rounded-xl border border-line-soft bg-panel p-[1.375rem]">
+          <p className="m-0 mb-4 text-base font-extrabold tracking-[-.03em] text-ink">필터링 결과</p>
+          <div className="flex flex-col items-start gap-[2px] max-[900px]:flex-row max-[900px]:flex-wrap max-[900px]:gap-x-4">
             {PORTAL_TABS.map((tab) => {
               const on = tab.id === active
               return <button
@@ -306,7 +432,7 @@ export function PortalSearch() {
                 type="button"
                 aria-current={on ? 'true' : undefined}
                 onClick={() => search(query, tab.id)}
-                className={`bg-transparent px-[2px] py-[0.5625rem] text-left text-sm ${on ? 'font-extrabold text-ink underline underline-offset-4' : 'font-semibold text-body'}`}
+                className={`whitespace-nowrap bg-transparent px-[2px] py-[0.5625rem] text-left text-sm ${on ? 'font-extrabold text-ink underline underline-offset-4' : 'font-semibold text-body'}`}
               >{tab.label}</button>
             })}
           </div>
@@ -316,13 +442,11 @@ export function PortalSearch() {
           {/* 시안의 "OO 근처의 검색결과 표시"는 위치 기능이 없어 옮기지 않았다.
               건수는 서버가 고정한 citations 길이(CITATION_LIMIT=3 이하)이며, 코퍼스 전체에서
               몇 건이 일치했는지가 아니다 — 그 값은 공개 응답에 없다. */}
-          <h1 className="m-0 mb-3 text-[clamp(1.5rem,2.6vw,2rem)] font-extrabold tracking-[-.04em] text-ink">
+          <h1 className="m-0 mb-3 text-[clamp(1.3125rem,2.6vw,1.875rem)] font-extrabold tracking-[-.04em] text-ink">
             {query ? `“${query}”${withParticle(query, '과', '와')} 일치하는 검색 결과` : '검색 결과'}
-            {state.phase === 'ready' && <span className="ml-2 text-base font-bold text-muted">{state.data?.citations.length ?? 0}건</span>}
+            {state.phase === 'ready' && <span className="ml-2 text-[0.9375rem] font-bold text-muted">{state.data?.citations.length ?? 0}건</span>}
           </h1>
-          <SampleNotice label="관광 코퍼스 500건 · 근거 문서 기준 검색" className="mb-7">
-            질문에 대한 <b className="font-semibold">근거가 되는 문서</b>를 찾아 보여 줍니다. 사진은 아직 준비 중이라 자리 표시로 나옵니다.
-          </SampleNotice>
+          <SampleNotice label="샘플 응답 · 관광 코퍼스 500건 · 근거 문서 기준 검색" className="mb-[1.625rem]" />
 
           <SearchResults state={state} onRetry={() => ask({ query, category: tabToCategory(active) })} hasQuery={query !== ''} />
         </div>
@@ -336,8 +460,6 @@ export function PortalSearch() {
  *
  * <p>`REFUSED`를 오류로 그리지 않는 것이 핵심이다 — "근거가 없어 답하지 않았다"는 RAG가
  * 제대로 동작한 결과이지 장애가 아니다. 경고색과 [다시 시도]를 붙이면 성과를 장애로 보이게 한다.
- *
- * <p>상태 6종의 디자인 정리는 D1에서 한다. 여기서는 동작과 문구만 맞춘다.
  */
 function SearchResults({ state, onRetry, hasQuery }: {
   state: ReturnType<typeof useRagQuery>['state']
@@ -352,7 +474,7 @@ function SearchResults({ state, onRetry, hasQuery }: {
 
   if (state.phase === 'idle' || state.phase === 'loading') {
     return <div aria-busy="true" aria-label="검색 중" className="flex flex-col gap-[0.875rem]">
-      {[0, 1, 2].map((row) => <Placeholder key={row} label="" className="h-[12.25rem] rounded-2xl" />)}
+      {[0, 1, 2].map((row) => <Placeholder key={row} label="" className="h-[12.25rem] rounded-xl" />)}
     </div>
   }
 
@@ -369,29 +491,55 @@ function SearchResults({ state, onRetry, hasQuery }: {
     return <PortalNotice title="표시할 결과가 없습니다">다른 검색어로 다시 시도해 주세요.</PortalNotice>
   }
 
-  return <div className="flex flex-col gap-[0.875rem]">
-    {citations.map((citation, index) => <PortalResultCard
-      key={`${citation.title}-${index}`}
-      title={citation.title}
-      excerpt={citation.excerpt}
-      categoryLabel={citation.categoryLabel}
-      eventStatus={citation.eventStatus}
-      address={addressLine(citation.excerpt) ?? undefined}
-    />)}
+  return <>
+    <AnswerCard answer={state.data?.answer ?? ''} titles={citations.map((citation) => citation.title)} />
+    <div className="flex flex-col gap-[0.875rem]">
+      {citations.map((citation, index) => <PortalResultCard
+        key={`${citation.title}-${index}`}
+        title={citation.title}
+        excerpt={citation.excerpt}
+        categoryLabel={citation.categoryLabel}
+        eventStatus={citation.eventStatus}
+        address={addressLine(citation.excerpt) ?? undefined}
+      />)}
+    </div>
+  </>
+}
+
+/**
+ * 시안의 AI 요약 박스. 새 호출이 아니라 **이미 받은 응답의 `answer`** 를 그대로 그린다 —
+ * 검색과 챗봇이 같은 엔드포인트를 쓰므로 검색 응답에도 답변 문장이 실려 있다.
+ *
+ * <p>근거 문서 제목만 굵게 처리한다. 세그먼트는 한 줄에 이어 붙여야 한다 — 사이에 줄바꿈이나
+ * 공백 텍스트 노드가 들어가면 "도원 이", "고택 ," 처럼 조사 앞에 공백이 생긴다.
+ */
+function AnswerCard({ answer, titles }: { answer: string; titles: string[] }) {
+  if (!answer.trim()) return null
+  return <div className="mb-[1.125rem] rounded-xl border border-line-soft bg-panel px-[1.625rem] py-[1.375rem]">
+    <div className="flex items-center gap-[0.5625rem]">
+      <span className="grid h-[1.625rem] w-[1.625rem] flex-none place-items-center rounded-lg bg-primary text-white" aria-hidden="true"><ChatGlyph size={15} /></span>
+      <strong className="text-sm font-extrabold text-ink">AI 요약</strong>
+      <span className="text-xs text-muted-2">아래 근거 문서에서 찾은 내용만 답합니다</span>
+    </div>
+    <p className="m-0 mt-[0.875rem] whitespace-pre-line text-sm leading-[1.8] text-body">
+      {highlightTitles(answer, titles).map((segment, index) => segment.bold
+        ? <b className="font-bold text-ink" key={index}>{segment.text}</b>
+        : <Fragment key={index}>{segment.text}</Fragment>)}
+    </p>
   </div>
 }
 
 /** 결과 영역의 빈 상태 한 장. 제목 + 부연 + (있으면) 재시도·추적자. */
 function PortalNotice({ title, children, trace, onRetry }: {
   title: string
-  children?: React.ReactNode
+  children?: ReactNode
   trace?: string
   onRetry?: () => void
 }) {
-  return <div className="flex flex-col items-start gap-2 rounded-2xl border border-line-soft bg-panel px-7 py-10">
+  return <div className="flex flex-col items-start gap-2 rounded-xl border border-line-soft bg-panel px-7 py-10">
     <strong className="text-[1.0625rem] font-extrabold tracking-[-.03em] text-ink">{title}</strong>
-    {children != null && <span className="text-[0.875rem] leading-[1.7] text-body">{children}</span>}
+    {children != null && <span className="text-sm leading-[1.7] text-body">{children}</span>}
     {onRetry && <button type="button" onClick={onRetry} className="mt-2 rounded-full bg-primary px-5 py-2 text-[0.8125rem] font-bold text-white">다시 시도</button>}
-    {trace && <span className="mt-1 text-[0.75rem] text-muted-3">{trace}</span>}
+    {trace && <span className="mt-1 text-xs text-muted-3">{trace}</span>}
   </div>
 }

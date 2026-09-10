@@ -6,7 +6,8 @@ import { describePortalStatus } from './portal-status'
 import { Placeholder, SampleNotice } from './portal-primitives'
 
 /**
- * 우하단 상시 노출 플로팅 챗봇. 버튼 사양은 시안(52px 원형·primary·right/bottom 28px)을 따른다.
+ * 우하단 상시 노출 플로팅 챗봇. 버튼·패널 사양은 시안 `Portal-Chatbot.dc.html`을 따른다
+ * (52px 원형 버튼 · 380×520 패널 · 14px radius).
  *
  * <p>공개 챗봇 API(`POST /api/public/chat/query`)에 실제로 연결돼 있다. 검색(A)과 **같은
  * 엔드포인트·같은 훅**을 쓰므로 상태 처리도 같다 — 다른 것은 결과를 말풍선으로 그린다는 것뿐이다.
@@ -31,6 +32,15 @@ type Turn = {
   notice?: { title: string; detail?: string; trace?: string }
 }
 
+/** 시안의 첫 화면 추천 질문. 코퍼스에 근거가 있는 질의만 둔다. */
+const SUGGESTIONS = ['지금 하는 축제 알려줘', '전주 한옥스테이 추천']
+
+function ChatGlyph({ size = 22 }: { size?: number }) {
+  return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+    <path d="M4 6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5v7a2.5 2.5 0 0 1-2.5 2.5H9l-5 4z" />
+  </svg>
+}
+
 export function ChatWidget() {
   const [open, setOpen] = useState(false)
   const [draft, setDraft] = useState('')
@@ -43,7 +53,6 @@ export function ChatWidget() {
 
   // 429는 서버가 알려준 시간만큼 입력을 잠근다(F11: 60초/30회). 잠그지 않으면 사용자가
   // 계속 눌러 같은 429를 반복해 받고, 검색과 예산을 나눠 쓰는 구조라 검색까지 막힌다.
-  // 남은 시간 카운트다운 표시는 D1(상태 화면) 범위다 — 여기서는 잠금만 한다.
   useEffect(() => {
     if (state.phase !== 'rate_limited') return
     setLocked(true)
@@ -73,9 +82,7 @@ export function ChatWidget() {
     if (node) node.scrollTop = node.scrollHeight
   }, [turns, sending])
 
-  function submit(event: FormEvent) {
-    event.preventDefault()
-    const question = draft.trim()
+  function send(question: string) {
     if (!question || sending || locked) return
     setDraft('')
     // 직전 질문은 turns를 갱신하기 전 값에서 읽는다. setTurns 뒤에 읽으면 방금 넣은
@@ -85,19 +92,31 @@ export function ChatWidget() {
     ask({ query: question, previousQuery })
   }
 
-  if (!open) {
-    return <button type="button" onClick={() => setOpen(true)} aria-label="관광 도우미 열기" className="fixed bottom-7 right-7 z-40 grid h-[3.25rem] w-[3.25rem] place-items-center rounded-full bg-primary text-white shadow-[0_8px_20px_rgba(23,59,91,0.3)] hover:bg-[#12314c]">
-      <span className="box-border h-5 w-[1.375rem] rounded-[10px_10px_10px_2px] border-[2.5px] border-white" aria-hidden="true" />
-    </button>
+  function submit(event: FormEvent) {
+    event.preventDefault()
+    send(draft.trim())
   }
 
-  return <aside aria-label="관광 도우미" className="portal-chat-pop fixed bottom-7 right-7 z-40 flex h-[32.5rem] max-h-[calc(100vh-3.5rem)] w-[23.75rem] max-w-[calc(100vw-2.5rem)] flex-col overflow-hidden rounded-[0.875rem] border border-line bg-panel shadow-[0_16px_48px_rgba(16,34,47,.26)]">
+  // 시안의 툴팁은 클릭 전에만 보인다 — 패널이 열리면 버튼째 사라지므로 별도 상태가 필요 없다.
+  if (!open) {
+    return <div className="group fixed bottom-7 right-7 z-40">
+      <span className="pointer-events-none absolute bottom-[4.75rem] right-0 w-52 translate-y-1 rounded-xl bg-ink px-[0.875rem] py-[0.6875rem] text-center text-[0.78125rem] font-bold leading-[1.5] text-white opacity-0 shadow-[0_10px_24px_rgba(16,34,47,.28)] transition duration-150 group-hover:-translate-y-1 group-hover:opacity-100 group-focus-within:-translate-y-1 group-focus-within:opacity-100" aria-hidden="true">
+        관광에 대한 모든 것! 무엇이든 물어보세요
+        <span className="absolute -bottom-[5px] right-[1.375rem] h-2.5 w-2.5 rotate-45 bg-ink" />
+      </span>
+      <button type="button" onClick={() => setOpen(true)} aria-label="관광 도우미 열기" className="grid h-[3.25rem] w-[3.25rem] place-items-center rounded-full bg-primary text-white shadow-[0_8px_20px_rgba(23,59,91,0.3)] hover:bg-[#12314c]">
+        <ChatGlyph />
+      </button>
+    </div>
+  }
+
+  return <aside aria-label="관광 도우미" className="portal-chat-pop fixed bottom-7 right-7 z-40 flex h-[32.5rem] max-h-[calc(100vh-3.5rem)] w-[23.75rem] max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-[0.875rem] border border-line bg-panel shadow-[0_16px_48px_rgba(16,34,47,.26)]">
     <div className="flex flex-none items-center gap-[0.625rem] bg-primary px-4 py-[0.8125rem] text-white">
-      <span className="grid h-[1.625rem] w-[1.625rem] place-items-center rounded-lg bg-white/[.18]" aria-hidden="true">
-        <span className="box-border h-[0.875rem] w-4 rounded-[7px_7px_7px_2px] border-2 border-white" />
+      <span className="grid h-[1.625rem] w-[1.625rem] flex-none place-items-center rounded-lg bg-white/[.18]" aria-hidden="true">
+        <ChatGlyph size={15} />
       </span>
       <span className="text-sm font-bold">관광 도우미</span>
-      <span className="text-[0.6875rem] font-medium text-sb-muted">AI 여행 안내</span>
+      <span className="text-[0.6875rem] font-medium text-sb-muted">AI 여행 도우미</span>
       <button type="button" onClick={() => setOpen(false)} aria-label="관광 도우미 닫기" className="ml-auto bg-transparent px-1 py-0.5 text-lg leading-none text-sb-muted hover:text-white">×</button>
     </div>
 
@@ -107,9 +126,14 @@ export function ChatWidget() {
     </div>
 
     <div ref={scroller} className="flex flex-1 flex-col gap-3 overflow-y-auto bg-sub px-[0.875rem] py-4">
-      {turns.length === 0 && <p className="m-0 max-w-[88%] self-start rounded-xl rounded-bl-[3px] border border-line-soft bg-white px-[0.8125rem] py-[0.6875rem] text-[0.8125rem] leading-[1.65] text-body">
-        전주 한옥스테이, 축제 일정처럼 여행지에 대해 물어보세요. 수집된 관광 문서에서 근거를 찾아 답해 드립니다.
-      </p>}
+      {turns.length === 0 && <>
+        <p className="m-0 max-w-[88%] self-start rounded-xl rounded-bl-[3px] border border-line-soft bg-white px-[0.8125rem] py-[0.6875rem] text-[0.8125rem] leading-[1.65] text-body">
+          전주 한옥스테이, 축제 일정처럼 여행지에 대해 물어보세요. 수집된 관광 문서에서 근거를 찾아 답해 드립니다.
+        </p>
+        <div className="flex flex-wrap gap-2">
+          {SUGGESTIONS.map((question) => <button key={question} type="button" onClick={() => send(question)} className="rounded-full border border-field-line bg-white px-[0.8125rem] py-2 text-xs font-semibold text-body">{question}</button>)}
+        </div>
+      </>}
 
       {turns.map((turn, index) => <div key={index} className="flex flex-col gap-3">
         <p className="m-0 max-w-[82%] self-end rounded-xl rounded-br-[3px] bg-link px-[0.8125rem] py-[0.625rem] text-[0.8125rem] leading-relaxed text-white">{turn.question}</p>
@@ -130,7 +154,7 @@ export function ChatWidget() {
         </div>}
       </div>)}
 
-      {sending && <div className="flex max-w-[88%] items-center gap-1.5 self-start rounded-xl rounded-bl-[3px] border border-line-soft bg-white px-[0.8125rem] py-[0.6875rem]" aria-label="답변 작성 중" aria-busy="true">
+      {sending && <div className="flex max-w-[88%] items-center gap-1.5 self-start rounded-xl rounded-bl-[3px] border border-line-soft bg-white px-[0.8125rem] py-[0.8125rem]" aria-label="답변 작성 중" aria-busy="true">
         {[0, 1, 2].map((dot) => <span key={dot} className="h-1.5 w-1.5 rounded-full bg-muted-3" />)}
       </div>}
     </div>
@@ -142,9 +166,9 @@ export function ChatWidget() {
         disabled={sending || locked}
         placeholder="메시지를 입력하세요…"
         aria-label="관광 도우미 메시지"
-        className="min-w-0 flex-1 rounded-[0.5625rem] border border-field-line bg-white px-3 py-2 text-[0.8125rem] text-ink outline-0 disabled:bg-sub"
+        className="min-w-0 flex-1 rounded-[0.5625rem] border border-field-line bg-white px-3 py-[0.5625rem] text-[0.8125rem] text-ink outline-0 disabled:bg-sub"
       />
-      <button type="submit" disabled={sending || locked || draft.trim() === ''} className="flex-none rounded-[0.5625rem] bg-primary px-[0.9375rem] py-2 text-[0.78125rem] font-bold text-white disabled:opacity-50">전송</button>
+      <button type="submit" disabled={sending || locked || draft.trim() === ''} className="flex-none rounded-[0.5625rem] bg-primary px-4 py-[0.5625rem] text-[0.78125rem] font-bold text-white disabled:opacity-50">전송</button>
     </form>
   </aside>
 }
