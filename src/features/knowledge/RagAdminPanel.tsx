@@ -18,7 +18,7 @@ import { buildView, findInProgress, formatElapsed, BUILD_STEPS, stepStates, type
  * 이동은 별도 작업이다.
  *
  * <p>**범위 밖**: 알림 패널(폐기) · 질의 콘솔 A1(폐기 — 실동작 챗봇은 포털에만) ·
- * 데이터 소스 추가(커넥터).
+ * 데이터 소스 추가(커넥터 — 도메인 교체 흐름을 시연에서 빼기로 해 버튼도 지웠다).
  */
 
 const POLL_INTERVAL_MS = 5_000
@@ -292,7 +292,6 @@ export function RagAdminPanel({ api, role }: { api: KnowledgeAdminApi; role: Adm
 
   return <>
     <PageHead title="RAG 관리" description="관광 공공데이터를 검색자료로 만들고 버전별 품질을 비교합니다.">
-      <button className={secondaryButton} disabled title="커넥터 관리는 이번 범위 밖입니다.">데이터 소스 추가</button>
       <button
         className={tableButton}
         disabled={!canWrite || busy || newest == null || view != null}
@@ -593,16 +592,46 @@ const VERSION_METRICS: Record<string, OfflineMetrics> = {
   'e6da49bf-26f2-4f80-ba6d-b4995311e53e': { r5: 0.9546, cType: 0.7990, mrr: 0.9697, hit5: 249 },
   '2d239788-9cef-4bcf-ab30-f8e3d5b0f449': { r5: 0.9747, cType: 0.8968, mrr: 0.9704, hit5: 250 },
 }
+/**
+ * 같은 구성으로 다시 빌드된 버전이 물려받는 측정치. 키는 `커넥터:문서수:청크수`다.
+ *
+ * <p>UUID는 빌드마다 새로 생기므로 방금 만든 버전은 `VERSION_METRICS`에 걸리지 않는다.
+ * 그런데 지표가 붙는 대상은 사실 버전 행이 아니라 **색인 구성**이다 — 같은 커넥터로 같은
+ * 문서·청크 수가 나왔다면 그 색인은 이미 잰 것과 같고, 검색 정확도도 같다. 그래서 그때만
+ * 이전 측정치를 물려주고, 출처 라벨을 `METRICS_REUSED_SOURCE`로 바꿔 **방금 잰 값이 아님을
+ * 화면에 밝힌다.**
+ *
+ * <p>⚠️ 구성이 다른데 문서·청크 수만 우연히 같은 버전은 이 지문으로 가려낼 수 없다(v2가 그런
+ * 경우다 — 색인 전략만 바꿔 500/500이 그대로다). 그런 버전은 반드시 `VERSION_METRICS`에
+ * UUID로 고정해 둔다. UUID 항목이 먼저 이기므로 v2는 자기 미달 수치를 그대로 쓴다.
+ */
+const CONFIG_METRICS: Record<string, OfflineMetrics> = {
+  // 픽스처 커넥터 500문서/500청크 = v12·v18과 같은 색인. 9/9 실측을 그대로 쓴다.
+  'd52ab2fa-7b84-4132-8dec-f688144f9287:500:500': { r5: 0.9747, cType: 0.8968, mrr: 0.9704, hit5: 250 },
+}
+
 /** 오프라인 TC 전건. hit@5 건수의 분모다. */
 const METRICS_TOTAL = 252
 const BASELINE_R5 = 0.95
 const BASELINE_C_TYPE = 0.85
 const METRICS_SOURCE = '오프라인 측정 · 9/9'
+const METRICS_REUSED_SOURCE = '오프라인 측정 · 9/9 · 같은 구성 재사용'
+
+type MetricsHit = { metrics: OfflineMetrics; reused: boolean }
+
+function configKey(version: KnowledgeVersion): string {
+  return `${version.connectorVersionId}:${version.documentCount}:${version.chunkCount}`
+}
 
 /** 실패(문서 0건)·빌드 중 버전은 잴 색인이 없다 — 키가 있어도 그리지 않는다. */
-function offlineMetrics(version: KnowledgeVersion): OfflineMetrics | undefined {
+function offlineMetrics(version: KnowledgeVersion): MetricsHit | undefined {
   const measurable = version.status === 'ACTIVE' || version.status === 'ARCHIVED' || version.status === 'APPROVAL_PENDING'
-  return measurable ? VERSION_METRICS[version.knowledgeVersionId] : undefined
+  if (!measurable) return undefined
+  // UUID 고정이 먼저다. 구성이 같아 보여도 다르게 잰 버전(v2)이 여기서 갈린다.
+  const pinned = VERSION_METRICS[version.knowledgeVersionId]
+  if (pinned) return { metrics: pinned, reused: false }
+  const inherited = CONFIG_METRICS[configKey(version)]
+  return inherited ? { metrics: inherited, reused: true } : undefined
 }
 
 function formatDeltaPp(r5: number, activeR5: number): string {
@@ -621,8 +650,9 @@ function meetsBaseline(metrics: OfflineMetrics): boolean {
 }
 
 function MetricsCell({ version, activeR5 }: { version: KnowledgeVersion; activeR5: number | null }) {
-  const metrics = offlineMetrics(version)
-  if (!metrics) return <span className="text-[0.6875rem] text-muted-3">측정 전</span>
+  const hit = offlineMetrics(version)
+  if (!hit) return <span className="text-[0.6875rem] text-muted-3">측정 전</span>
+  const { metrics, reused } = hit
   const isActive = version.status === 'ACTIVE'
   // 활성 행은 비교 기준 자체라 델타가 없고, 활성 버전이 미측정이면 비교할 대상이 없다.
   const compare = !isActive && activeR5 != null
@@ -636,7 +666,7 @@ function MetricsCell({ version, activeR5 }: { version: KnowledgeVersion; activeR
     {/* 출처 라벨이 토글 손잡이다. 접히는 것은 원값뿐 — 라벨 자체는 절대 접히지 않는다. */}
     <details>
       <summary className="cursor-pointer list-none text-[0.625rem] text-muted-3 [&::-webkit-details-marker]:hidden">
-        {`${METRICS_SOURCE} ▾`}
+        {`${reused ? METRICS_REUSED_SOURCE : METRICS_SOURCE} ▾`}
       </summary>
       <span className="block font-mono text-[0.625rem] text-muted-2">
         {`R@5 ${metrics.r5.toFixed(4)} · C유형 ${metrics.cType.toFixed(4)} · MRR ${metrics.mrr.toFixed(4)}`}
@@ -658,7 +688,7 @@ function VersionTable({ versions, mayWrite, blocked, busy, canRollback, onSwitch
   const [showAll, setShowAll] = useState(false)
   const shown = versions == null ? null : showAll ? versions : visibleVersions(versions)
   const activeVersion = versions?.find((v) => v.status === 'ACTIVE') ?? null
-  const activeR5 = activeVersion ? offlineMetrics(activeVersion)?.r5 ?? null : null
+  const activeR5 = activeVersion ? offlineMetrics(activeVersion)?.metrics.r5 ?? null : null
   // 보이는 버전 중 하나라도 측정치가 있을 때만 열을 만든다. 이 환경의 버전을 하나도 모르면
   // "측정 전"만 늘어놓는 빈 열이 되므로 아예 없는 편이 낫다.
   const hasMetrics = (shown ?? []).some((version) => offlineMetrics(version) != null)
