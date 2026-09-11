@@ -18,6 +18,7 @@ import PublicSite from '../features/site/PublicSite'
 import { CmsApi } from '../features/cms/api'
 import { CodingConsoleApi } from '../features/coding/api'
 import { NaturalCmsApi } from '../features/cms/assistant/api'
+import { NaturalCmsGuardrailApi } from '../features/cms/assistant/guardrailApi'
 import { CmsSiteSettingsApi } from '../features/site-settings/api'
 import { fetchCurrentSession, logout, refreshSession, ROLE_LABELS, type AdminSession } from '../shared/api/session'
 import { Icon } from '../shared/ui/icons'
@@ -133,6 +134,7 @@ function AuthenticatedAdmin({ session, theme, onToggleTheme, onRefresh, onExpire
   const profileApi = useMemo(() => new ProfileVersionApi(session.sessionToken, lifecycle.refreshed, lifecycle.expired), [session.sessionToken, lifecycle])
   const siteSettingsApi = useMemo(() => new CmsSiteSettingsApi(session.sessionToken, lifecycle.refreshed, lifecycle.expired), [session.sessionToken, lifecycle])
   const naturalCmsApi = useMemo(() => new NaturalCmsApi(session.sessionToken, lifecycle.refreshed, lifecycle.expired), [session.sessionToken, lifecycle])
+  const cmsGuardrailApi = useMemo(() => new NaturalCmsGuardrailApi(session.sessionToken, lifecycle.refreshed, lifecycle.expired), [session.sessionToken, lifecycle])
   const codingApi = useMemo(() => new CodingConsoleApi(session.sessionToken, lifecycle.refreshed, lifecycle.expired), [session.sessionToken, lifecycle])
   const knowledgeApi = useMemo(() => new KnowledgeAdminApi(session.sessionToken, lifecycle.refreshed, lifecycle.expired), [session.sessionToken, lifecycle])
   // 승인 대기는 화면에 들어가야만 보였다. 메뉴에 건수를 띄워 들어가기 전에 알린다.
@@ -254,7 +256,7 @@ function AuthenticatedAdmin({ session, theme, onToggleTheme, onRefresh, onExpire
               : route.id === 'devops'
                 ? <CodingWorkspace api={codingApi} role={session.actor.role} monitoringAction={monitoringAction('LLM_OPS')} />
               : route.id === 'guardrail'
-                ? <GuardrailWorkspace api={codingApi} />
+                ? <GuardrailWorkspace api={codingApi} cmsGuardrailApi={cmsGuardrailApi} />
               : route.id === 'approvals' || route.id === 'runs'
                 ? <GovernanceWorkspace route={route.id} api={historyApi} role={session.actor.role} />
               : <OpsWorkspace route={route.id} actorName={session.actor.name} roleLabel={ROLE_LABELS[session.actor.role]} role={session.actor.role} knowledgeApi={knowledgeApi} profileApi={profileApi} siteSettingsApi={siteSettingsApi} />}

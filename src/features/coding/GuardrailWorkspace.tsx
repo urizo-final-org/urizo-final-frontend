@@ -3,6 +3,8 @@ import { describeFailure } from '../../shared/api/error'
 import {
   Callout, PageHead, PanelTitle, fieldLabel, panel, primaryButton, secondaryButton, smallButton,
 } from '../../shared/ui/primitives'
+import type { NaturalCmsGuardrailApi } from '../cms/assistant/guardrailApi'
+import NaturalCmsGuardrailPanel from '../cms/assistant/NaturalCmsGuardrailPanel'
 import type {
   CodingConsoleApiClient, GuardrailRepository, GuardrailRules, GuardrailSelection,
 } from './api'
@@ -112,7 +114,10 @@ function cautionFor(repository: GuardrailRepository, path: string): string | und
   return CAUTIONS[`${repository}:${shortName(repository, path)}`]
 }
 
-export default function GuardrailWorkspace({ api }: { api: CodingConsoleApiClient }) {
+export default function GuardrailWorkspace({ api, cmsGuardrailApi }: {
+  api: CodingConsoleApiClient
+  cmsGuardrailApi: NaturalCmsGuardrailApi
+}) {
   const [activeTab, setActiveTab] = useState<'llm-ops' | 'natural-cms'>('llm-ops')
   const [repos, setRepos] = useState<Record<GuardrailRepository, RepositoryState>>({
     frontend: initialRepository,
@@ -510,12 +515,7 @@ export default function GuardrailWorkspace({ api }: { api: CodingConsoleApiClien
     </div>
 
     <div role="tabpanel" id="guardrail-panel-natural-cms" aria-labelledby="guardrail-tab-natural-cms" hidden={activeTab !== 'natural-cms'}>
-      <section className={panel}>
-        <PanelTitle title="자연어 CMS 가드레일" sub="설정 준비 중" />
-        <p className="px-4 pb-4 text-[0.8125rem] leading-6 text-muted">
-          자연어 CMS 전용 가드레일 설정은 준비 중입니다. 현재는 탭만 분리되어 있으며, 설정 항목과 저장 기능은 아직 연결되지 않았습니다.
-        </p>
-      </section>
+      <NaturalCmsGuardrailPanel api={cmsGuardrailApi} />
     </div>
   </>
 }
