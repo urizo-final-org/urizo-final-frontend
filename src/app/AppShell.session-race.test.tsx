@@ -10,7 +10,9 @@ const explicitSignOutKey = 'axms.auth.explicit-sign-out'
 beforeEach(() => {
   window.localStorage.clear()
   window.sessionStorage.clear()
-  window.history.pushState({}, '', '/admin')
+  // 이 파일이 보는 것은 세션 경합이지 랜딩이 아니다. '/admin'은 이제 홈으로 보내므로
+  // 회원 관리로 직접 들어가 기존 단언을 그대로 둔다.
+  window.history.pushState({}, '', '/admin/members')
   vi.restoreAllMocks()
 })
 

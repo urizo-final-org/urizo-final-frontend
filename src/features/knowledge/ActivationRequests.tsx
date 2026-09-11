@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { describeFailure } from '../../shared/api/error'
-import { Callout, PanelTitle, panel, smallButton, textarea } from '../../shared/ui/primitives'
+import { Badge, Callout, PanelTitle, panel, smallButton, tableButton, textarea } from '../../shared/ui/primitives'
 import { REFRESH_INTERVAL_MS } from './pending-approvals'
 import type { KnowledgeAdminApi } from './admin-api'
 import type { ActivationRequest, KnowledgeVersion } from './admin-types'
@@ -149,7 +149,9 @@ export function ActivationRequests({ api, knowledgeBaseId, mayWrite, versions, r
         />
       </label>
       <div className="flex items-center gap-2">
-        <button className={noHover(smallButton)} disabled={busy} onClick={() => { void send() }}>
+        {/* `Build 시작`·`전환`과 같은 모양을 쓴다 — 같은 무게의 동작이 화면마다 다르게
+            생기면 무엇을 누를 수 있는지 매번 다시 배워야 한다. */}
+        <button className={tableButton} disabled={busy} onClick={() => { void send() }}>
           {busy ? '보내는 중…' : '갱신 요청'}
         </button>
         {sent && <small className="text-[0.6875rem] text-ok-fg">전달했습니다. 아래 목록에 남습니다.</small>}
@@ -167,9 +169,15 @@ export function ActivationRequests({ api, knowledgeBaseId, mayWrite, versions, r
         열린 요청이 없습니다.
       </p>}
       {open.map((request) => <div key={request.requestId} className="border-b border-row-line px-4 py-[0.625rem] text-xs text-body last:border-b-0">
-        <div className="flex flex-wrap items-baseline gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <b className="text-[0.78125rem] font-semibold text-ink">{request.requestedByName}</b>
           <span className="text-[0.6875rem] text-muted-2">{describeTarget(request, versions)}</span>
+          {/* 보낸 쪽은 "전달됐는지"를 알 길이 화면에 없었다 — 목록에 남았다는 사실만으로는
+              접수됐다는 뜻인지 처리 중이라는 뜻인지 구분되지 않는다. 상태를 글자로 말한다.
+              열린 요청만 내려오므로 실제로는 늘 `OPEN`이지만, 값을 보고 쓴다. */}
+          <Badge tone={request.status === 'OPEN' ? 'wait' : 'ok'}>
+            {request.status === 'OPEN' ? '대기중' : '처리됨'}
+          </Badge>
           <span className="ml-auto font-mono text-[0.6875rem] text-muted-3">
             {new Date(request.createdAt).toLocaleString('ko-KR')}
           </span>

@@ -6,7 +6,7 @@ import { useRagQuery } from '../knowledge/useRagQuery'
 import { withParticle } from './particle'
 import { addressLine, festivalBadge, highlightTitles, PORTAL_TABS } from './portal-meta'
 import { describePortalStatus } from './portal-status'
-import { CardPhoto, Placeholder, PhotoTag, SampleNotice } from './portal-primitives'
+import { CardPhoto, Placeholder, PhotoTag } from './portal-primitives'
 import { PortalResultCard } from './PortalResultCard'
 
 /**
@@ -99,14 +99,19 @@ type CurationSection = { id: string; title: string; total: number; cards: Curati
 
 /**
  * 코퍼스 500건을 탭 카테고리로 집계해 상위 3개(관광지 192·음식 95·숙박 72)를 섹션으로 삼는다.
- * 카드는 각 카테고리의 코퍼스 순서 앞 3건이다 — 고를 근거가 없어 임의 선별 대신 순서를 쓴다.
+ * 카드는 각 카테고리의 코퍼스 순서에서 사진이 있는 앞 3건이다 — 고를 근거가 없어 임의
+ * 선별 대신 순서를 쓰되, 원천에 사진이 없는 문서만 건너뛴다.
  *
  * <p>"이번 주 인기"(조회수 없음)나 "가을 축제"(계절 축 없음)처럼 근거를 못 대는 제목·부제는 쓰지
  * 않는다. 제목은 카테고리명, 부제는 집계한 건수뿐이다.
  */
 // img는 코퍼스 fixture(tourism-sample-documents-500.json) metadata.firstimage의 TourAPI 원본 URL
-// 그대로다 — 합성 주소가 아니므로 R26(합성 sourceUrl 금지)과 무관하다. 반도식당은 원천에 이미지가
-// 없다(500건 중 95건이 그렇다). 지어내지 않고 플레이스홀더로 남긴다.
+// 그대로다 — 합성 주소가 아니므로 R26(합성 sourceUrl 금지)과 무관하다.
+//
+// 500건 중 95건은 원천에 이미지가 없다. 음식은 코퍼스 첫 건(반도식당)이 그랬는데, 홈 카드는
+// 사진이 절반인 자리라 석 장 중 한 장이 회색 플레이스홀더면 큐레이션이 아니라 고장으로 읽힌다.
+// 그래서 지어내는 대신 다음 순서(박해윤통영해물밥상)로 내린다. 검색 결과 카드는 그대로 둔다 —
+// 거기는 코퍼스가 준 것을 있는 그대로 보여 주는 자리이고, CardPhoto의 플레이스홀더가 그 답이다.
 const HOME_SECTIONS: CurationSection[] = [
   { id: 'attraction', title: '관광지', total: 192, cards: [
     { name: '송파책박물관', cat: '문화관광 > 전시시설', desc: '전국 최초의 공립 책 박물관으로, 책을 주제로 한 전시·교육·연구를 한다.',
@@ -117,11 +122,12 @@ const HOME_SECTIONS: CurationSection[] = [
       img: 'https://tong.visitkorea.or.kr/cms/resource/40/3587140_image2_1.jpg' },
   ] },
   { id: 'food', title: '음식', total: 95, cards: [
-    { name: '반도식당', cat: '음식 > 한식', desc: '경주에서 오래된 갈비 맛집으로, 연탄불에 한우 생갈비를 구워 먹는 노포다.' },
     { name: '발산삼계탕', cat: '음식 > 한식', desc: '지하철 5호선 6번 출구 부근에 있고 상가 건물 앞에 자체 주차장이 있다.',
       img: 'http://tong.visitkorea.or.kr/cms/resource/63/2849263_image2_1.jpg' },
     { name: '바타타식탁', cat: '음식 > 한식', desc: '표선해수욕장 앞 해산물 요리 전문점으로 제주산 해산물 메뉴가 다양하다.',
       img: 'http://tong.visitkorea.or.kr/cms/resource/82/2876482_image2_1.JPG' },
+    { name: '박해윤통영해물밥상', cat: '음식 > 한식', desc: '통영 출신 대표가 운영하며, 생굴과 꼬막을 통영에서 매일 하루 사용분만 들여온다.',
+      img: 'http://tong.visitkorea.or.kr/cms/resource/09/2756909_image2_1.jpg' },
   ] },
   { id: 'stay', title: '숙박', total: 72, cards: [
     { name: '도원', cat: '숙박 > 펜션/민박', desc: '객리단길에 위치한 한옥독채스테이로, 마당에서 실외 욕조를 쓸 수 있다.',
@@ -246,11 +252,9 @@ export function PortalHome({ template, menus = [], notices = [] }: { template: S
 
     <div className="mx-auto max-w-[75rem] px-7 max-[560px]:px-4">
       <section className="pt-16 max-[560px]:pt-12">
-        {/* 검색·챗봇은 배선됐지만 이 큐레이션 목록은 여전히 고정이다 — 만들 API가 없다.
-            시안에는 이 고지가 없지만, 실재하는 이름을 고정 표시하는 화면이라 구별 단서를 남긴다. */}
-        <SampleNotice label="샘플 데이터 · 추천 목록은 고정입니다" className="mb-8">
-          아래 카드는 코퍼스에 실재하는 문서를 카테고리별로 고정 표시한 것입니다. 조회수·계절 같은 큐레이션 축이 없어 집계 상위 카테고리와 코퍼스 순서로만 골랐습니다.
-        </SampleNotice>
+        {/* 고지를 화면에서 걷었다. 큐레이션이 고정이라는 사실 자체는 변하지 않았고,
+            섹션 부제가 그 근거를 계속 말한다 — "코퍼스 192곳"은 집계한 건수일 뿐
+            조회수·계절 같은 큐레이션 축이 아니라는 뜻이다. */}
         <SectionHead title={hero.title} eyebrow={`코퍼스 ${hero.total}곳 · TourAPI 실사진 표시 예정`} moreCategory={hero.id} />
 
         {/* 1페이지만 실재 문서다. 2페이지 이후는 만들 API가 없어 빈 자리로 두고 그렇게 밝힌다. */}
@@ -454,11 +458,11 @@ export function PortalSearch() {
           {/* 시안의 "OO 근처의 검색결과 표시"는 위치 기능이 없어 옮기지 않았다.
               건수는 서버가 고정한 citations 길이(CITATION_LIMIT=3 이하)이며, 코퍼스 전체에서
               몇 건이 일치했는지가 아니다 — 그 값은 공개 응답에 없다. */}
-          <h1 className="m-0 mb-3 text-[clamp(1.3125rem,2.6vw,1.875rem)] font-extrabold tracking-[-.04em] text-ink">
+          {/* 아래 여백은 걷어낸 고지가 갖고 있던 값이다 — 제목과 결과가 붙어 보이지 않게 한다. */}
+          <h1 className="m-0 mb-[1.625rem] text-[clamp(1.3125rem,2.6vw,1.875rem)] font-extrabold tracking-[-.04em] text-ink">
             {query ? `“${query}”${withParticle(query, '과', '와')} 일치하는 검색 결과` : '검색 결과'}
             {state.phase === 'ready' && <span className="ml-2 text-[0.9375rem] font-bold text-muted">{state.data?.citations.length ?? 0}건</span>}
           </h1>
-          <SampleNotice label="샘플 응답 · 관광 코퍼스 500건 · 근거 문서 기준 검색" className="mb-[1.625rem]" />
 
           <SearchResults state={state} onRetry={() => ask({ query, category: tabToCategory(active) })} hasQuery={query !== ''} />
         </div>
