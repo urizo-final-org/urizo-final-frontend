@@ -1,6 +1,8 @@
 import { Fragment, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import type { Menu, Post, SiteTemplate } from '../cms/api'
+import type { Menu, Post, SiteTemplate, TemplateHeroImage } from '../cms/api'
+import { templateImageDetails } from '../cms/templateImages'
+import './TemplateBanner.css'
 import { tabToCategory } from '../knowledge/category'
 import { useRagQuery } from '../knowledge/useRagQuery'
 import { withParticle } from './particle'
@@ -199,8 +201,8 @@ const TAB_PLACEHOLDERS: Record<string, string> = {
 }
 
 /** 메인과 헤더 모달이 동일한 검색 URL·카테고리 계약을 사용한다. */
-function PortalSearchForm({ onComplete, initialQuery = '', initialCategory = 'all' }: {
-  onComplete?: () => void; initialQuery?: string; initialCategory?: string
+function PortalSearchForm({ onComplete, initialQuery = '', initialCategory = 'all', banner = false, children }: {
+  onComplete?: () => void; initialQuery?: string; initialCategory?: string; banner?: boolean; children?: ReactNode
 }) {
   const navigate = useNavigate()
   const [draft, setDraft] = useState(initialQuery)
@@ -217,8 +219,7 @@ function PortalSearchForm({ onComplete, initialQuery = '', initialCategory = 'al
     navigate(qs ? `/search?${qs}` : '/search')
   }
 
-  return <>
-    <div role="tablist" aria-label="여행 검색 카테고리" className="mt-6 flex flex-wrap items-center justify-center gap-1.5">
+  const categories = <div role="tablist" aria-label="여행 검색 카테고리" className="mt-6 flex flex-wrap items-center justify-center gap-1.5">
       {PORTAL_TABS.map((item, index) => <button key={item.id} type="button" role="tab" aria-selected={item.id === tab}
         tabIndex={item.id === tab ? 0 : -1} onClick={() => setTab(item.id)} onKeyDown={(event) => {
           const last = PORTAL_TABS.length - 1
@@ -231,14 +232,18 @@ function PortalSearchForm({ onComplete, initialQuery = '', initialCategory = 'al
           event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>('[role="tab"]')[next]?.focus()
         }} className={`rounded-full border px-[1.0625rem] py-2 text-[0.8125rem] font-bold ${item.id === tab ? 'border-white bg-white text-ink' : 'border-white/20 bg-white/10 text-white/90'}`}>{item.label}</button>)}
     </div>
+  return <>
+    {!banner && categories}
     <form onSubmit={submit} className="mt-[1.625rem] flex h-14 items-center gap-3 rounded-full bg-panel py-0 pl-[1.375rem] pr-2 text-ink shadow-[0_2px_14px_rgba(22,34,47,0.14)]">
       <SearchGlyph />
       <input value={draft} onChange={(event) => setDraft(event.target.value)} aria-label="여행지 검색" placeholder={TAB_PLACEHOLDERS[tab] ?? TAB_PLACEHOLDERS.all} className="min-w-0 flex-1 border-0 bg-transparent text-[0.9375rem] text-ink outline-0" />
       <button type="submit" className="h-11 flex-none rounded-full bg-primary px-7 text-sm font-bold text-white max-[560px]:px-5">검색</button>
     </form>
-    <p className="m-0 mt-[0.875rem] text-xs text-white/65">수집된 관광 문서에서 근거를 찾아 답합니다 · 근거가 없으면 답하지 않습니다</p>
+    {children}
+    {banner ? categories : <p className="m-0 mt-[0.875rem] text-xs text-white/65">수집된 관광 문서에서 근거를 찾아 답합니다 · 근거가 없으면 답하지 않습니다</p>}
   </>
 }
+
 
 function PortalSearchDialog({ onClose, returnFocus }: { onClose: () => void; returnFocus: HTMLButtonElement | null }) {
   const dialog = useRef<HTMLDialogElement>(null)
@@ -295,21 +300,7 @@ export function PortalHome({ template, menus = [], notices = [] }: { template: S
   const notice = notices[0]
 
   return <main>
-    {/* 시안의 풀블리드 히어로. CMS 히어로 계약(사진·제목·부제·버튼)을 위에 두고, 통합 검색을
-        같은 사진 위에 이어 붙여 첫 화면에서 바로 검색이 시작되게 한다. */}
-    <div className="relative overflow-hidden bg-primary text-white">
-      <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: `url(${template.heroImageUrl})` }} aria-hidden="true" />
-      <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(16,28,42,.58)_0%,rgba(16,28,42,.48)_45%,rgba(16,28,42,.78)_100%)]" aria-hidden="true" />
-      <div className="relative mx-auto max-w-[75rem] px-7 pb-16 pt-14 text-center max-[560px]:px-4 max-[560px]:pt-10">
-        <PortalHero template={template} />
-
-        <div className="mx-auto mt-9 max-w-[45rem] border-t border-white/15 pt-9">
-          <h2 className="m-0 text-[1.375rem] font-extrabold tracking-[-.04em] text-white">어디로 떠나볼까요?</h2>
-
-          <PortalSearchForm />
-        </div>
-      </div>
-    </div>
+    <TemplateBanner template={template} />
 
     <section className="border-b border-line-soft bg-page">
       <div className="mx-auto max-w-[75rem] px-7 pb-[3.75rem] pt-14 max-[560px]:px-4">
@@ -431,16 +422,59 @@ function todayLabel(today = new Date()) {
   return `${today.getMonth() + 1}월 ${today.getDate()}일`
 }
 
-/**
- * CMS의 단일 Hero 계약을 시안의 풀블리드 히어로 문안으로 표현한다.
- *
- * <p>배경 사진·사이트명·제목·부제·버튼은 전부 CMS 값이다. 레이아웃 이름은 사용자 문구로
- * 노출하지 않고 제목 스타일에만 반영한다.
- */
+/** Key selects the main structure; the existing layout still controls title emphasis and subsites. */
+export function TemplateBanner({ template }: { template: SiteTemplate }) {
+  const images = templateImageDetails(template)
+  if (template.key === 'BOLD') {
+    return <div className={`portal-banner portal-banner--split ${images.length === 0 ? 'portal-banner--empty' : ''}`} data-template-key={template.key}>
+      <div className="portal-banner-inner">
+        <div className="portal-banner-copy"><PortalHero template={template} /></div>
+        {images[0] && <BannerImage image={images[0]} index={0} featured />}
+        <div className="portal-banner-search"><PortalSearchForm banner /></div>
+        {images.length > 1 && <div className="portal-banner-stories" data-image-count={images.length - 1}>
+          {images.slice(1).map((image, index) => <BannerImage key={`${index}:${image.url}`} image={image} index={index + 1} />)}
+        </div>}
+      </div>
+    </div>
+  }
+  if (template.key === 'CLASSIC') {
+    return <div className="portal-banner portal-banner--cards" data-template-key={template.key}>
+      <div className="portal-banner-inner">
+        <PortalHero template={template} />
+        <div className="portal-banner-search"><PortalSearchForm banner>
+          {images.length > 0 && <div className="portal-banner-cards" data-image-count={images.length}>
+            {images.map((image, index) => <BannerImage key={`${index}:${image.url}`} image={image} index={index} featured={index === 0} />)}
+          </div>}
+        </PortalSearchForm></div>
+      </div>
+    </div>
+  }
+  return <div className="relative overflow-hidden bg-primary text-white" data-template-key={template.key}>
+    {images[0] && <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: `url(${images[0].url})` }} aria-hidden="true" />}
+    <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(16,28,42,.58)_0%,rgba(16,28,42,.48)_45%,rgba(16,28,42,.78)_100%)]" aria-hidden="true" />
+    <div className="relative mx-auto max-w-[75rem] px-7 pb-16 pt-14 text-center max-[560px]:px-4 max-[560px]:pt-10">
+      <PortalHero template={template} />
+      <div className="mx-auto mt-9 max-w-[45rem] border-t border-white/15 pt-9">
+        <h2 className="m-0 text-[1.375rem] font-extrabold tracking-[-.04em] text-white">어디로 떠나볼까요?</h2>
+        <PortalSearchForm />
+      </div>
+    </div>
+  </div>
+}
+
+function BannerImage({ image, index, featured = false }: { image: TemplateHeroImage; index: number; featured?: boolean }) {
+  const caption = image.title || image.description
+  return <figure className={`portal-banner-image ${featured ? 'portal-banner-photo' : 'portal-banner-card'} ${caption ? 'has-caption' : ''}`}>
+    <img src={image.url} alt={image.title || (featured ? '메인 대표 이미지' : `메인 이미지 ${index + 1}`)} loading={featured ? 'eager' : 'lazy'} />
+    {caption && <figcaption>{image.description && <small>{image.description}</small>}{image.title && <strong>{image.title}</strong>}</figcaption>}
+  </figure>
+}
+
+/** All three structures reuse the CMS title, description, and single CTA. */
 export function PortalHero({ template }: { template: SiteTemplate }) {
   const bold = template.layout === 'BOLD'
   const minimal = template.layout === 'MINIMAL'
-  return <section aria-label={`${template.layout} 템플릿 메인`}>
+  return <section className="portal-hero" aria-label={`${template.layout} 템플릿 메인`}>
     <p className="m-0 mb-[0.875rem] text-xs font-extrabold tracking-[.2em] text-white/80">{template.siteName}</p>
     <h1 className={`m-0 text-balance break-keep text-[clamp(2rem,5vw,3.25rem)] leading-[1.14] tracking-[-.045em] ${bold ? 'font-black uppercase' : minimal ? 'font-semibold' : 'font-extrabold'}`}>{template.heroTitle}</h1>
     <p className="mx-auto mt-4 max-w-2xl text-balance break-keep text-sm leading-[1.7] text-white/80">{template.heroSubtitle}</p>

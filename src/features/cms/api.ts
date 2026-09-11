@@ -34,6 +34,7 @@ export type PostInput = Pick<Post, 'title' | 'body' | 'thumbnailImageId' | 'thum
 export type CodeGroup = { key: string; label: string; displayOrder: number; enabled: boolean }
 export type CmsCode = { id: number; groupKey: string; value: string; label: string; displayOrder: number; enabled: boolean }
 export type CodeInput = Pick<CmsCode, 'value' | 'label' | 'displayOrder' | 'enabled'>
+export type TemplateHeroImage = { url: string; title: string; description: string }
 export type SiteTemplate = {
   key: string
   layout: string
@@ -42,6 +43,8 @@ export type SiteTemplate = {
   headerText: string
   footerText: string
   heroImageUrl: string
+  heroImageUrls?: string[] | null
+  heroImages?: TemplateHeroImage[] | null
   heroTitle: string
   heroSubtitle: string
   heroButtonLabel: string
@@ -123,9 +126,9 @@ export class CmsApi {
   createCode = (key: string, value: CodeInput) => this.request<CmsCode>(`/api/cms/code-groups/${encodeURIComponent(key)}/codes`, { method: 'POST', body: JSON.stringify(value) })
   updateCode = (id: number, value: CodeInput) => this.request<CmsCode>(`/api/cms/codes/${id}`, { method: 'PUT', body: JSON.stringify(value) })
   templates = () => this.request<SiteTemplate[]>('/api/cms/templates')
-  saveTemplate = ({ key, layout, primaryColor, siteName, headerText, footerText, heroImageUrl, heroTitle, heroSubtitle, heroButtonLabel, heroButtonUrl }: SiteTemplate) => this.request<SiteTemplate>(`/api/cms/templates/${key}`, {
+  saveTemplate = ({ key, layout, primaryColor, siteName, headerText, footerText, heroImageUrl, heroImageUrls, heroImages, heroTitle, heroSubtitle, heroButtonLabel, heroButtonUrl }: SiteTemplate) => this.request<SiteTemplate>(`/api/cms/templates/${key}`, {
     method: 'PUT',
-    body: JSON.stringify({ layout, primaryColor, siteName, headerText, footerText, heroImageUrl, heroTitle, heroSubtitle, heroButtonLabel, heroButtonUrl }),
+    body: JSON.stringify({ layout, primaryColor, siteName, headerText, footerText, heroImageUrl, heroImageUrls, heroImages, heroTitle, heroSubtitle, heroButtonLabel, heroButtonUrl }),
   })
 }
 

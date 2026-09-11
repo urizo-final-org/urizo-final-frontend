@@ -34,7 +34,7 @@ test('the public URL renders the tour portal home without login, isolated from t
   window.localStorage.setItem('axms-admin-theme', 'dark')
   vi.stubGlobal('fetch', publicFetch())
   render(<AppShell />)
-  expect(await screen.findByRole('heading', { name: '어디로 떠나볼까요?' })).toBeInTheDocument()
+  expect(await screen.findByRole('heading', { name: siteTemplate().heroTitle })).toBeInTheDocument()
   const header = within(screen.getByRole('banner'))
   expect(header.getByRole('link', { name: /AX Bio Studio/ })).toHaveAttribute('href', '/')
   expect(header.getByText('Technology · Trust · Growth')).toBeInTheDocument()
@@ -359,7 +359,7 @@ test('an initial public Site failure is visible and retry recovers the page', as
 
   expect(await screen.findByRole('alert')).toHaveTextContent('일시적인 Site 장애입니다.')
   fireEvent.click(screen.getByRole('button', { name: '다시 시도' }))
-  expect(await screen.findByRole('heading', { name: '어디로 떠나볼까요?' })).toBeInTheDocument()
+  expect(await screen.findByRole('heading', { name: siteTemplate().heroTitle })).toBeInTheDocument()
   expect(contextCalls).toBe(2)
 })
 
@@ -795,7 +795,7 @@ test('an administrator previews a template and saves only contract fields', asyn
 
   render(<AppShell />)
   expect(await screen.findByRole('heading', { name: '템플릿 관리' })).toBeInTheDocument()
-  expect(await screen.findByText('메인 관광 포털은 공통 배치를 유지하며 제목의 굵기·영문 대문자 강조가 달라집니다. 하위 사이트는 각 레이아웃의 배치를 사용합니다.')).toBeInTheDocument()
+  expect(await screen.findByText('메인은 템플릿 1 좌우 분할형, 2 카드형, 3 전체 폭 배너형입니다. 이 항목은 제목 강조와 하위 사이트 배치에 적용됩니다.')).toBeInTheDocument()
   expect(screen.queryByText('ACTIVE')).not.toBeInTheDocument()
 
   fireEvent.click(screen.getByRole('button', { name: 'BOLD 템플릿 미리보기' }))

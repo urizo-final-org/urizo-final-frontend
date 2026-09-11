@@ -1,0 +1,89 @@
+.site-app .portal-banner { color: var(--ink); background: var(--panel); }
+.site-app .portal-banner-inner { max-width: 75rem; margin: 0 auto; padding: 3.5rem 1.75rem; }
+.site-app .portal-banner .portal-hero > p { color: var(--body); margin-left: 0; margin-right: 0; }
+.site-app .portal-banner .portal-hero > p:first-child { color: var(--brand); font-weight: 600; letter-spacing: .12em; }
+.site-app .portal-banner .portal-hero > h1 { font-size: clamp(2.2rem, 4.1vw, 3.45rem); font-weight: 750; line-height: 1.26; letter-spacing: -.055em; text-transform: none; }
+.site-app .portal-banner .portal-hero > p:nth-of-type(2) { margin-top: 1.5rem; max-width: 28rem; font-size: .94rem; line-height: 1.95; text-wrap: pretty; }
+.site-app .portal-banner .portal-hero > a { color: #fff; border: 0; background: var(--brand); min-height: 2.9rem; padding: .8rem 1.3rem; border-radius: .6rem; margin-top: 1.5rem; }
+.site-app .portal-banner .portal-hero > a:hover { filter: brightness(.93); }
+.site-app .portal-banner-search [role='tablist'] { justify-content: flex-start; gap: .6rem; }
+.site-app .portal-banner-search [role='tab'] { color: var(--body); border-color: var(--line); background: var(--panel); font-size: .8rem; font-weight: 600; min-height: 2.75rem; }
+.site-app .portal-banner-search [role='tab'][aria-selected='true'] { color: #fff; background: var(--brand); border-color: var(--brand); }
+.site-app .portal-banner-search form { margin-top: 0; border: 1px solid var(--line); box-shadow: none; height: 3.65rem; border-radius: .85rem; }
+.site-app .portal-banner-search form button { border-radius: .6rem; font-size: .8rem; }
+.site-app .portal-banner-image { margin: 0; min-width: 0; overflow: hidden; }
+.site-app .portal-banner-image img { display: block; width: 100%; object-fit: cover; }
+.site-app .portal-banner-image figcaption { overflow-wrap: anywhere; word-break: keep-all; }
+.site-app .portal-banner-image small { display: block; font-size: .75rem; font-weight: 400; line-height: 1.7; }
+.site-app .portal-banner-image strong { display: block; font-size: 1.18rem; font-weight: 650; letter-spacing: -.035em; line-height: 1.45; margin-top: .3rem; }
+.site-app .portal-banner-photo { position: relative; border-radius: 1.15rem; min-height: 27rem; background: var(--page); }
+.site-app .portal-banner-photo > img { position: absolute; inset: 0; height: 100%; }
+.site-app .portal-banner-photo.has-caption::after { content: ''; position: absolute; inset: 0; background: linear-gradient(180deg, transparent 25%, rgba(8, 25, 28, .15) 45%, rgba(8, 25, 28, .85)); }
+.site-app .portal-banner-photo figcaption { position: absolute; z-index: 1; left: 2rem; right: 2rem; bottom: 2rem; color: #fff; }
+.site-app .portal-banner-photo small { color: #fff; opacity: .88; }
+.site-app .portal-banner-photo strong { font-size: clamp(1.55rem, 2.6vw, 2.25rem); max-width: 22rem; }
+.site-app .portal-banner--split .portal-banner-inner { display: grid; grid-template-columns: 1fr 1.12fr; column-gap: 3.5rem; row-gap: 2rem; }
+.site-app .portal-banner-copy { min-width: 0; padding: 1.5rem 0 0; align-self: center; }
+.site-app .portal-banner--split .portal-banner-photo { grid-column: 2; grid-row: 1 / 3; }
+.site-app .portal-banner--split .portal-banner-search { display: contents; }
+.site-app .portal-banner--split .portal-banner-search form { grid-column: 1; grid-row: 2; align-self: end; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; padding-left: 0; }
+.site-app .portal-banner--split .portal-banner-search form button { background: transparent; color: var(--brand); padding-right: .3rem; }
+.site-app .portal-banner--split .portal-banner-search [role='tablist'] { grid-column: 1 / -1; margin: .5rem 0 0; padding: 1rem 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); justify-content: space-between; }
+.site-app .portal-banner--split .portal-banner-search [role='tab'] { border-color: transparent; border-radius: .45rem; }
+.site-app .portal-banner--empty .portal-banner-inner { grid-template-columns: 1fr; }
+.site-app .portal-banner--empty .portal-banner-copy { max-width: 44rem; }
+.site-app .portal-banner-stories { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1.5rem; }
+.site-app .portal-banner-stories[data-image-count='3'] { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.site-app .portal-banner-stories[data-image-count='2'] { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.site-app .portal-banner-stories[data-image-count='1'] { grid-template-columns: minmax(0, 1fr); max-width: 35rem; }
+.site-app .portal-banner-stories img { aspect-ratio: 1.8; border-radius: .65rem; }
+.site-app .portal-banner-stories figcaption { padding-top: .9rem; }
+.site-app .portal-banner-stories small { color: var(--muted); }
+.site-app .portal-banner--cards { background: var(--page); }
+.site-app .portal-banner--cards .portal-hero { display: grid; grid-template-columns: 1.4fr 1fr; column-gap: 3rem; align-items: end; }
+.site-app .portal-banner--cards .portal-hero > p:first-child { grid-column: 1; margin-bottom: .6rem; }
+.site-app .portal-banner--cards .portal-hero > h1 { grid-column: 1; grid-row: 2 / 4; font-size: clamp(2rem, 3.6vw, 2.75rem); }
+.site-app .portal-banner--cards .portal-hero > p:nth-of-type(2) { grid-column: 2; grid-row: 2; margin: 0; max-width: 27rem; font-size: .84rem; }
+.site-app .portal-banner--cards .portal-hero > a { grid-column: 2; grid-row: 3; justify-self: start; margin-top: .8rem; padding: 0; min-height: 2rem; background: transparent; color: var(--brand); }
+.site-app .portal-banner--cards .portal-banner-search { display: block; margin-top: 2rem; }
+.site-app .portal-banner-cards { display: grid; grid-template-columns: 1.45fr 1fr 1fr; gap: 1.1rem; margin-top: 1.5rem; align-items: stretch; }
+.site-app .portal-banner-cards .portal-banner-photo { min-height: 23rem; }
+.site-app .portal-banner-cards .portal-banner-card { border: 1px solid var(--line); border-radius: 1.1rem; background: var(--panel); }
+.site-app .portal-banner-cards .portal-banner-card img { height: 14rem; }
+.site-app .portal-banner-cards .portal-banner-card:not(.has-caption) img { height: 100%; min-height: 18rem; }
+.site-app .portal-banner-cards .portal-banner-card figcaption { padding: 1.25rem; }
+.site-app .portal-banner-cards .portal-banner-card small { color: var(--muted); }
+.site-app .portal-banner-cards[data-image-count='1'] { grid-template-columns: 1fr; }
+.site-app .portal-banner-cards[data-image-count='2'] { grid-template-columns: 1.45fr 1fr; }
+.site-app .portal-banner-cards:is([data-image-count='4'], [data-image-count='5']) .portal-banner-photo { grid-row: span 2; }
+.site-app .portal-banner-cards:is([data-image-count='4'], [data-image-count='5']) .portal-banner-card img { height: 11rem; }
+.site-app .portal-banner-cards:is([data-image-count='4'], [data-image-count='5']) .portal-banner-card:not(.has-caption) img { min-height: 14rem; height: 100%; }
+.site-app .portal-banner-cards[data-image-count='4'] .portal-banner-card:last-child { grid-column: 2 / 4; }
+@media (max-width: 850px) {
+  .site-app .portal-banner--split .portal-banner-inner { column-gap: 2rem; }
+  .site-app .portal-banner-stories { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .site-app .portal-banner--cards .portal-hero { column-gap: 1.5rem; }
+  .site-app .portal-banner-cards .portal-banner-card figcaption { padding: .9rem; }
+}
+@media (max-width: 600px) {
+  .site-app .portal-banner-inner { padding: 2rem 1rem; }
+  .site-app .portal-banner .portal-hero > h1 { font-size: 2.15rem; }
+  .site-app .portal-banner--split .portal-banner-inner { grid-template-columns: minmax(0, 1fr); row-gap: 1.5rem; }
+  .site-app .portal-banner-copy { padding-top: 0; }
+  .site-app .portal-banner--split .portal-banner-photo { grid-column: 1; grid-row: 2; min-height: 22rem; }
+  .site-app .portal-banner--split .portal-banner-search form { grid-row: 3; }
+  .site-app .portal-banner--split .portal-banner-search [role='tablist'] { justify-content: flex-start; gap: .2rem; }
+  .site-app .portal-banner--split .portal-banner-search [role='tab'] { padding-left: .8rem; padding-right: .8rem; }
+  .site-app .portal-banner-photo figcaption { left: 1.35rem; right: 1.35rem; bottom: 1.4rem; }
+  .site-app .portal-banner-stories, .site-app .portal-banner-stories[data-image-count='3'] { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.25rem .8rem; }
+  .site-app .portal-banner-stories strong { font-size: 1rem; }
+  .site-app .portal-banner--cards .portal-hero { display: block; }
+  .site-app .portal-banner--cards .portal-hero > p:nth-of-type(2) { margin-top: 1rem; }
+  .site-app .portal-banner-cards, .site-app .portal-banner-cards[data-image-count='2'] { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .8rem; }
+  .site-app .portal-banner-cards .portal-banner-photo { grid-column: 1 / -1; min-height: 22rem; }
+  .site-app .portal-banner-cards:is([data-image-count='4'], [data-image-count='5']) .portal-banner-photo { grid-row: auto; }
+  .site-app .portal-banner-cards[data-image-count='4'] .portal-banner-card:last-child { grid-column: 1 / -1; }
+  .site-app .portal-banner-cards .portal-banner-card img, .site-app .portal-banner-cards:is([data-image-count='4'], [data-image-count='5']) .portal-banner-card img { height: 10rem; }
+  .site-app .portal-banner-cards .portal-banner-card strong { font-size: 1.05rem; }
+  .site-app .portal-banner-search form input { font-size: 1rem; }
+}

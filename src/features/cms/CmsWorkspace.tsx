@@ -8,12 +8,18 @@ import {
 } from '../../shared/ui/primitives'
 import { CmsApi, SiteApi, CMS_CHANGED_EVENT, notifySiteUpdated, type Article, type Board, type Member, type Menu, type MenuTargetType, type Post, type PublicSiteContext, type SiteTemplate } from './api'
 import { TemplatePreview } from './TemplatePreview'
+import { TemplateImageList } from './TemplateImageList'
+import { MAX_TEMPLATE_IMAGES, templateImages, templateImageDetails, withTemplateImages, templateLabel } from './templateImages'
+import type { TemplateHeroImage } from './api'
 import CmsAiAssistant, { NEW_BOARD_TARGET, NEW_CONTENT_TARGET, NEW_MENU_TARGET, postTargetId, type CmsAssistantTarget } from './assistant/CmsAiAssistant'
 import ContentEditor from './ContentEditor'
 import CodeWorkspace from './CodeWorkspace'
 import { contentImageUrl, type CmsCode, type CodeGroup } from './api'
 import type { NaturalCmsApi } from './assistant/api'
 import type { AssistantMenu } from './assistant/menuTree'
+import type { CmsSiteSettingsApiClient } from '../site-settings/api'
+
+type TemplateSiteApi = Pick<CmsSiteSettingsApiClient, 'sites' | 'saveSite'>
 
 const dangerButton = 'inline-flex h-8 items-center gap-[0.375rem] rounded-[0.3125rem] border border-[#f0d5d1] bg-fail-bg px-[0.6875rem] text-xs font-semibold text-fail-fg enabled:hover:bg-[#f8e0dc]'
 const recordRow = 'flex w-full items-center gap-[0.625rem] border-b border-row-line px-4 py-[0.625rem] text-left text-body hover:bg-sub'
@@ -32,7 +38,7 @@ const recordName = 'block truncate text-[0.78125rem] text-ink'
 const CMS_SUCCESS_EVENT = 'axms:cms-success'
 type SuccessNotice = { id: string; message: string }
 
-export default function CmsWorkspace({ route, api, assistantApi, monitoringAction }: { route: CmsRouteId; api: CmsApi; assistantApi: NaturalCmsApi; monitoringAction?: ReactNode }) {
+export default function CmsWorkspace({ route, api, assistantApi, siteSettingsApi, monitoringAction }: { route: CmsRouteId; api: CmsApi; assistantApi: NaturalCmsApi; siteSettingsApi: TemplateSiteApi; monitoringAction?: ReactNode }) {
   const [success, setSuccess] = useState<SuccessNotice | null>(null)
   const [assistantCollapsed, setAssistantCollapsed] = useState(false)
   const [assistantTarget, setAssistantTarget] = useState<CmsAssistantTarget | null>(null)
@@ -55,7 +61,7 @@ export default function CmsWorkspace({ route, api, assistantApi, monitoringActio
     : route === 'menus' ? <Menus api={api} onSelect={setAssistantTarget} onCandidates={setAssistantCandidates} onMenus={setAssistantMenus} monitoringAction={monitoringAction} />
       : route === 'contents' ? <Contents api={api} onSelect={setAssistantTarget} onCandidates={setAssistantCandidates} onMenus={setAssistantMenus} monitoringAction={monitoringAction} />
         : route === 'boards' ? <Boards api={api} onSelect={setAssistantTarget} onCandidates={setAssistantCandidates} onMenus={setAssistantMenus} monitoringAction={monitoringAction} />
-          : <Templates api={api} monitoringAction={monitoringAction} />
+          : <Templates api={api} siteSettingsApi={siteSettingsApi} monitoringAction={monitoringAction} />
   const assistantRoute = route === 'members' || route === 'codes' ? null : route
   return <>
     <SuccessToast notice={success} />
@@ -624,7 +630,7 @@ function Boards({ api, onSelect, onCandidates, onMenus, monitoringAction }: {
   </>
 }
 
-export function Templates({ api, monitoringAction }: { api: CmsApi; monitoringAction?: ReactNode }) {
+export function Templates({ api, siteSettingsApi, monitoringAction }: { api: CmsApi; siteSettingsApi: TemplateSiteApi; monitoringAction?: ReactNode }) {
   const [items, setItems] = useState<SiteTemplate[]>([])
   const [value, setValue] = useState<SiteTemplate | null>(null)
   const [preview, setPreview] = useState<SiteTemplate | null>(null)
@@ -632,33 +638,106 @@ export function Templates({ api, monitoringAction }: { api: CmsApi; monitoringAc
   const [mainSite, setMainSite] = useState<PublicSiteContext | null>(null)
   const [menus, setMenus] = useState<Menu[]>([])
   const [contextWarning, setContextWarning] = useState<string | null>(null)
+  const [uploading, setUploading] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [applying, setApplying] = useState(false)
+  const applyBusy = useRef(false)
+  const uploadRequest = useRef(0)
+  const uploadBusy = useRef(false)
+  const saveBusy = useRef(false)
+  const selectionVersion = useRef(0)
+  const loadRequest = useRef(0)
+  useEffect(() => () => { uploadRequest.current += 1; selectionVersion.current += 1; loadRequest.current += 1 }, [api])
   const load = async () => {
+    const request = ++loadRequest.current
+    const version = selectionVersion.current
     const siteApi = new SiteApi()
     const context = siteApi.site('/').then((site) => {
       if (!site.template?.key) throw new Error('메인 사이트 정보가 없습니다.')
+      if (request !== loadRequest.current) return null
       setMainSite(site)
       setContextWarning(null)
       return site
     }).catch(() => {
+      if (request !== loadRequest.current) return null
       setMainSite(null)
       setContextWarning('메인 적용 정보를 확인하지 못했습니다. 미리보기는 템플릿 예시값을 사용합니다.')
       return null
     })
-    void siteApi.menus().then(setMenus).catch(() => setMenus([]))
+    void siteApi.menus().then((next) => { if (request === loadRequest.current) setMenus(next) }).catch(() => { if (request === loadRequest.current) setMenus([]) })
     try {
       const [next, site] = await Promise.all([api.templates(), context])
+      if (request !== loadRequest.current) return
       setItems(next)
-      setValue((current) => current ? next.find((item) => item.key === current.key) ?? current : next.find((item) => item.key === site?.template.key) ?? next[0] ?? null)
-    } catch (e) { setFailure(`불러오지 못했습니다. ${describeFailure(e)}`) }
+      setValue((current) => current
+        ? version === selectionVersion.current && !uploadBusy.current && !saveBusy.current ? next.find((item) => item.key === current.key) ?? current : current
+        : next.find((item) => item.key === site?.template.key) ?? next[0] ?? null)
+    } catch (e) { if (request === loadRequest.current) setFailure(`불러오지 못했습니다. ${describeFailure(e)}`) }
   }
   useCmsList(api, load)
   async function submit(event: FormEvent) {
     event.preventDefault()
-    if (!value) return
+    if (!value || uploadBusy.current || saveBusy.current || applyBusy.current) return
+    const version = selectionVersion.current
+    const draft = value
+    saveBusy.current = true
+    setSaving(true)
     setFailure(null)
-    try { setValue(await api.saveTemplate(value)); await load(); notifySiteUpdated(); notifyCmsSuccess('템플릿을 저장했습니다.') } catch (e) { setFailure(`템플릿을 저장하지 못했습니다. ${describeFailure(e)}`) }
+    try {
+      const saved = await api.saveTemplate(draft)
+      setItems((current) => current.map((item) => item.key === saved.key ? saved : item))
+      if (version === selectionVersion.current) setValue(saved)
+      notifySiteUpdated(); notifyCmsSuccess('템플릿을 저장했습니다.')
+    } catch (e) { if (version === selectionVersion.current) setFailure(`템플릿을 저장하지 못했습니다. ${describeFailure(e)}`) }
+    finally { saveBusy.current = false; setSaving(false) }
   }
-  function select(item: SiteTemplate) { setFailure(null); setValue(item) }
+  function select(item: SiteTemplate) {
+    if (applyBusy.current) return
+    selectionVersion.current += 1; uploadRequest.current += 1; uploadBusy.current = false
+    setUploading(false); setFailure(null); setValue(item)
+  }
+  const hasUnsavedChanges = !!value && JSON.stringify(value) !== JSON.stringify(items.find((item) => item.key === value.key))
+  async function applyToMain() {
+    if (!value || !mainSite || hasUnsavedChanges || uploadBusy.current || saveBusy.current || applyBusy.current || value.key === mainSite.template.key) return
+    const chosen = value
+    applyBusy.current = true; setApplying(true); setFailure(null)
+    ++loadRequest.current
+    try {
+      // Read current site fields so applying a template preserves its name, path and enabled state.
+      const sites = await siteSettingsApi.sites()
+      const current = sites.find((site) => site.key === mainSite.key && site.publicPath === '/' && site.enabled)
+      if (!current) throw new Error('메인 사이트 정보를 확인할 수 없습니다. 사이트 관리에서 설정을 확인해 주세요.')
+      const saved = await siteSettingsApi.saveSite(current.key, { ...current, templateKey: chosen.key })
+      setMainSite({ key: saved.key, name: saved.name, publicPath: saved.publicPath, template: chosen })
+      notifySiteUpdated()
+      notifyCmsSuccess(`${templateLabel(chosen.key)}을 메인 사이트에 적용했습니다.`)
+    } catch (e) { setFailure(`메인에 적용하지 못했습니다. ${describeFailure(e)}`) }
+    finally { applyBusy.current = false; setApplying(false) }
+  }
+  function changeImages(images: TemplateHeroImage[]) {
+    setValue((current) => current ? withTemplateImages(current, images) : current)
+  }
+  async function uploadImages(files: File[]) {
+    if (!value || files.length === 0 || uploadBusy.current || saveBusy.current) return
+    if (templateImages(value).length + files.length > MAX_TEMPLATE_IMAGES) { setFailure('메인 이미지는 최대 5개까지 등록할 수 있습니다.'); return }
+    if (files.some((file) => file.size > 8 * 1024 * 1024)) { setFailure('이미지는 파일당 8MB까지 올릴 수 있습니다.'); return }
+    if (files.some((file) => !['image/jpeg', 'image/png', 'image/webp'].includes(file.type))) { setFailure('JPG, PNG, WebP 이미지만 올릴 수 있습니다.'); return }
+    const request = ++uploadRequest.current
+    uploadBusy.current = true; setUploading(true); setFailure(null)
+    try {
+      // Append completed uploads in selection order. A failure keeps earlier images and the draft.
+      for (const file of files) {
+        const image = await api.uploadImage(file)
+        if (request !== uploadRequest.current) return
+        setValue((current) => {
+          if (!current || request !== uploadRequest.current) return current
+          const images = [...templateImageDetails(current), { url: contentImageUrl(image.id), title: '', description: '' }]
+          return withTemplateImages(current, images)
+        })
+      }
+    } catch (e) { if (request === uploadRequest.current) setFailure(`이미지를 업로드하지 못했습니다. ${describeFailure(e)}`) }
+    finally { if (request === uploadRequest.current) { uploadBusy.current = false; setUploading(false) } }
+  }
 
   return <>
     <Heading title="템플릿 관리" description="공통 디자인과 메인 화면, Header, Footer를 한곳에서 관리합니다.">{monitoringAction}</Heading>
@@ -666,9 +745,9 @@ export function Templates({ api, monitoringAction }: { api: CmsApi; monitoringAc
     <p className="mb-4 text-xs text-muted">{contextWarning ?? (mainSite ? `메인 사이트: ${mainSite.name} (/) · 적용 템플릿: ${mainSite.template.key}` : '메인 적용 정보를 확인하고 있습니다.')}</p>
     <div className="mb-[0.875rem] grid gap-[0.875rem] md:grid-cols-3">
       {items.map((item) => <article key={item.key} className={`${panel} grid content-start gap-3 p-4 ${value?.key === item.key ? 'border-primary ring-2 ring-[#eef2f7]' : ''}`}>
-        <button type="button" className="text-left" aria-label={`${item.key} 템플릿 선택`} onClick={() => select(item)}>
+        <button type="button" className="text-left" disabled={applying} aria-label={`${item.key} 템플릿 선택`} onClick={() => select(item)}>
           <span className="flex items-center gap-2 text-[0.65625rem] font-semibold text-run-fg">{item.key}</span>
-          <h2 className="mb-1 mt-2 text-base font-semibold">{item.siteName}</h2>
+          <h2 className="mb-1 mt-2 text-base font-semibold">{templateLabel(item.key)}</h2>
           <span className="text-[0.6875rem] text-muted-2">{item.layout}</span>
           {item.key === mainSite?.template.key && <span className="mt-2 block text-xs font-semibold text-primary">메인에 적용 중</span>}
         </button>
@@ -677,11 +756,14 @@ export function Templates({ api, monitoringAction }: { api: CmsApi; monitoringAc
     </div>
     {value && <form className={panel} onSubmit={submit}>
       <PanelTitle title={`${value.key} 템플릿 설정`} sub="저장한 내용은 이 템플릿을 사용하는 사이트에 반영됩니다.">
-        <button type="button" className={smallButton} onClick={() => setPreview(value)}>현재 입력값 미리보기</button>
+        <div className="flex flex-wrap justify-end gap-2">
+          <button type="button" className={smallButton} onClick={() => setPreview(value)}>현재 입력값 미리보기</button>
+          <button type="button" className={primaryButton} disabled={!mainSite || applying || saving || uploading || hasUnsavedChanges || value.key === mainSite.template.key} onClick={() => void applyToMain()}>{applying ? '적용 중…' : value.key === mainSite?.template.key ? '적용 완료' : '메인에 적용'}</button>
+        </div>
       </PanelTitle>
-      <p className="mx-4 text-xs text-muted">템플릿 선택은 편집 대상 선택입니다. 메인 적용 템플릿은 사이트 관리에서 변경합니다.</p>
-      <div className="grid gap-4 p-4 md:grid-cols-2">
-        <TemplateField label="레이아웃" description="메인 관광 포털은 공통 배치를 유지하며 제목의 굵기·영문 대문자 강조가 달라집니다. 하위 사이트는 각 레이아웃의 배치를 사용합니다.">
+      <p className="mx-4 text-xs text-muted">{hasUnsavedChanges ? '수정한 내용을 템플릿 저장으로 저장한 뒤 메인에 적용해 주세요.' : '선택한 템플릿을 메인에 적용 버튼으로 메인 사이트(/)에 적용할 수 있습니다.'}</p>
+      <fieldset className="m-0 grid min-w-0 gap-4 border-0 p-4 md:grid-cols-2" disabled={saving || applying}>
+        <TemplateField label="레이아웃" description="메인은 템플릿 1 좌우 분할형, 2 카드형, 3 전체 폭 배너형입니다. 이 항목은 제목 강조와 하위 사이트 배치에 적용됩니다.">
           <select className={control} value={value.layout} onChange={(e) => setValue({ ...value, layout: e.target.value })}><option value="CLASSIC">Corporate</option><option value="MINIMAL">Minimal</option><option value="BOLD">Bold</option></select>
         </TemplateField>
         <TemplateField label="대표 색상" description="버튼, 링크, 강조 요소에 공통 적용되는 브랜드 색상입니다.">
@@ -693,10 +775,8 @@ export function Templates({ api, monitoringAction }: { api: CmsApi; monitoringAc
         <TemplateField label="Header 보조 문구" description="사용자 화면 맨 위 안내 영역에 표시되는 짧은 문구입니다.">
           <input className={control} value={value.headerText} onChange={(e) => setValue({ ...value, headerText: e.target.value })} />
         </TemplateField>
-        <TemplateField wide label="메인 대표 이미지 URL" description="메인 첫 화면의 배경 이미지 주소입니다. /images/... 형식을 사용할 수 있습니다.">
-          <input className={`${control} font-mono`} value={value.heroImageUrl} onChange={(e) => setValue({ ...value, heroImageUrl: e.target.value })} required />
-        </TemplateField>
-        <TemplateField wide label="메인 대표 문구" description="메인 대표 이미지 위에 가장 크게 표시되는 제목입니다.">
+        <TemplateImageList key={value.key} value={value} uploading={uploading} disabled={uploading || saving} onChange={changeImages} onUpload={(files) => { void uploadImages(files) }} />
+        <TemplateField wide label="메인 대표 문구" description="메인 배너에 가장 크게 표시되는 제목입니다.">
           <input className={control} value={value.heroTitle} onChange={(e) => setValue({ ...value, heroTitle: e.target.value })} required />
         </TemplateField>
         <TemplateField wide label="메인 설명" description="대표 문구 아래에 표시되는 소개 문장입니다.">
@@ -712,9 +792,9 @@ export function Templates({ api, monitoringAction }: { api: CmsApi; monitoringAc
           <input className={control} value={value.footerText} onChange={(e) => setValue({ ...value, footerText: e.target.value })} />
         </TemplateField>
         <div className="md:col-span-2 flex justify-end">
-          <button className={primaryButton}>템플릿 저장</button>
+          <button className={primaryButton} disabled={uploading || saving}>{saving ? '저장 중…' : '템플릿 저장'}</button>
         </div>
-      </div>
+      </fieldset>
     </form>}
     {preview && <TemplatePreview value={preview} siteName={mainSite?.name} menus={menus} onClose={() => setPreview(null)} />}
   </>

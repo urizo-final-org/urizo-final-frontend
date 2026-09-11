@@ -22,7 +22,7 @@ test('manual post and Natural CMS target share rich document, separate thumbnail
   vi.spyOn(api, 'codes').mockResolvedValue([{ id: 7, groupKey: 'REGION', value: 'SEOUL', label: '서울', displayOrder: 0, enabled: true }])
   vi.spyOn(api, 'uploadImage').mockResolvedValue({ id: 42, byteSize: 12, contentType: 'image/png' })
   const create = vi.spyOn(api, 'createPost').mockResolvedValue({ id: 99, boardId: 3, authorId: 'user', authorName: 'user', title: '샘플', body: '{}', createdAt: '2026-09-11', updatedAt: '2026-09-11' })
-  render(<CmsWorkspace route="boards" api={api} assistantApi={{} as NaturalCmsApi} />)
+  render(<CmsWorkspace route="boards" api={api} assistantApi={{} as NaturalCmsApi} siteSettingsApi={{ sites: vi.fn(), saveSite: vi.fn() }} />)
   fireEvent.click(await screen.findByRole('button', { name: /여행 소식/ }))
   fireEvent.click(await screen.findByRole('button', { name: '새 게시물' }))
   expect(screen.getByTestId('assistant-target')).toHaveTextContent('board:3:post:new:images-enabled')
@@ -56,7 +56,7 @@ function pagedBoardApi(count = 31) {
 
 test('post list pages ten rows and folding or paging preserves the editor and assistant target', async () => {
   const { api } = pagedBoardApi()
-  render(<CmsWorkspace route="boards" api={api} assistantApi={{} as NaturalCmsApi} />)
+  render(<CmsWorkspace route="boards" api={api} assistantApi={{} as NaturalCmsApi} siteSettingsApi={{ sites: vi.fn(), saveSite: vi.fn() }} />)
   fireEvent.click(await screen.findByRole('button', { name: '게시판 1' }))
   const list = within(await screen.findByRole('region', { name: '게시물 목록' }))
   await list.findByText('글 1')
@@ -83,7 +83,7 @@ test('post list pages ten rows and folding or paging preserves the editor and as
 
 test('empty post list can fold and keeps the create action without a pager', async () => {
   const { api } = pagedBoardApi(0)
-  render(<CmsWorkspace route="boards" api={api} assistantApi={{} as NaturalCmsApi} />)
+  render(<CmsWorkspace route="boards" api={api} assistantApi={{} as NaturalCmsApi} siteSettingsApi={{ sites: vi.fn(), saveSite: vi.fn() }} />)
   fireEvent.click(await screen.findByRole('button', { name: '게시판 1' }))
   const list = within(await screen.findByRole('region', { name: '게시물 목록' }))
   expect(await list.findByText('게시물이 없습니다')).toBeVisible()
@@ -98,7 +98,7 @@ test('deleting the only post on the last page returns to the last remaining page
   vi.mocked(api.posts).mockResolvedValueOnce(posts).mockResolvedValue(posts.slice(0, 10))
   vi.spyOn(api, 'deletePost').mockResolvedValue(undefined)
   const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
-  render(<CmsWorkspace route="boards" api={api} assistantApi={{} as NaturalCmsApi} />)
+  render(<CmsWorkspace route="boards" api={api} assistantApi={{} as NaturalCmsApi} siteSettingsApi={{ sites: vi.fn(), saveSite: vi.fn() }} />)
   fireEvent.click(await screen.findByRole('button', { name: '게시판 1' }))
   const list = within(await screen.findByRole('region', { name: '게시물 목록' }))
   fireEvent.click(await list.findByRole('button', { name: '게시물 2페이지' }))

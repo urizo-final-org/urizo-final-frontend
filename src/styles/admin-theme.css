@@ -113,6 +113,8 @@
 
 .admin-app :is(button, input, select, textarea) { font: inherit; }
 .admin-app button { cursor: pointer; border: 0; color: inherit; }
+.admin-app .cms-suggestion-button { color: var(--teal-ink); background: var(--teal-bg); border: 1px dashed var(--field-line); }
+.admin-app .cms-suggestion-button:hover { background: var(--sub); }
 .admin-app button:disabled { cursor: not-allowed; opacity: 0.48; }
 .admin-app ::placeholder { color: var(--muted-3); }
 .admin-app :is(button, input, select, textarea, a):focus-visible {
