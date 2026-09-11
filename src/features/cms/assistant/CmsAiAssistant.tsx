@@ -660,7 +660,7 @@ export default function CmsAiAssistant({ route, target, candidates, menus, onTar
         {profile.suggestions.map((suggestion) => <button
           key={suggestion}
           type="button"
-          className="w-full rounded-[0.3125rem] border border-dashed border-[#d6e2e6] bg-[#f7fbfb] px-[0.625rem] py-[0.5625rem] text-left text-[0.71875rem] leading-[1.5] text-[#3f7f86] hover:bg-[#eef7f8]"
+          className="cms-suggestion-button w-full rounded-[0.3125rem] px-[0.625rem] py-[0.5625rem] text-left text-[0.71875rem] leading-[1.5]"
           onClick={() => setDraft(suggestion)}
         >추천 요청: {suggestion}</button>)}
       </div>

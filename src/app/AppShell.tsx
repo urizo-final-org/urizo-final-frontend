@@ -254,7 +254,7 @@ function AuthenticatedAdmin({ session, theme, onToggleTheme, onRefresh, onExpire
             key={route.id}
             path={route.path}
             element={isCmsRouteId(route.id)
-              ? <CmsWorkspace route={route.id} api={cmsApi} assistantApi={naturalCmsApi} monitoringAction={monitoringAction('NATURAL_CMS')} />
+              ? <CmsWorkspace route={route.id} api={cmsApi} assistantApi={naturalCmsApi} siteSettingsApi={siteSettingsApi} monitoringAction={monitoringAction('NATURAL_CMS')} />
               : route.id === 'home'
                 ? <HomeDashboard actorName={session.actor.name} role={session.actor.role} historyApi={historyApi} knowledgeApi={knowledgeApi} profileApi={profileApi} codingApi={codingApi} />
               : route.id === 'models'
