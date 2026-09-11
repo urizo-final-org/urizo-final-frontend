@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { MemoryRouter, useLocation } from 'react-router-dom'
 import { afterAll, afterEach, beforeAll, expect, test, vi } from 'vitest'
 import { PortalFooter, PortalHeader, PortalHome } from '../site/TourPortal'
-import { CmsApi, SITE_UPDATE_EVENT, type Menu, type SiteTemplate } from './api'
+import { CmsApi, CMS_CHANGED_EVENT, SITE_UPDATE_EVENT, type Menu, type SiteTemplate } from './api'
 import { Templates } from './CmsWorkspace'
 import { TemplatePreview } from './TemplatePreview'
 
@@ -76,6 +76,30 @@ function setupTemplates() {
   vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => new Response(JSON.stringify(String(input).startsWith('/api/site/context?') ? site : menus), { status: 200 })))
   return { api, save }
 }
+
+test('a CMS refresh preserves unsaved template edits and keeps AI blocked', async () => {
+  const { api } = setupTemplates()
+  const context = vi.fn()
+  render(<MemoryRouter><Templates api={api} siteSettingsApi={siteSettingsApi} onAssistantContext={context} /></MemoryRouter>)
+  await screen.findByText('MINIMAL 템플릿 설정')
+  fireEvent.change(screen.getByLabelText(/^메인 대표 문구/), { target: { value: '수동 작성 중' } })
+  window.dispatchEvent(new Event(CMS_CHANGED_EVENT))
+  await waitFor(() => expect(api.templates).toHaveBeenCalledTimes(2))
+  expect(screen.getByLabelText(/^메인 대표 문구/)).toHaveValue('수동 작성 중')
+  expect(context.mock.lastCall?.[0]).toMatchObject({ target: { type: 'TEMPLATE', id: 'MINIMAL' }, blockedReason: expect.stringContaining('직접 수정') })
+})
+
+test('approval preview uses a separate viewport for mobile media queries', () => {
+  render(<MemoryRouter><TemplatePreview value={template} mode="approval" onClose={vi.fn()} /></MemoryRouter>)
+  const frame = screen.getByTitle('템플릿 실제 화면') as HTMLIFrameElement
+  expect(frame).toHaveAttribute('sandbox', 'allow-same-origin')
+  expect(frame.style.width).toBe('100%')
+  fireEvent.click(screen.getByRole('button', { name: '모바일 390px' }))
+  expect(frame.style.width).toBe('390px')
+  fireEvent.load(frame)
+  expect(frame.contentDocument?.body.querySelector('[inert]')).not.toBeNull()
+  expect(frame.contentDocument?.body.querySelector('h1')).toHaveTextContent('Portal Title')
+})
 
 test('selects the main template by key, previews drafts with the real site name, and only saves on explicit submit', async () => {
   const { api, save } = setupTemplates()

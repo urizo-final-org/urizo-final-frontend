@@ -17,6 +17,7 @@ import CodeWorkspace from './CodeWorkspace'
 import { contentImageUrl, type CmsCode, type CodeGroup } from './api'
 import type { NaturalCmsApi } from './assistant/api'
 import type { AssistantMenu } from './assistant/menuTree'
+import type { TemplateAssistantContext } from './assistant/TemplateProposal'
 import type { CmsSiteSettingsApiClient } from '../site-settings/api'
 
 type TemplateSiteApi = Pick<CmsSiteSettingsApiClient, 'sites' | 'saveSite'>
@@ -42,6 +43,7 @@ export default function CmsWorkspace({ route, api, assistantApi, siteSettingsApi
   const [success, setSuccess] = useState<SuccessNotice | null>(null)
   const [assistantCollapsed, setAssistantCollapsed] = useState(false)
   const [assistantTarget, setAssistantTarget] = useState<CmsAssistantTarget | null>(null)
+  const [templateContext, setTemplateContext] = useState<TemplateAssistantContext | null>(null)
   const [assistantCandidates, setAssistantCandidates] = useState<CmsAssistantTarget[]>([])
   /** 메뉴 미리보기 트리는 화면이 가진 전체 목록으로 결과 순서를 계산한다. */
   const [assistantMenus, setAssistantMenus] = useState<AssistantMenu[]>([])
@@ -61,14 +63,14 @@ export default function CmsWorkspace({ route, api, assistantApi, siteSettingsApi
     : route === 'menus' ? <Menus api={api} onSelect={setAssistantTarget} onCandidates={setAssistantCandidates} onMenus={setAssistantMenus} monitoringAction={monitoringAction} />
       : route === 'contents' ? <Contents api={api} onSelect={setAssistantTarget} onCandidates={setAssistantCandidates} onMenus={setAssistantMenus} monitoringAction={monitoringAction} />
         : route === 'boards' ? <Boards api={api} onSelect={setAssistantTarget} onCandidates={setAssistantCandidates} onMenus={setAssistantMenus} monitoringAction={monitoringAction} />
-          : <Templates api={api} siteSettingsApi={siteSettingsApi} monitoringAction={monitoringAction} />
+          : <Templates api={api} siteSettingsApi={siteSettingsApi} monitoringAction={monitoringAction} onAssistantContext={setTemplateContext} />
   const assistantRoute = route === 'members' || route === 'codes' ? null : route
   return <>
     <SuccessToast notice={success} />
     {assistantRoute
       ? <div className={`grid items-start gap-[0.875rem] ${assistantCollapsed ? 'min-[1240px]:grid-cols-[minmax(0,1fr)_4rem]' : 'min-[1240px]:grid-cols-[minmax(0,1fr)_22rem]'}`}>
         <div className="min-w-0">{workspace}</div>
-        <CmsAiAssistant key={assistantRoute} route={assistantRoute} target={assistantTarget} candidates={assistantCandidates} menus={assistantMenus} onTarget={setAssistantTarget} api={assistantApi} onUploadImage={assistantRoute === 'contents' || (assistantRoute === 'boards' && assistantTarget?.id.startsWith('board:')) ? api.uploadImage : undefined} collapsed={assistantCollapsed} onToggle={() => setAssistantCollapsed((value) => !value)} />
+        <CmsAiAssistant key={assistantRoute} route={assistantRoute} target={assistantRoute === 'templates' ? templateContext?.target ?? null : assistantTarget} templateContext={templateContext} candidates={assistantCandidates} menus={assistantMenus} onTarget={setAssistantTarget} api={assistantApi} onUploadImage={assistantRoute === 'templates' || assistantRoute === 'contents' || (assistantRoute === 'boards' && assistantTarget?.id.startsWith('board:')) ? api.uploadImage : undefined} collapsed={assistantCollapsed} onToggle={() => setAssistantCollapsed((value) => !value)} />
       </div>
       : workspace}
   </>
@@ -630,7 +632,7 @@ function Boards({ api, onSelect, onCandidates, onMenus, monitoringAction }: {
   </>
 }
 
-export function Templates({ api, siteSettingsApi, monitoringAction }: { api: CmsApi; siteSettingsApi: TemplateSiteApi; monitoringAction?: ReactNode }) {
+export function Templates({ api, siteSettingsApi, monitoringAction, onAssistantContext }: { api: CmsApi; siteSettingsApi: TemplateSiteApi; monitoringAction?: ReactNode; onAssistantContext?: (context: TemplateAssistantContext) => void }) {
   const [items, setItems] = useState<SiteTemplate[]>([])
   const [value, setValue] = useState<SiteTemplate | null>(null)
   const [preview, setPreview] = useState<SiteTemplate | null>(null)
@@ -647,6 +649,8 @@ export function Templates({ api, siteSettingsApi, monitoringAction }: { api: Cms
   const saveBusy = useRef(false)
   const selectionVersion = useRef(0)
   const loadRequest = useRef(0)
+  const dirty = useRef(false)
+  dirty.current = !!value && JSON.stringify(value) !== JSON.stringify(items.find((item) => item.key === value.key))
   useEffect(() => () => { uploadRequest.current += 1; selectionVersion.current += 1; loadRequest.current += 1 }, [api])
   const load = async () => {
     const request = ++loadRequest.current
@@ -670,7 +674,7 @@ export function Templates({ api, siteSettingsApi, monitoringAction }: { api: Cms
       if (request !== loadRequest.current) return
       setItems(next)
       setValue((current) => current
-        ? version === selectionVersion.current && !uploadBusy.current && !saveBusy.current ? next.find((item) => item.key === current.key) ?? current : current
+        ? version === selectionVersion.current && !dirty.current && !uploadBusy.current && !saveBusy.current ? next.find((item) => item.key === current.key) ?? current : current
         : next.find((item) => item.key === site?.template.key) ?? next[0] ?? null)
     } catch (e) { if (request === loadRequest.current) setFailure(`불러오지 못했습니다. ${describeFailure(e)}`) }
   }
@@ -697,6 +701,13 @@ export function Templates({ api, siteSettingsApi, monitoringAction }: { api: Cms
     setUploading(false); setFailure(null); setValue(item)
   }
   const hasUnsavedChanges = !!value && JSON.stringify(value) !== JSON.stringify(items.find((item) => item.key === value.key))
+  const selectedKey = value?.key
+  const blockedReason = !selectedKey ? '템플릿을 선택해 주세요.' : uploading ? '사진 업로드가 끝난 뒤 요청해 주세요.'
+    : saving || applying ? '저장·적용이 끝난 뒤 요청해 주세요.' : hasUnsavedChanges ? '직접 수정한 내용을 템플릿 저장으로 저장한 뒤 AI를 사용해 주세요.' : null
+  useEffect(() => {
+    onAssistantContext?.({ target: selectedKey ? { type: 'TEMPLATE', id: selectedKey, label: `${templateLabel(selectedKey)} (${selectedKey})`, fields: {} } : null,
+      blockedReason, siteName: mainSite?.name, mainTemplateKey: mainSite?.template.key, menus })
+  }, [onAssistantContext, selectedKey, blockedReason, mainSite?.name, mainSite?.template.key, menus])
   async function applyToMain() {
     if (!value || !mainSite || hasUnsavedChanges || uploadBusy.current || saveBusy.current || applyBusy.current || value.key === mainSite.template.key) return
     const chosen = value

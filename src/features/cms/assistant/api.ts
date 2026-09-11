@@ -26,6 +26,8 @@ export type NaturalCmsJob = {
   approvalFeedback: string | null
   createdAt: string
   updatedAt: string
+  /** 승인 ID/hash에 결합된 서버 저장본. 현재 폼 값으로 다시 만들지 않는다. */
+  preview?: unknown
 }
 
 type ProfileVersionSummary = { profileVersionId: string; profileKey: string; status: string }
