@@ -33,7 +33,7 @@ export function TemplatePreview({ value, siteName, menus = [], onClose }: {
     <div inert onClickCapture={(event) => { event.preventDefault(); event.stopPropagation() }} onSubmitCapture={(event) => { event.preventDefault(); event.stopPropagation() }}>
       <PortalHeader template={template} menus={menus} />
       <PortalHome template={template} menus={menus} />
-      <PortalFooter template={template} />
+      <PortalFooter template={template} menus={menus} />
     </div>
   </dialog>, document.body)
 }

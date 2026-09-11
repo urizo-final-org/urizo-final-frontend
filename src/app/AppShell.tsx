@@ -9,6 +9,7 @@ import GuardrailWorkspace from '../features/coding/GuardrailWorkspace'
 import { KnowledgeAdminApi } from '../features/knowledge/admin-api'
 import { usePendingApprovals } from '../features/knowledge/pending-approvals'
 import OpsWorkspace from '../features/ops/OpsWorkspace'
+import HomeDashboard from '../features/ops/HomeDashboard'
 import GovernanceWorkspace from '../features/governance/GovernanceWorkspace'
 import { HistoryApi } from '../features/governance/api'
 import AgentSettingsWorkspace from '../features/orchestration/AgentSettingsWorkspace'
@@ -254,6 +255,8 @@ function AuthenticatedAdmin({ session, theme, onToggleTheme, onRefresh, onExpire
             path={route.path}
             element={isCmsRouteId(route.id)
               ? <CmsWorkspace route={route.id} api={cmsApi} assistantApi={naturalCmsApi} monitoringAction={monitoringAction('NATURAL_CMS')} />
+              : route.id === 'home'
+                ? <HomeDashboard actorName={session.actor.name} role={session.actor.role} historyApi={historyApi} knowledgeApi={knowledgeApi} profileApi={profileApi} codingApi={codingApi} />
               : route.id === 'models'
                 ? <AgentSettingsWorkspace api={profileApi} openMonitoring={query.get('tab') === 'monitoring'} monitoringJobId={monitoringJobId} />
               : route.id === 'devops'

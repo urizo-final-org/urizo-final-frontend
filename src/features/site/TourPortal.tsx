@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState, type FormEvent, type ReactNode } from 'react'
+import { Fragment, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import type { Menu, Post, SiteTemplate } from '../cms/api'
 import { tabToCategory } from '../knowledge/category'
@@ -8,6 +8,7 @@ import { addressLine, festivalBadge, highlightTitles, PORTAL_TABS } from './port
 import { describePortalStatus } from './portal-status'
 import { CardPhoto, Placeholder, PhotoTag } from './portal-primitives'
 import { PortalResultCard } from './PortalResultCard'
+import { menuDestination, orderedMenus } from './siteNavigation'
 
 /**
  * 관광 포털 3화면(홈·통합 검색·챗봇) — Claude Design 핸드오프
@@ -51,38 +52,70 @@ function ChatGlyph({ size = 22 }: { size?: number }) {
  * CMS 관리자 링크를 유지한다.
  */
 export function PortalHeader({ template, menus }: { template: SiteTemplate; menus: Menu[] }) {
-  const roots = menus.filter((menu) => menu.parentId === null)
+  const roots = orderedMenus(menus, null)
+  const [menusOpen, setMenusOpen] = useState(false)
+  const [searchOpen, setSearchOpen] = useState(false)
+  const menuButton = useRef<HTMLButtonElement>(null)
+  const searchButton = useRef<HTMLButtonElement>(null)
+  const location = useLocation()
+  const currentMenu = menus.find((menu) => portalUrl(menu.path) === location.pathname)
+  const activeRoot = currentMenu?.parentId ?? currentMenu?.id
 
-  return <header className="border-b border-line-soft bg-panel">
+  return <header className="relative z-30 border-b border-line-soft bg-panel">
     <div className="border-b border-line-soft bg-page">
       <div className="mx-auto flex max-w-[75rem] items-center justify-between gap-4 px-7 py-2 text-[0.6875rem] text-muted max-[560px]:px-4">
         <span>{template.headerText}</span>
         <Link className="whitespace-nowrap font-bold text-body no-underline hover:text-ink" to="/admin">CMS 관리자</Link>
       </div>
     </div>
-    <div className="mx-auto flex h-[4.75rem] max-w-[75rem] items-center gap-7 px-7 max-[560px]:h-16 max-[560px]:px-4">
-      <Link to="/" className="mr-auto flex items-center gap-[0.625rem] whitespace-nowrap text-ink no-underline">
+    <div onMouseLeave={() => setMenusOpen(false)} onBlur={(event) => {
+      if (!event.currentTarget.contains(event.relatedTarget)) setMenusOpen(false)
+    }} onKeyDown={(event) => {
+      if (event.key === 'Escape' && menusOpen) {
+        event.preventDefault()
+        setMenusOpen(false)
+        menuButton.current?.focus()
+      }
+    }}>
+    <div className="mx-auto flex min-h-[4.75rem] max-w-[75rem] items-center gap-3 px-7 max-[560px]:min-h-16 max-[560px]:px-4">
+      <Link to="/" onClick={() => setMenusOpen(false)} className="mr-auto flex min-w-0 items-center gap-[0.625rem] text-ink no-underline">
         <BrandMark />
-        <span className="flex flex-col gap-1">
-          <span className="text-[1.375rem] font-black leading-none tracking-[-.06em]">{template.siteName}</span>
+        <span className="flex min-w-0 flex-col gap-1">
+          <span className="break-words text-[1.375rem] font-black leading-tight tracking-[-.06em] max-[560px]:text-xl">{template.siteName}</span>
           <span className="text-[0.59375rem] font-extrabold tracking-[.22em]">TOURISM PORTAL</span>
         </span>
       </Link>
-      <nav className="hidden h-full items-stretch lg:flex" aria-label="주 메뉴">
-        {roots.map((root) => {
-          const children = menus.filter((menu) => menu.parentId === root.id)
-          return <div className="group relative flex items-center" key={root.id}>
-            <Link className="px-[0.8125rem] py-7 text-[0.8125rem] font-bold text-body no-underline hover:text-primary" to={portalUrl(root.path)}>{root.name}</Link>
-            {children.length > 0 && <div className="invisible absolute left-1/2 top-[4.25rem] z-20 min-w-[11.875rem] -translate-x-1/2 translate-y-2 rounded-b-xl border-t-2 border-primary bg-panel p-2 opacity-0 shadow-[0_18px_45px_rgba(22,34,47,.14)] transition group-hover:visible group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:visible group-focus-within:translate-y-0 group-focus-within:opacity-100">
-              {children.map((child) => <Link className="block rounded-lg px-4 py-[0.625rem] text-xs text-body no-underline hover:bg-page hover:text-primary" key={child.id} to={portalUrl(child.path)}>{child.name}</Link>)}
-            </div>}
-          </div>
-        })}
+      <nav className="hidden min-w-0 flex-wrap items-stretch justify-end lg:flex" aria-label="주 메뉴" onMouseEnter={() => setMenusOpen(true)}>
+        {roots.map((root) => <Link key={root.id} onFocus={() => setMenusOpen(true)} onClick={() => setMenusOpen(false)}
+          className={`max-w-[10rem] truncate border-b-2 px-3 py-6 text-[0.8125rem] font-bold no-underline hover:border-primary hover:text-primary ${activeRoot === root.id ? 'border-primary text-primary' : 'border-transparent text-body'}`}
+          to={menuDestination(root, menus)}>{root.name}</Link>)}
       </nav>
+      <div className="flex shrink-0 items-center gap-1">
+        <button ref={menuButton} type="button" aria-label={menusOpen ? '전체 메뉴 닫기' : '전체 메뉴 열기'} aria-expanded={menusOpen} aria-controls="portal-menu-panel"
+          onClick={() => setMenusOpen((open) => !open)} className="grid h-11 w-11 place-items-center rounded-full text-body hover:bg-page hover:text-primary">
+          <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><path d={menusOpen ? 'M6 6l12 12M18 6 6 18' : 'M4 6h16M4 12h16M4 18h16'} /></svg>
+        </button>
+        <button ref={searchButton} type="button" aria-label="통합검색 열기" aria-haspopup="dialog" onClick={() => { setMenusOpen(false); setSearchOpen(true) }}
+          className="grid h-11 w-11 place-items-center rounded-full bg-primary text-white hover:brightness-110"><SearchGlyph size={21} /></button>
+      </div>
     </div>
     <nav className="flex gap-2 overflow-x-auto border-t border-line-soft px-4 py-3 lg:hidden" aria-label="모바일 주 메뉴">
-      {roots.map((root) => <Link className="shrink-0 rounded-full bg-page px-4 py-2 text-[0.6875rem] font-bold text-body no-underline" key={root.id} to={portalUrl(root.path)}>{root.name}</Link>)}
+      {roots.map((root) => <Link onClick={() => setMenusOpen(false)} className="shrink-0 rounded-full bg-page px-4 py-2 text-[0.6875rem] font-bold text-body no-underline" key={root.id} to={menuDestination(root, menus)}>{root.name}</Link>)}
     </nav>
+    {menusOpen && <nav id="portal-menu-panel" aria-label="전체 사이트맵" className="absolute inset-x-0 top-full max-h-[65vh] overflow-y-auto border-y border-line bg-panel shadow-[0_18px_35px_rgba(22,34,47,.12)]">
+      <div className="mx-auto grid max-w-[75rem] grid-cols-2 gap-x-6 gap-y-8 px-7 py-8 sm:grid-cols-3 lg:[grid-template-columns:repeat(auto-fit,minmax(8rem,1fr))] max-[560px]:px-4">
+        {roots.map((root) => <div key={root.id}>
+          <Link to={menuDestination(root, menus)} onClick={() => setMenusOpen(false)} className="mb-3 block break-words border-b border-line pb-3 text-sm font-extrabold text-ink no-underline hover:text-primary">{root.name}</Link>
+          <ul className="m-0 list-none space-y-1 p-0">
+            {orderedMenus(menus, root.id).map((child) => <li key={child.id}><Link to={portalUrl(child.path)} onClick={() => setMenusOpen(false)} aria-current={child.id === currentMenu?.id ? 'page' : undefined}
+              className="block py-2 text-[0.8125rem] text-body no-underline hover:text-primary aria-[current=page]:font-bold aria-[current=page]:text-primary">{child.name}</Link></li>)}
+          </ul>
+        </div>)}
+        {roots.length === 0 && <p className="m-0 text-sm text-muted">등록된 메뉴가 없습니다.</p>}
+      </div>
+    </nav>}
+    </div>
+    {searchOpen && <PortalSearchDialog onClose={() => setSearchOpen(false)} returnFocus={searchButton.current} />}
   </header>
 }
 
@@ -165,6 +198,84 @@ const TAB_PLACEHOLDERS: Record<string, string> = {
   event: '어떤 축제를 찾으시나요?',
 }
 
+/** 메인과 헤더 모달이 동일한 검색 URL·카테고리 계약을 사용한다. */
+function PortalSearchForm({ onComplete, initialQuery = '', initialCategory = 'all' }: {
+  onComplete?: () => void; initialQuery?: string; initialCategory?: string
+}) {
+  const navigate = useNavigate()
+  const [draft, setDraft] = useState(initialQuery)
+  const [tab, setTab] = useState(PORTAL_TABS.some((item) => item.id === initialCategory) ? initialCategory : 'all')
+
+  function submit(event: FormEvent) {
+    event.preventDefault()
+    const params = new URLSearchParams()
+    const query = draft.trim()
+    if (query) params.set('q', query)
+    if (tab !== 'all') params.set('category', tab)
+    const qs = params.toString()
+    onComplete?.()
+    navigate(qs ? `/search?${qs}` : '/search')
+  }
+
+  return <>
+    <div role="tablist" aria-label="여행 검색 카테고리" className="mt-6 flex flex-wrap items-center justify-center gap-1.5">
+      {PORTAL_TABS.map((item, index) => <button key={item.id} type="button" role="tab" aria-selected={item.id === tab}
+        tabIndex={item.id === tab ? 0 : -1} onClick={() => setTab(item.id)} onKeyDown={(event) => {
+          const last = PORTAL_TABS.length - 1
+          const next = event.key === 'ArrowRight' ? (index + 1) % PORTAL_TABS.length
+            : event.key === 'ArrowLeft' ? (index + last) % PORTAL_TABS.length
+              : event.key === 'Home' ? 0 : event.key === 'End' ? last : null
+          if (next === null) return
+          event.preventDefault()
+          setTab(PORTAL_TABS[next].id)
+          event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>('[role="tab"]')[next]?.focus()
+        }} className={`rounded-full border px-[1.0625rem] py-2 text-[0.8125rem] font-bold ${item.id === tab ? 'border-white bg-white text-ink' : 'border-white/20 bg-white/10 text-white/90'}`}>{item.label}</button>)}
+    </div>
+    <form onSubmit={submit} className="mt-[1.625rem] flex h-14 items-center gap-3 rounded-full bg-panel py-0 pl-[1.375rem] pr-2 text-ink shadow-[0_2px_14px_rgba(22,34,47,0.14)]">
+      <SearchGlyph />
+      <input value={draft} onChange={(event) => setDraft(event.target.value)} aria-label="여행지 검색" placeholder={TAB_PLACEHOLDERS[tab] ?? TAB_PLACEHOLDERS.all} className="min-w-0 flex-1 border-0 bg-transparent text-[0.9375rem] text-ink outline-0" />
+      <button type="submit" className="h-11 flex-none rounded-full bg-primary px-7 text-sm font-bold text-white max-[560px]:px-5">검색</button>
+    </form>
+    <p className="m-0 mt-[0.875rem] text-xs text-white/65">수집된 관광 문서에서 근거를 찾아 답합니다 · 근거가 없으면 답하지 않습니다</p>
+  </>
+}
+
+function PortalSearchDialog({ onClose, returnFocus }: { onClose: () => void; returnFocus: HTMLButtonElement | null }) {
+  const dialog = useRef<HTMLDialogElement>(null)
+  const location = useLocation()
+  const params = new URLSearchParams(location.search)
+  useEffect(() => {
+    const element = dialog.current!
+    element.showModal()
+    element.querySelector('input')?.focus()
+    return () => { element.close(); returnFocus?.focus() }
+  }, [returnFocus])
+
+  return <dialog ref={dialog} aria-label="통합검색" onCancel={(event) => { event.preventDefault(); onClose() }}
+    onKeyDown={(event) => {
+      if (event.key !== 'Tab') return
+      const controls = event.currentTarget.querySelectorAll<HTMLElement>('button:not([disabled]):not([tabindex="-1"]), input:not([disabled])')
+      const first = controls[0]
+      const last = controls[controls.length - 1]
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus() }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus() }
+    }}
+    onClick={(event) => { if (event.target === event.currentTarget) onClose() }}
+    className="fixed inset-0 m-auto max-h-[90dvh] w-[min(52rem,calc(100%_-_2rem))] max-w-none overflow-auto rounded-3xl border-0 bg-[#17313a] p-0 text-white shadow-2xl backdrop:bg-[#10202c]/65">
+    <div className="px-6 pb-9 pt-6 sm:px-10 sm:pb-12">
+      <div className="flex items-center justify-between gap-4">
+        <p className="m-0 text-xs font-extrabold tracking-[.14em] text-white/65">TRAVEL SEARCH</p>
+        <button type="button" aria-label="통합검색 닫기" onClick={onClose} className="grid h-10 w-10 place-items-center rounded-full border border-white/20 text-white hover:bg-white/10">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg>
+        </button>
+      </div>
+      <h2 className="mb-2 mt-6 text-balance break-keep text-center text-[clamp(1.5rem,4vw,2rem)] font-extrabold tracking-[-.04em]">어떤 여행을 떠나고 싶으세요?</h2>
+      <p className="m-0 text-balance break-keep text-center text-sm text-white/70">여행지부터 맛집, 숙소까지 한곳에서 찾아보세요.</p>
+      <PortalSearchForm onComplete={onClose} initialQuery={location.pathname === '/search' ? params.get('q') ?? '' : ''} initialCategory={location.pathname === '/search' ? params.get('category') ?? 'all' : 'all'} />
+    </div>
+  </dialog>
+}
+
 /** 섹션 머리 — 근거를 댈 수 있는 부제는 집계 건수뿐이라 그것만 남긴다. */
 function SectionHead({ title, eyebrow, moreCategory }: { title: string; eyebrow: string; moreCategory?: string }) {
   return <div className="flex items-end justify-between gap-5">
@@ -177,23 +288,10 @@ function SectionHead({ title, eyebrow, moreCategory }: { title: string; eyebrow:
 }
 
 export function PortalHome({ template, menus = [], notices = [] }: { template: SiteTemplate; menus?: Menu[]; notices?: Post[] }) {
-  const navigate = useNavigate()
-  const [draft, setDraft] = useState('')
-  const [tab, setTab] = useState('all')
   const [page, setPage] = useState(1)
 
-  function submit(event: FormEvent) {
-    event.preventDefault()
-    const params = new URLSearchParams()
-    const query = draft.trim()
-    if (query) params.set('q', query)
-    if (tab !== 'all') params.set('category', tab)
-    const qs = params.toString()
-    navigate(qs ? `/search?${qs}` : '/search')
-  }
-
   const [hero, ...rest] = HOME_SECTIONS
-  const quickLinks = menus.filter((menu) => menu.parentId === null).slice(0, 4)
+  const quickLinks = orderedMenus(menus, null).slice(0, 4)
   const notice = notices[0]
 
   return <main>
@@ -201,34 +299,14 @@ export function PortalHome({ template, menus = [], notices = [] }: { template: S
         같은 사진 위에 이어 붙여 첫 화면에서 바로 검색이 시작되게 한다. */}
     <div className="relative overflow-hidden bg-primary text-white">
       <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: `url(${template.heroImageUrl})` }} aria-hidden="true" />
-      <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(16,28,42,.9)_0%,rgba(16,28,42,.78)_55%,rgba(16,28,42,.88)_100%)]" aria-hidden="true" />
+      <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(16,28,42,.58)_0%,rgba(16,28,42,.48)_45%,rgba(16,28,42,.78)_100%)]" aria-hidden="true" />
       <div className="relative mx-auto max-w-[75rem] px-7 pb-16 pt-14 text-center max-[560px]:px-4 max-[560px]:pt-10">
         <PortalHero template={template} />
 
         <div className="mx-auto mt-9 max-w-[45rem] border-t border-white/15 pt-9">
           <h2 className="m-0 text-[1.375rem] font-extrabold tracking-[-.04em] text-white">어디로 떠나볼까요?</h2>
 
-          {/* 탭 8종은 portal-meta의 확정 상수 그대로다. 시안이 6종이어도 확정안이 우선한다. */}
-          <div role="tablist" aria-label="여행 검색 카테고리" className="mt-6 flex flex-wrap items-center justify-center gap-1.5">
-            {PORTAL_TABS.map((item) => {
-              const on = item.id === tab
-              return <button
-                key={item.id}
-                type="button"
-                role="tab"
-                aria-selected={on}
-                onClick={() => setTab(item.id)}
-                className={`rounded-full border px-[1.0625rem] py-2 text-[0.8125rem] font-bold ${on ? 'border-white bg-white text-ink' : 'border-white/20 bg-white/10 text-white/90'}`}
-              >{item.label}</button>
-            })}
-          </div>
-
-          <form onSubmit={submit} className="mt-[1.625rem] flex h-14 items-center gap-3 rounded-full bg-panel py-0 pl-[1.375rem] pr-2 text-ink shadow-[0_2px_14px_rgba(22,34,47,0.14)]">
-            <SearchGlyph />
-            <input value={draft} onChange={(event) => setDraft(event.target.value)} aria-label="여행지 검색" placeholder={TAB_PLACEHOLDERS[tab] ?? TAB_PLACEHOLDERS.all} className="min-w-0 flex-1 border-0 bg-transparent text-[0.9375rem] text-ink outline-0" />
-            <button type="submit" className="h-11 flex-none rounded-full bg-primary px-7 text-sm font-bold text-white">검색</button>
-          </form>
-          <p className="m-0 mt-[0.875rem] text-xs text-white/65">수집된 관광 문서에서 근거를 찾아 답합니다 · 근거가 없으면 답하지 않습니다</p>
+          <PortalSearchForm />
         </div>
       </div>
     </div>
@@ -305,7 +383,7 @@ export function PortalHome({ template, menus = [], notices = [] }: { template: S
         <p className="m-0 mb-2 text-xs font-bold text-muted">CMS 메뉴 관리와 실시간 동기화</p>
         <h2 className="m-0 mb-7 text-[clamp(1.5rem,3vw,2rem)] font-extrabold tracking-[-.04em] text-ink">여행 정보</h2>
         <div className="grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(12.5rem,1fr))]">
-          {quickLinks.map((menu) => <Link key={menu.id} to={portalUrl(menu.path)} className="block rounded-xl border border-line bg-panel px-[1.125rem] py-[1.625rem] text-inherit no-underline hover:border-primary">
+          {quickLinks.map((menu) => <Link key={menu.id} to={menuDestination(menu, menus)} className="block rounded-xl border border-line bg-panel px-[1.125rem] py-[1.625rem] text-inherit no-underline hover:border-primary">
             <span className="mx-auto grid h-10 w-10 place-items-center rounded-full bg-page">
               <MenuGlyph target={menu.targetType} />
             </span>
@@ -356,26 +434,47 @@ function todayLabel(today = new Date()) {
 /**
  * CMS의 단일 Hero 계약을 시안의 풀블리드 히어로 문안으로 표현한다.
  *
- * <p>배경 사진·제목·부제·버튼은 전부 CMS 값이다. 시안의 `2026 AUTUMN` 자리에는 지어낼 근거가
- * 없어 계약에 있는 레이아웃 이름을 그대로 쓴다 — 관리자가 레이아웃을 바꾸면 화면이 따라간다.
+ * <p>배경 사진·사이트명·제목·부제·버튼은 전부 CMS 값이다. 레이아웃 이름은 사용자 문구로
+ * 노출하지 않고 제목 스타일에만 반영한다.
  */
 export function PortalHero({ template }: { template: SiteTemplate }) {
   const bold = template.layout === 'BOLD'
   const minimal = template.layout === 'MINIMAL'
   return <section aria-label={`${template.layout} 템플릿 메인`}>
-    <p className="m-0 mb-[0.875rem] text-xs font-extrabold tracking-[.2em] text-white/70">{template.layout}</p>
-    <h1 className={`m-0 text-[clamp(2rem,5vw,3.25rem)] leading-[1.14] tracking-[-.045em] ${bold ? 'font-black uppercase' : minimal ? 'font-semibold' : 'font-extrabold'}`}>{template.heroTitle}</h1>
-    <p className="mx-auto mt-4 max-w-2xl text-sm leading-[1.7] text-white/80">{template.heroSubtitle}</p>
+    <p className="m-0 mb-[0.875rem] text-xs font-extrabold tracking-[.2em] text-white/80">{template.siteName}</p>
+    <h1 className={`m-0 text-balance break-keep text-[clamp(2rem,5vw,3.25rem)] leading-[1.14] tracking-[-.045em] ${bold ? 'font-black uppercase' : minimal ? 'font-semibold' : 'font-extrabold'}`}>{template.heroTitle}</h1>
+    <p className="mx-auto mt-4 max-w-2xl text-balance break-keep text-sm leading-[1.7] text-white/80">{template.heroSubtitle}</p>
     <Link className="mt-5 inline-flex items-center gap-2 rounded-full border border-white/40 px-5 py-2 text-[0.8125rem] font-bold text-white no-underline hover:bg-white/10" to={portalUrl(template.heroButtonUrl)}>{template.heroButtonLabel}<span aria-hidden="true">→</span></Link>
   </section>
 }
 
-export function PortalFooter({ template }: { template: SiteTemplate }) {
-  return <footer className="mt-auto border-t border-line-soft bg-panel">
-    <div className="mx-auto max-w-[75rem] px-7 pb-12 py-10 text-xs leading-[1.7] text-muted max-[560px]:px-4">
-      <strong className="block text-sm text-ink">{template.siteName}</strong>
-      <p className="m-0 mt-2 max-w-[40rem]">{template.footerText}</p>
-      <span className="mt-5 block border-t border-line-soft pt-[1.125rem] text-[0.6875rem]">© 2026 {template.siteName}. Local CMS Demo.</span>
+export function PortalFooter({ template, menus = [] }: { template: SiteTemplate; menus?: Menu[] }) {
+  const roots = orderedMenus(menus, null)
+  return <footer className="mt-auto border-t border-line-soft bg-[#132e35] text-white">
+    <div className="mx-auto max-w-[75rem] px-7 pb-8 pt-12 text-xs leading-[1.8] max-[560px]:px-4">
+      <div className="grid gap-10 md:grid-cols-[1.5fr_1fr_1fr]">
+        <div>
+          <Link to="/" className="inline-flex items-center gap-3 text-white no-underline"><BrandMark size="2.5rem" /><strong className="text-2xl font-black tracking-[-.04em]">{template.siteName}</strong></Link>
+          <p className="mb-0 mt-5 max-w-sm whitespace-pre-line break-keep text-sm text-white/70">{template.footerText}</p>
+          <Link to="/search" className="mt-6 inline-flex items-center gap-2 rounded-full border border-white/30 px-5 py-2 text-xs font-bold text-white no-underline hover:bg-white/10">나의 다음 여행 찾기 <span aria-hidden="true">↗</span></Link>
+        </div>
+        <nav aria-label="여행 둘러보기">
+          <h2 className="mb-4 mt-0 text-sm font-extrabold">여행 둘러보기</h2>
+          <ul className="m-0 grid list-none grid-cols-2 gap-x-4 gap-y-2 p-0">
+            {PORTAL_TABS.filter((tab) => tab.id !== 'all').map((tab) => <li key={tab.id}><Link className="inline-block py-1 text-white/70 no-underline hover:text-white" to={searchUrl(tab.id)}>{tab.label}</Link></li>)}
+          </ul>
+        </nav>
+        {roots.length > 0 && <nav aria-label="사이트 안내">
+          <h2 className="mb-4 mt-0 text-sm font-extrabold">사이트 안내</h2>
+          <ul className="m-0 grid list-none grid-cols-2 gap-x-4 gap-y-2 p-0">
+            {roots.map((root) => <li key={root.id}><Link className="inline-block break-words py-1 text-white/70 no-underline hover:text-white" to={menuDestination(root, menus)}>{root.name}</Link></li>)}
+          </ul>
+        </nav>}
+      </div>
+      <div className="mt-10 flex flex-wrap items-center justify-between gap-3 border-t border-white/15 pt-6 text-[0.6875rem] text-white/50">
+        <span>© {new Date().getFullYear()} {template.siteName}. All rights reserved.</span>
+        <span>TOURISM &amp; TRAVEL INFORMATION</span>
+      </div>
     </div>
   </footer>
 }

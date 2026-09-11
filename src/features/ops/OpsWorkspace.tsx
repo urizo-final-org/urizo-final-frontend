@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent } from 'react'
+import { Link } from 'react-router-dom'
 import type { OpsRouteId } from '../../app/routes'
 import { describeFailure } from '../../shared/api/error'
 import { Icon, type IconName } from '../../shared/ui/icons'
@@ -14,8 +15,7 @@ import type { KnowledgeAdminApi } from '../knowledge/admin-api'
 import { RagAdminPanel } from '../knowledge/RagAdminPanel'
 
 /** Operations screens added on top of the CMS; only Profile-backed sections call an API. */
-export default function OpsWorkspace({ route, actorName, roleLabel, role, knowledgeApi, profileApi, siteSettingsApi }: { route: OpsRouteId; actorName: string; roleLabel: string; role: AdminRole; knowledgeApi: KnowledgeAdminApi; profileApi: ProfileVersionApiClient; siteSettingsApi: CmsSiteSettingsApiClient }) {
-  if (route === 'home') return <Home actorName={actorName} />
+export default function OpsWorkspace({ route, roleLabel, role, knowledgeApi, profileApi, siteSettingsApi }: { route: Exclude<OpsRouteId, 'home'>; actorName: string; roleLabel: string; role: AdminRole; knowledgeApi: KnowledgeAdminApi; profileApi: ProfileVersionApiClient; siteSettingsApi: CmsSiteSettingsApiClient }) {
   if (route === 'agents') return <Agents />
   if (route === 'rag') return <RagAdminPanel api={knowledgeApi} role={role} />
   if (route === 'devops') return <Devops />
@@ -30,26 +30,6 @@ const bodyRow = 'grid items-center border-b border-row-line px-4 py-[0.625rem] t
 
 function MockNote({ children }: { children: string }) {
   return <p className="mb-4 text-[0.71875rem] text-muted-2">{children}</p>
-}
-
-/* ------------------------------------------------------------------ 홈 */
-
-function Home({ actorName }: { actorName: string }) {
-  return <>
-    <PageHead title={`안녕하세요, ${actorName}님`} description="현재 CMS와 AI Runtime의 연결 범위를 확인합니다.">
-      <Badge tone="run" dot={false}>임시 목업</Badge>
-    </PageHead>
-    <RuntimeMockNotice>운영 통계·승인 목록·최근 실행 조회 API가 없어 가짜 수치를 표시하지 않습니다.</RuntimeMockNotice>
-
-    <section className={panel}>
-      <PanelTitle title="현재 연결 상태" sub="실제 저장·실행 계약 기준" />
-      <div className="grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-3">
-        <RuntimeFact label="CMS 관리 API" state="연결됨" tone="ok" description="회원·메뉴·컨텐츠·게시판·템플릿은 실제 CMS API를 사용합니다." />
-        <RuntimeFact label="AI Job Runtime" state="Backend 구현" tone="ok" description="Job·Queue·Profile Version·Snapshot Runner 계약이 구현되어 있습니다." />
-        <RuntimeFact label="운영 현황 조회" state="API 없음" tone="idle" description="통계·최근 실행·승인 목록은 조회 계약이 생긴 뒤 실제 데이터로 구현합니다." />
-      </div>
-    </section>
-  </>
 }
 
 /* ------------------------------------------------------------------ Agent 관리 */
@@ -373,7 +353,7 @@ function SystemSettings({ profileApi, siteSettingsApi }: { profileApi: ProfileVe
   }
 
   return <>
-    <PageHead title="시스템 설정" description="CMS 기본값과 활성 Profile의 중앙 Guardrail을 관리합니다.">
+    <PageHead title="시스템 설정" description="기본 사이트를 선택하고 활성 Profile의 중앙 Guardrail 연결 상태를 확인합니다.">
       <Badge tone="ok" dot={false}>API 연결</Badge>
     </PageHead>
 
@@ -402,27 +382,40 @@ function SystemSettings({ profileApi, siteSettingsApi }: { profileApi: ProfileVe
 function CmsDefaults({ api }: { api: CmsSiteSettingsApiClient }) {
   const [value, setValue] = useState<CmsSiteSettings | null>(null)
   const [sites, setSites] = useState<CmsSite[]>([])
-  const [templates, setTemplates] = useState<SiteTemplate[]>([])
   const [failure, setFailure] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
     let active = true
-    Promise.all([api.settings(), api.sites(), api.templates()]).then(([settings, nextSites, nextTemplates]) => {
+    Promise.all([api.settings(), api.sites()]).then(([settings, nextSites]) => {
       if (!active) return
-      setValue(settings); setSites(nextSites); setTemplates(nextTemplates); setFailure(null)
+      setValue(settings); setSites(nextSites); setFailure(null)
     }).catch((error) => { if (active) setFailure(`CMS 기본 설정을 불러오지 못했습니다. ${describeFailure(error)}`) })
     return () => { active = false }
   }, [api])
 
+  const selectedSite = sites.find((site) => site.key === value?.defaultSiteKey)
+
   async function save(event: FormEvent) {
     event.preventDefault()
-    if (!value) return
+    if (!value || !selectedSite || saving) return
     setSaving(true); setFailure(null); setSuccess(null)
     try {
-      const saved = await api.saveSettings(value)
-      setValue(saved); setSites(await api.sites()); notifySiteUpdated(); setSuccess('CMS 기본 설정을 저장하고 사용자 화면에 반영했습니다.')
+      // The existing endpoint accepts both fields. Never reuse the previous default site's template.
+      const currentSites = await api.sites()
+      setSites(currentSites)
+      const currentSite = currentSites.find((site) => site.key === selectedSite.key)
+      if (!currentSite?.enabled) {
+        setFailure('선택한 사이트를 사용할 수 없습니다. 사용 중인 사이트를 다시 선택해 주세요.')
+        return
+      }
+      if (currentSite.templateKey !== selectedSite.templateKey) {
+        setFailure('선택한 사이트의 적용 템플릿이 변경되었습니다. 표시된 템플릿을 확인한 뒤 다시 저장해 주세요.')
+        return
+      }
+      const saved = await api.saveSettings({ defaultSiteKey: currentSite.key, defaultTemplateKey: currentSite.templateKey })
+      setValue(saved); notifySiteUpdated(); setSuccess('기본 사이트를 저장하고 사용자 화면에 반영했습니다.')
     } catch (error) {
       setFailure(`CMS 기본 설정을 저장하지 못했습니다. ${describeFailure(error)}`)
     } finally {
@@ -434,20 +427,21 @@ function CmsDefaults({ api }: { api: CmsSiteSettingsApiClient }) {
     {failure && <Callout tone="warn" icon="triangle-alert">{failure}</Callout>}
     {success && <Callout tone="ok" icon="check-check">{success}</Callout>}
     <form className={panel} onSubmit={save}>
-      <PanelTitle title="CMS 기본 설정" sub="기본 사이트의 적용 템플릿을 함께 저장합니다." />
+      <PanelTitle title="CMS 기본 설정" sub="기본 사이트만 선택합니다. 해당 사이트에 적용된 템플릿은 유지합니다." />
       {value ? <div className="grid gap-4 p-4 md:grid-cols-2">
         <label className="text-xs font-semibold">기본 사이트
-          <select className={`${control} mt-2`} value={value.defaultSiteKey} required onChange={(event) => setValue({ ...value, defaultSiteKey: event.target.value })}>
+          <select className={`${control} mt-2`} value={value.defaultSiteKey} required disabled={saving} onChange={(event) => { setValue({ ...value, defaultSiteKey: event.target.value }); setFailure(null); setSuccess(null) }}>
             {sites.filter((site) => site.enabled).map((site) => <option key={site.key} value={site.key}>{site.name} · {site.publicPath}</option>)}
           </select>
         </label>
-        <label className="text-xs font-semibold">기본 템플릿
-          <select className={`${control} mt-2`} value={value.defaultTemplateKey} required onChange={(event) => setValue({ ...value, defaultTemplateKey: event.target.value })}>
-            {templates.map((template) => <option key={template.key} value={template.key}>{template.key} · {template.layout}</option>)}
-          </select>
-        </label>
-        <p className="m-0 text-[0.6875rem] leading-5 text-muted-2 md:col-span-2">사이트명·공개 경로·사용 여부는 사이트 관리에서, 레이아웃·색상·Header·Hero·버튼·Footer는 템플릿 관리에서 변경합니다.</p>
-        <div className="flex justify-end md:col-span-2"><button className={primaryButton} disabled={saving || sites.length === 0 || templates.length === 0}>{saving ? '저장 중…' : '기본 설정 저장'}</button></div>
+        <div>
+          <label className="text-xs font-semibold">선택한 사이트의 적용 템플릿
+            <input className={`${control} mt-2`} value={selectedSite?.templateKey ?? '확인 필요'} readOnly />
+          </label>
+          <Link className={`${secondaryButton} mt-2`} to="/admin/sites">사이트 관리에서 변경</Link>
+        </div>
+        <p className="m-0 text-[0.6875rem] leading-5 text-muted-2 md:col-span-2">사이트명·공개 경로·적용 템플릿·사용 여부는 사이트 관리에서, 레이아웃·색상·Header·Hero·버튼·Footer는 템플릿 관리에서 변경합니다.</p>
+        <div className="flex justify-end md:col-span-2"><button className={primaryButton} disabled={saving || !selectedSite?.enabled}>{saving ? '저장 중…' : '기본 설정 저장'}</button></div>
       </div> : <p className="p-4 text-xs text-muted-2">CMS 기본 설정을 불러오는 중입니다…</p>}
     </form>
   </section>
