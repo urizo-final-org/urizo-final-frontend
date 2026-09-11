@@ -637,7 +637,8 @@ test('the assistant only accepts requests on the screens that support them', asy
   render(<AppShell />)
   expect(await screen.findByRole('heading', { name: '템플릿 관리' })).toBeInTheDocument()
   const panel = screen.getByRole('complementary', { name: '템플릿 관리 자연어 도우미' })
-  expect(within(panel).getByText('템플릿 관리 화면은 아직 자연어 변경을 지원하지 않습니다.')).toBeInTheDocument()
+  expect(within(panel).queryByText('템플릿 관리 화면은 아직 자연어 변경을 지원하지 않습니다.')).not.toBeInTheDocument()
+  expect(within(panel).getByRole('button', { name: '요청 분석하기' })).toBeDisabled()
 })
 
 test('the menu assistant opens and offers a new menu beside the existing ones', async () => {
