@@ -1,6 +1,22 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import { expect, test, vi } from 'vitest'
 import { AppNavigation } from './navigation'
+import { routesForRole } from './routes'
+
+test.each(['GENERAL_ADMIN', 'SUPER_ADMIN'] as const)('settings is hidden only from navigation for %s', (role) => {
+  const view = render(<AppNavigation activeRoute="home" role={role} onNavigate={vi.fn()} />)
+  expect(screen.queryByRole('button', { name: /^설정/ })).not.toBeInTheDocument()
+  view.rerender(<AppNavigation activeRoute="home" role={role} onNavigate={vi.fn()} compact />)
+  expect(screen.queryByRole('button', { name: /^설정/ })).not.toBeInTheDocument()
+  expect(routesForRole(role).find((route) => route.id === 'settings')?.path).toBe('/admin/settings')
+  if (role === 'SUPER_ADMIN') {
+    expect(screen.getByRole('button', { name: '시스템 설정' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '사이트 관리' })).toBeInTheDocument()
+  } else {
+    expect(screen.queryByRole('button', { name: '시스템 설정' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '사이트 관리' })).not.toBeInTheDocument()
+  }
+})
 
 function show(badges?: Parameters<typeof AppNavigation>[0]['badges']) {
   return render(

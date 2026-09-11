@@ -10,6 +10,8 @@ import { CmsApi, SiteApi, CMS_CHANGED_EVENT, notifySiteUpdated, type Article, ty
 import { TemplatePreview } from './TemplatePreview'
 import CmsAiAssistant, { NEW_BOARD_TARGET, NEW_CONTENT_TARGET, NEW_MENU_TARGET, postTargetId, type CmsAssistantTarget } from './assistant/CmsAiAssistant'
 import ContentEditor from './ContentEditor'
+import CodeWorkspace from './CodeWorkspace'
+import { contentImageUrl, type CmsCode, type CodeGroup } from './api'
 import type { NaturalCmsApi } from './assistant/api'
 import type { AssistantMenu } from './assistant/menuTree'
 
@@ -49,17 +51,18 @@ export default function CmsWorkspace({ route, api, assistantApi, monitoringActio
   }, [success])
   useEffect(() => { setSuccess(null); setAssistantTarget(null); setAssistantCandidates([]); setAssistantMenus([]) }, [route])
   const workspace = route === 'members' ? <Members api={api} />
+    : route === 'codes' ? <CodeWorkspace api={api} />
     : route === 'menus' ? <Menus api={api} onSelect={setAssistantTarget} onCandidates={setAssistantCandidates} onMenus={setAssistantMenus} monitoringAction={monitoringAction} />
       : route === 'contents' ? <Contents api={api} onSelect={setAssistantTarget} onCandidates={setAssistantCandidates} onMenus={setAssistantMenus} monitoringAction={monitoringAction} />
         : route === 'boards' ? <Boards api={api} onSelect={setAssistantTarget} onCandidates={setAssistantCandidates} onMenus={setAssistantMenus} monitoringAction={monitoringAction} />
           : <Templates api={api} monitoringAction={monitoringAction} />
-  const assistantRoute = route === 'members' ? null : route
+  const assistantRoute = route === 'members' || route === 'codes' ? null : route
   return <>
     <SuccessToast notice={success} />
     {assistantRoute
       ? <div className={`grid items-start gap-[0.875rem] ${assistantCollapsed ? 'min-[1240px]:grid-cols-[minmax(0,1fr)_4rem]' : 'min-[1240px]:grid-cols-[minmax(0,1fr)_22rem]'}`}>
         <div className="min-w-0">{workspace}</div>
-        <CmsAiAssistant key={assistantRoute} route={assistantRoute} target={assistantTarget} candidates={assistantCandidates} menus={assistantMenus} onTarget={setAssistantTarget} api={assistantApi} onUploadImage={assistantRoute === 'contents' ? api.uploadImage : undefined} collapsed={assistantCollapsed} onToggle={() => setAssistantCollapsed((value) => !value)} />
+        <CmsAiAssistant key={assistantRoute} route={assistantRoute} target={assistantTarget} candidates={assistantCandidates} menus={assistantMenus} onTarget={setAssistantTarget} api={assistantApi} onUploadImage={assistantRoute === 'contents' || (assistantRoute === 'boards' && assistantTarget?.id.startsWith('board:')) ? api.uploadImage : undefined} collapsed={assistantCollapsed} onToggle={() => setAssistantCollapsed((value) => !value)} />
       </div>
       : workspace}
   </>
@@ -352,6 +355,9 @@ function Contents({ api, onSelect, onCandidates, onMenus, monitoringAction }: {
   </>
 }
 
+type PostOptions = { thumbnailImageId: number | null; thumbnailAlt: string; regionCodeId: number | null; categoryCodeId: number | null }
+const emptyPostOptions: PostOptions = { thumbnailImageId: null, thumbnailAlt: '', regionCodeId: null, categoryCodeId: null }
+
 function Boards({ api, onSelect, onCandidates, onMenus, monitoringAction }: {
   api: CmsApi
   monitoringAction?: ReactNode
@@ -364,6 +370,13 @@ function Boards({ api, onSelect, onCandidates, onMenus, monitoringAction }: {
   const [menus, setMenus] = useState<Menu[]>([])
   const [selectedBoard, setSelectedBoard] = useState<Board | null>(null)
   const [posts, setPosts] = useState<Post[]>([])
+  const [postsExpanded, setPostsExpanded] = useState(true)
+  const [postPage, setPostPage] = useState(1)
+  const postPageSize = 10
+  const postPageCount = Math.max(1, Math.ceil(posts.length / postPageSize))
+  const currentPostPage = Math.min(postPage, postPageCount)
+  const visiblePosts = posts.slice((currentPostPage - 1) * postPageSize, currentPostPage * postPageSize)
+  useEffect(() => { setPostPage((page) => Math.min(page, postPageCount)) }, [postPageCount])
   const [selectedPost, setSelectedPost] = useState<Post | null>(null)
   /**
    * 게시물 폼이 등록 모드인지. 선택 해제(`null`)와 구분해야 대상이 갈린다.
@@ -374,6 +387,14 @@ function Boards({ api, onSelect, onCandidates, onMenus, monitoringAction }: {
   const [writingPost, setWritingPost] = useState(false)
   const [boardName, setBoardName] = useState('')
   const [description, setDescription] = useState('')
+  const [displayType, setDisplayType] = useState<'LIST' | 'CARD'>('LIST')
+  const [regionGroupKey, setRegionGroupKey] = useState('')
+  const [categoryGroupKey, setCategoryGroupKey] = useState('')
+  const [codeGroups, setCodeGroups] = useState<CodeGroup[]>([])
+  const [codes, setCodes] = useState<CmsCode[]>([])
+  const [postOptions, setPostOptions] = useState<PostOptions>(emptyPostOptions)
+  const [uploading, setUploading] = useState(false)
+  const uploadRequest = useRef(0)
   const [title, setTitle] = useState('')
   const [body, setBody] = useState('')
   const [failure, setFailure] = useState<string | null>(null)
@@ -385,7 +406,8 @@ function Boards({ api, onSelect, onCandidates, onMenus, monitoringAction }: {
    */
   const loadBoards = async () => {
     try {
-      const [freshBoards, freshMenus] = await Promise.all([api.boards(), api.menus()])
+      const [freshBoards, freshMenus, freshGroups, freshCodes] = await Promise.all([api.boards(), api.menus(), api.codeGroups(), api.codes()])
+      setCodeGroups(freshGroups); setCodes(freshCodes)
       setBoards(freshBoards)
       setMenus(freshMenus)
       if (!selectedBoard) return
@@ -395,6 +417,7 @@ function Boards({ api, onSelect, onCandidates, onMenus, monitoringAction }: {
       setSelectedBoard(freshBoard)
       setBoardName(freshBoard.name)
       setDescription(freshBoard.description)
+      selectBoardOptions(freshBoard)
       const freshPosts = await api.posts(freshBoard.id)
       setPosts(freshPosts)
       if (!selectedPost) return
@@ -430,35 +453,87 @@ function Boards({ api, onSelect, onCandidates, onMenus, monitoringAction }: {
    */
   useEffect(() => {
     if (!selectedBoard) { onSelect(null); return }
-    if (selectedPost) { onSelect(postTarget(selectedBoard.id, selectedPost)); return }
-    onSelect(writingPost ? newPostTarget(selectedBoard) : boardTarget(selectedBoard))
-  }, [selectedBoard, selectedPost, writingPost, onSelect])
+    if (selectedPost) { onSelect(postTarget(selectedBoard.id, selectedPost, codes)); return }
+    onSelect(writingPost ? newPostTarget(selectedBoard, codes) : boardTarget(selectedBoard))
+  }, [selectedBoard, selectedPost, writingPost, onSelect, codes])
   /** 되묻기 후보는 화면이 이미 가진 목록에서 나온다. 등록은 고정 표식으로 고른다. */
   useEffect(() => {
     onCandidates([
       NEW_BOARD_TARGET,
       ...boards.map(boardTarget),
       ...(selectedBoard
-        ? [newPostTarget(selectedBoard), ...posts.map((post) => postTarget(selectedBoard.id, post))]
+        ? [newPostTarget(selectedBoard, codes), ...posts.map((post) => postTarget(selectedBoard.id, post, codes))]
         : []),
     ])
-  }, [boards, posts, selectedBoard, onCandidates])
-  async function chooseBoard(board: Board) { setSelectedBoard(board); setBoardName(board.name); setDescription(board.description); setSelectedPost(null); setWritingPost(false); setTitle(''); setBody(''); try { setPosts(await api.posts(board.id)) } catch (e) { setFailure(describeFailure(e)) } }
-  function newBoard() { setSelectedBoard(null); setBoardName(''); setDescription(''); setPosts([]); setSelectedPost(null); setWritingPost(false); setTitle(''); setBody('') }
-  async function saveBoard(event: FormEvent) { event.preventDefault(); setFailure(null); const action = selectedBoard ? '수정' : '등록'; try { const saved = selectedBoard ? await api.updateBoard(selectedBoard.id, { name: boardName, description }) : await api.createBoard({ name: boardName, description }); await loadBoards(); await chooseBoard(saved); notifySiteUpdated(); notifyCmsSuccess(`게시판을 ${action}했습니다.`) } catch (e) { setFailure(`게시판을 저장하지 못했습니다. ${describeFailure(e)}`) } }
+  }, [boards, posts, selectedBoard, onCandidates, codes])
+  useEffect(() => () => { uploadRequest.current += 1 }, [])
+  function selectBoardOptions(board: Board | null) {
+    setDisplayType(board?.displayType ?? 'LIST'); setRegionGroupKey(board?.regionGroupKey ?? ''); setCategoryGroupKey(board?.categoryGroupKey ?? '')
+  }
+  async function chooseBoard(board: Board) {
+    setPostPage(1); setPostsExpanded(true)
+    setSelectedBoard(board); setBoardName(board.name); setDescription(board.description)
+    selectBoardOptions(board); choosePost(null); setPosts([])
+    try { setPosts(await api.posts(board.id)) } catch (error) { setFailure(describeFailure(error)) }
+  }
+  function newBoard() { setSelectedBoard(null); setBoardName(''); setDescription(''); selectBoardOptions(null); setPosts([]); choosePost(null) }
+  async function saveBoard(event: FormEvent) {
+    event.preventDefault(); setFailure(null)
+    const action = selectedBoard ? '수정' : '등록'
+    const value = { name: boardName, description, displayType, regionGroupKey: regionGroupKey || null, categoryGroupKey: categoryGroupKey || null }
+    try {
+      const saved = selectedBoard ? await api.updateBoard(selectedBoard.id, value) : await api.createBoard(value)
+      await loadBoards(); await chooseBoard(saved); notifySiteUpdated(); notifyCmsSuccess(`게시판을 ${action}했습니다.`)
+    } catch (error) { setFailure(`게시판을 저장하지 못했습니다. ${describeFailure(error)}`) }
+  }
   async function removeBoard() { if (!selectedBoard || !window.confirm('게시판과 게시물을 삭제할까요?')) return; setFailure(null); try { await api.deleteBoard(selectedBoard.id); newBoard(); await loadBoards(); notifySiteUpdated(); notifyCmsSuccess('게시판을 삭제했습니다.') } catch (e) { setFailure(`게시판을 삭제하지 못했습니다. ${describeFailure(e)}`) } }
-  function choosePost(post: Post | null) { setSelectedPost(post); setWritingPost(false); setTitle(post?.title ?? ''); setBody(post?.body ?? '') }
-  /** `새 게시물`은 등록하겠다는 선언이다. 대상을 그 게시판의 새 게시글로 옮긴다. */
-  function startPost() { setSelectedPost(null); setWritingPost(true); setTitle(''); setBody('') }
-  async function savePost(event: FormEvent) { event.preventDefault(); if (!selectedBoard) return; setFailure(null); const action = selectedPost ? '수정' : '등록'; try { if (selectedPost) await api.updatePost(selectedPost.id, { title, body }); else await api.createPost(selectedBoard.id, { title, body }); choosePost(null); setPosts(await api.posts(selectedBoard.id)); notifySiteUpdated(); notifyCmsSuccess(`게시물을 ${action}했습니다.`) } catch (e) { setFailure(`게시물을 저장하지 못했습니다. ${describeFailure(e)}`) } }
+  function choosePost(post: Post | null) {
+    uploadRequest.current += 1; setUploading(false)
+    setSelectedPost(post); setWritingPost(false); setTitle(post?.title ?? ''); setBody(post?.body ?? '')
+    setPostOptions({ thumbnailImageId: post?.thumbnailImageId ?? null, thumbnailAlt: post?.thumbnailAlt ?? '', regionCodeId: post?.regionCodeId ?? null, categoryCodeId: post?.categoryCodeId ?? null })
+  }
+  function startPost() { choosePost(null); setWritingPost(true) }
+  async function uploadThumbnail(file: File | undefined) {
+    if (!file) return
+    if (file.size > 8 * 1024 * 1024) { setFailure('이미지는 8MB까지 올릴 수 있습니다.'); return }
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) { setFailure('JPG, PNG, WebP 이미지만 올릴 수 있습니다.'); return }
+    const request = ++uploadRequest.current; setUploading(true); setFailure(null)
+    try {
+      const image = await api.uploadImage(file)
+      if (request === uploadRequest.current) setPostOptions((value) => ({ ...value, thumbnailImageId: image.id }))
+    } catch (error) { if (request === uploadRequest.current) setFailure(describeFailure(error)) }
+    finally { if (request === uploadRequest.current) setUploading(false) }
+  }
+  async function savePost(event: FormEvent) {
+    event.preventDefault(); if (!selectedBoard || uploading) return; setFailure(null)
+    const action = selectedPost ? '수정' : '등록'
+    try {
+      if (selectedPost) await api.updatePost(selectedPost.id, { title, body, ...postOptions })
+      else await api.createPost(selectedBoard.id, { title, body, ...postOptions })
+      choosePost(null); setPosts(await api.posts(selectedBoard.id)); notifySiteUpdated(); notifyCmsSuccess(`게시물을 ${action}했습니다.`)
+    } catch (error) { setFailure(`게시물을 저장하지 못했습니다. ${describeFailure(error)}`) }
+  }
   async function removePost() { if (!selectedPost || !selectedBoard || !window.confirm('게시물을 삭제할까요?')) return; setFailure(null); try { await api.deletePost(selectedPost.id); choosePost(null); setPosts(await api.posts(selectedBoard.id)); notifySiteUpdated(); notifyCmsSuccess('게시물을 삭제했습니다.') } catch (e) { setFailure(`게시물을 삭제하지 못했습니다. ${describeFailure(e)}`) } }
+  const groupSelect = (label: string, value: string, change: (value: string) => void) => <label className={`${fieldLabel} mt-3`}>{label}
+    <select className={control} value={value} onChange={(event) => change(event.target.value)}>
+      <option value="">사용 안 함</option>
+      {codeGroups.map((group) => <option key={group.key} value={group.key} disabled={!group.enabled && group.key !== value}>{group.label}{group.enabled ? '' : ' (사용 중지)'}</option>)}
+    </select>
+  </label>
+  const codeSelect = (label: string, groupKey: string | null | undefined, key: 'regionCodeId' | 'categoryCodeId') => groupKey && <label className={fieldLabel}>{label}
+    <select className={control} value={postOptions[key] ?? ''} onChange={(event) => setPostOptions({ ...postOptions, [key]: event.target.value ? Number(event.target.value) : null })}>
+      <option value="">선택 안 함</option>
+      {codes.filter((code) => code.groupKey === groupKey).map((code) => <option key={code.id} value={code.id}
+        disabled={(!code.enabled || !codeGroups.find((group) => group.key === groupKey)?.enabled) && code.id !== postOptions[key]}>{code.label}{code.enabled ? '' : ' (사용 중지)'}</option>)}
+    </select>
+  </label>
   return <>
     <Heading title="게시판 관리" description="게시판과 게시글을 관리하고 메뉴 관리에서 연결합니다.">
       {monitoringAction}
       <button className={primaryButton} onClick={newBoard}><Icon name="plus" />새 게시판</button>
     </Heading>
     <Failure value={failure} />
-    <div className="grid gap-[0.875rem] 2xl:grid-cols-[16.25rem_minmax(17.5rem,.8fr)_minmax(20rem,1fr)]">
+    <div className="grid gap-[0.875rem] xl:grid-cols-[minmax(12rem,.6fr)_minmax(18rem,1fr)]">
       <section className={panel}>
         <PanelTitle title="게시판" sub={`총 ${boards.length}건`} />
         {boards.length === 0
@@ -478,36 +553,69 @@ function Boards({ api, onSelect, onCandidates, onMenus, monitoringAction }: {
           <div className="p-4">
             <label className={fieldLabel}>게시판명<input className={control} placeholder="게시판명을 입력하세요" value={boardName} onChange={(e) => setBoardName(e.target.value)} required /></label>
             <label className={`${fieldLabel} mt-[0.875rem]`}>설명<textarea className={`${textarea} min-h-[4.75rem]`} placeholder="설명을 입력하세요" value={description} onChange={(e) => setDescription(e.target.value)} /></label>
+            <label className={`${fieldLabel} mt-3`}>게시판 유형<select className={control} value={displayType} onChange={(event) => setDisplayType(event.target.value as 'LIST' | 'CARD')}><option value="LIST">목록형</option><option value="CARD">카드형</option></select></label>
+            {groupSelect('지역 코드 그룹', regionGroupKey, setRegionGroupKey)}
+            {groupSelect('분류 코드 그룹', categoryGroupKey, setCategoryGroupKey)}
+            <p className="mt-3 text-xs leading-5 text-muted-2">코드 관리에서 만든 그룹을 연결합니다. 게시글에서 사용 중인 분류는 먼저 해제해야 그룹을 바꿀 수 있습니다.</p>
             <div className="mt-4 flex justify-end gap-2">
               {selectedBoard && <button type="button" className={dangerButton} onClick={() => void removeBoard()}>삭제</button>}
               <button className={primaryButton}>저장하기</button>
             </div>
           </div>
         </form>
-        {selectedBoard && <div className={panel}>
+        {selectedBoard && <section className={panel} aria-label="게시물 목록">
           <PanelTitle title="게시물" sub={`${selectedBoard.name} · 총 ${posts.length}건`}>
-            <button className={smallButton} onClick={startPost}>새 게시물</button>
+            <div className="flex flex-wrap gap-2">
+              <button type="button" className={smallButton} aria-expanded={postsExpanded} aria-controls="cms-post-list"
+                onClick={() => setPostsExpanded((expanded) => !expanded)}>{postsExpanded ? '게시물 접기' : '게시물 펼치기'}</button>
+              <button type="button" className={smallButton} onClick={startPost}>새 게시물</button>
+            </div>
           </PanelTitle>
+          <div id="cms-post-list" hidden={!postsExpanded}>
           {posts.length === 0
             ? <EmptyState icon="file-text" title="게시물이 없습니다" description="새 게시물 버튼으로 작성하세요." />
-            : posts.map((post) => <button className={`${recordRow} ${selectedPost?.id === post.id ? selectedRow : ''}`} key={post.id} onClick={() => choosePost(post)}>
+            : visiblePosts.map((post) => <button className={`${recordRow} ${selectedPost?.id === post.id ? selectedRow : ''}`} key={post.id} onClick={() => choosePost(post)}>
               <span className="min-w-0 flex-1">
                 <b className={`${recordName} ${selectedPost?.id === post.id ? 'font-bold' : 'font-semibold'}`}>{post.title}</b>
                 <small className="block text-[0.6875rem] text-muted-3">{date(post.updatedAt)}</small>
               </span>
               <Icon name="chevron-right" className="text-muted-4" />
             </button>)}
-        </div>}
+          {posts.length > 0 && <nav aria-label="게시물 페이지" className="flex flex-wrap items-center justify-center gap-2 border-t border-line-soft p-3">
+            <button type="button" className={smallButton} disabled={currentPostPage === 1} onClick={() => setPostPage(currentPostPage - 1)}>이전</button>
+            {Array.from({ length: postPageCount }, (_, index) => index + 1).map((page) => <button
+              key={page} type="button" className={`${smallButton} ${page === currentPostPage ? 'font-bold text-primary' : ''}`}
+              aria-label={`게시물 ${page}페이지`} aria-current={page === currentPostPage ? 'page' : undefined}
+              onClick={() => setPostPage(page)}>{page}</button>)}
+            <button type="button" className={smallButton} disabled={currentPostPage === postPageCount} onClick={() => setPostPage(currentPostPage + 1)}>다음</button>
+            <span className="w-full text-center text-xs text-muted-2" aria-live="polite">{currentPostPage} / {postPageCount} 페이지 · 10개씩 표시</span>
+          </nav>}
+          </div>
+        </section>}
       </section>
-      <form className={`${panel} content-start`} onSubmit={savePost}>
+      <form className={`${panel} content-start xl:col-span-2`} onSubmit={savePost}>
         <PanelTitle title={selectedPost ? '게시물 수정' : '게시물 등록'} sub={selectedBoard ? selectedBoard.name : '게시판 선택 후 작성할 수 있습니다.'} />
         {selectedBoard
           ? <div className="p-4">
             <label className={fieldLabel}>제목<input className={control} placeholder="제목을 입력하세요" value={title} onChange={(e) => setTitle(e.target.value)} required /></label>
-            <label className={`${fieldLabel} mt-[0.875rem]`}>내용<textarea className={`${textarea} min-h-[17.5rem]`} placeholder="내용을 입력하세요" value={body} onChange={(e) => setBody(e.target.value)} required /></label>
+            <div className="my-4 grid gap-4 md:grid-cols-2">
+              {codeSelect('지역', selectedBoard.regionGroupKey, 'regionCodeId')}
+              {codeSelect('분류', selectedBoard.categoryGroupKey, 'categoryCodeId')}
+            </div>
+            <fieldset className="my-4 rounded border border-line-soft p-3">
+              <legend className={fieldLabel}>대표 이미지</legend>
+              <p className="mb-3 text-xs text-muted-2">카드 목록에 표시할 이미지입니다. 본문 이미지와 별도로 관리합니다. JPG·PNG·WebP, 최대 8MB.</p>
+              {postOptions.thumbnailImageId && <img className="mb-3 max-h-44 rounded" src={contentImageUrl(postOptions.thumbnailImageId)} alt={postOptions.thumbnailAlt} />}
+              <label className={fieldLabel}>대표 이미지 업로드<input className="mt-2 block max-w-full text-xs" type="file" accept="image/jpeg,image/png,image/webp" disabled={uploading} onChange={(event) => { void uploadThumbnail(event.target.files?.[0]); event.target.value = '' }} /></label>
+              {uploading && <p role="status" className="mt-2 text-xs text-muted-2">대표 이미지 업로드 중…</p>}
+              <label className={`${fieldLabel} mt-3`}>대표 이미지 설명<input className={control} maxLength={200} value={postOptions.thumbnailAlt} onChange={(event) => setPostOptions({ ...postOptions, thumbnailAlt: event.target.value })} /></label>
+              {postOptions.thumbnailImageId && <button type="button" className={`${smallButton} mt-3`} onClick={() => { uploadRequest.current += 1; setUploading(false); setPostOptions({ ...postOptions, thumbnailImageId: null, thumbnailAlt: '' }) }}>대표 이미지 해제</button>}
+            </fieldset>
+            <label className={`${fieldLabel} mb-2 mt-4`}>내용</label>
+            <ContentEditor key={`post:${selectedBoard.id}:${selectedPost?.id ?? 'new'}`} value={body} onChange={setBody} api={api} onFailure={setFailure} />
             <div className="mt-4 flex justify-end gap-2">
               {selectedPost && <button type="button" className={dangerButton} onClick={() => void removePost()}>삭제</button>}
-              <button className={primaryButton}>저장하기</button>
+              <button className={primaryButton} disabled={uploading}>저장하기</button>
             </div>
           </div>
           : <EmptyState icon="message-square" title="게시판을 먼저 선택하세요" description="왼쪽에서 게시판을 고르면 게시물을 작성할 수 있습니다." />}
@@ -649,27 +757,29 @@ function boardTarget(board: Board): CmsAssistantTarget {
     type: 'BOARD',
     id: String(board.id),
     label: board.name,
-    fields: { name: board.name, description: board.description },
+    fields: { name: board.name, description: board.description, displayType: board.displayType ?? 'LIST', regionGroupKey: board.regionGroupKey ?? '', categoryGroupKey: board.categoryGroupKey ?? '' },
   }
 }
 
 /** 게시물은 소속 게시판을 대상 id에 함께 담는다. 서버가 그 값으로 소속을 확인한다. */
-function postTarget(boardId: number, post: Post): CmsAssistantTarget {
+function postTarget(boardId: number, post: Post, codes: CmsCode[] = []): CmsAssistantTarget {
   return {
     type: 'BOARD',
     id: postTargetId(boardId, post.id),
     label: post.title,
-    fields: { title: post.title, body: post.body },
+    fields: { title: post.title, body: post.body, thumbnailImageId: String(post.thumbnailImageId ?? ''), thumbnailAlt: post.thumbnailAlt ?? '', regionCodeId: String(post.regionCodeId ?? ''), categoryCodeId: String(post.categoryCodeId ?? '') },
+    codeLabels: Object.fromEntries(codes.map((code) => [String(code.id), code.label])),
   }
 }
 
-function newPostTarget(board: Board): CmsAssistantTarget {
+function newPostTarget(board: Board, codes: CmsCode[] = []): CmsAssistantTarget {
   return {
     type: 'BOARD',
     id: postTargetId(board.id, 'new'),
     label: `${board.name}에 새 게시글 쓰기`,
     /** 등록 미리보기가 빠진 필드를 알아보도록 빈 틀을 담는다. */
-    fields: { title: '', body: '' },
+    fields: { title: '', body: '', thumbnailImageId: '', thumbnailAlt: '', regionCodeId: '', categoryCodeId: '' },
+    codeLabels: Object.fromEntries(codes.map((code) => [String(code.id), code.label])),
   }
 }
 

@@ -66,8 +66,7 @@ function siteSettingsApi(overrides: Partial<CmsSiteSettingsApiClient> = {}): Cms
 }
 
 /** Static mockups, so a render plus its heading is the whole contract worth pinning. */
-const screens: [OpsRouteId, string][] = [
-  ['home', '안녕하세요, 일반 관리자님'],
+const screens: [Exclude<OpsRouteId, 'home'>, string][] = [
   ['agents', 'Agent 관리'],
   ['rag', 'RAG 관리'],
   ['settings', '설정'],
@@ -91,11 +90,6 @@ test('remaining mockups say their data is not real', () => {
   }
 })
 
-test('the home mockup greets the signed-in operator, not a fixed name', () => {
-  render(<OpsWorkspace route="home" actorName="최고 관리자" roleLabel="최고관리자" role="SUPER_ADMIN" knowledgeApi={knowledgeApi()} profileApi={profileApi()} siteSettingsApi={siteSettingsApi()} />)
-  expect(screen.getByRole('heading', { name: '안녕하세요, 최고 관리자님', level: 1 })).toBeInTheDocument()
-})
-
 test('system settings derives locked central guardrails from active Profile Versions', async () => {
   const api = profileApi()
   render(<OpsWorkspace route="system-settings" actorName="최고 관리자" roleLabel="최고관리자" role="SUPER_ADMIN" knowledgeApi={knowledgeApi()} profileApi={api} siteSettingsApi={siteSettingsApi()} />)
@@ -108,7 +102,7 @@ test('system settings derives locked central guardrails from active Profile Vers
   expect(tabs[1]).not.toHaveTextContent('임시')
   expect(tabs.map((tab) => tab.tabIndex)).toEqual([0, -1])
   expect(await screen.findByLabelText('기본 사이트')).toHaveValue('main')
-  expect(screen.getByLabelText('기본 템플릿')).toHaveValue('CLASSIC')
+  expect(screen.getByLabelText('선택한 사이트의 적용 템플릿')).toHaveValue('CLASSIC')
 
   fireEvent.keyDown(tabs[0], { key: 'ArrowRight' })
   expect(tabs[1]).toHaveFocus()
@@ -129,7 +123,7 @@ test('central guardrail lookup failures are visible without edit controls', asyn
   expect(screen.queryByRole('checkbox')).not.toBeInTheDocument()
 })
 
-test('system settings saves the selected default site and template', async () => {
+test('system settings preserves the selected site template without an editable template selector', async () => {
   const campaign = { ...mainSite, key: 'campaign', name: '캠페인', publicPath: '/campaign', templateKey: 'BOLD', defaultSite: false }
   const bold = { ...template, key: 'BOLD', layout: 'BOLD' }
   const api = siteSettingsApi({
@@ -140,11 +134,57 @@ test('system settings saves the selected default site and template', async () =>
   render(<OpsWorkspace route="system-settings" actorName="최고 관리자" roleLabel="최고관리자" role="SUPER_ADMIN" knowledgeApi={knowledgeApi()} profileApi={profileApi()} siteSettingsApi={api} />)
 
   fireEvent.change(await screen.findByLabelText('기본 사이트'), { target: { value: 'campaign' } })
-  fireEvent.change(screen.getByLabelText('기본 템플릿'), { target: { value: 'BOLD' } })
+  expect(screen.getByLabelText('선택한 사이트의 적용 템플릿')).toHaveValue('BOLD')
+  expect(screen.getByLabelText('선택한 사이트의 적용 템플릿')).toHaveAttribute('readonly')
+  expect(screen.getAllByRole('combobox')).toHaveLength(1)
+  expect(screen.getByRole('link', { name: '사이트 관리에서 변경' })).toHaveAttribute('href', '/admin/sites')
   fireEvent.click(screen.getByRole('button', { name: '기본 설정 저장' }))
 
-  await waitFor(() => expect(api.saveSettings).toHaveBeenCalledWith(expect.objectContaining({ defaultSiteKey: 'campaign', defaultTemplateKey: 'BOLD' })))
+  await waitFor(() => expect(api.saveSettings).toHaveBeenCalledWith({ defaultSiteKey: 'campaign', defaultTemplateKey: 'BOLD' }))
+  expect(api.sites).toHaveBeenCalledTimes(2)
+  expect(api.templates).not.toHaveBeenCalled()
+  expect(api.saveSite).not.toHaveBeenCalled()
   expect(await screen.findByText(/사용자 화면에 반영했습니다/)).toBeInTheDocument()
+})
+
+test('system settings requires review if the selected site template changed before saving', async () => {
+  const changedSite = { ...mainSite, templateKey: 'BOLD' }
+  const api = siteSettingsApi({
+    sites: vi.fn().mockResolvedValueOnce([mainSite]).mockResolvedValue([changedSite]),
+    saveSettings: vi.fn().mockResolvedValue({ defaultSiteKey: 'main', defaultTemplateKey: 'BOLD', updatedAt: mainSite.updatedAt }),
+  })
+  render(<OpsWorkspace route="system-settings" actorName="최고 관리자" roleLabel="최고관리자" role="SUPER_ADMIN" knowledgeApi={knowledgeApi()} profileApi={profileApi()} siteSettingsApi={api} />)
+  fireEvent.click(await screen.findByRole('button', { name: '기본 설정 저장' }))
+  expect(await screen.findByText(/적용 템플릿이 변경되었습니다/)).toBeInTheDocument()
+  expect(api.saveSettings).not.toHaveBeenCalled()
+  expect(screen.getByLabelText('선택한 사이트의 적용 템플릿')).toHaveValue('BOLD')
+  fireEvent.click(screen.getByRole('button', { name: '기본 설정 저장' }))
+  await waitFor(() => expect(api.saveSettings).toHaveBeenCalledWith({ defaultSiteKey: 'main', defaultTemplateKey: 'BOLD' }))
+})
+
+test.each(['disabled', 'missing'])('system settings refuses a site that became %s before save', async (state) => {
+  const api = siteSettingsApi({ sites: vi.fn().mockResolvedValueOnce([mainSite]).mockResolvedValue(state === 'missing' ? [] : [{ ...mainSite, enabled: false }]) })
+  render(<OpsWorkspace route="system-settings" actorName="최고 관리자" roleLabel="최고관리자" role="SUPER_ADMIN" knowledgeApi={knowledgeApi()} profileApi={profileApi()} siteSettingsApi={api} />)
+  fireEvent.click(await screen.findByRole('button', { name: '기본 설정 저장' }))
+  expect(await screen.findByText(/선택한 사이트를 사용할 수 없습니다/)).toBeInTheDocument()
+  expect(api.saveSettings).not.toHaveBeenCalled()
+  expect(screen.getByRole('button', { name: '기본 설정 저장' })).toBeDisabled()
+})
+
+test('system settings does not save stale values when refreshing sites fails', async () => {
+  const api = siteSettingsApi({ sites: vi.fn().mockResolvedValueOnce([mainSite]).mockRejectedValue(new Error('사이트 조회 실패')) })
+  render(<OpsWorkspace route="system-settings" actorName="최고 관리자" roleLabel="최고관리자" role="SUPER_ADMIN" knowledgeApi={knowledgeApi()} profileApi={profileApi()} siteSettingsApi={api} />)
+  fireEvent.click(await screen.findByRole('button', { name: '기본 설정 저장' }))
+  expect(await screen.findByText(/CMS 기본 설정을 저장하지 못했습니다.*사이트 조회 실패/)).toBeInTheDocument()
+  expect(api.saveSettings).not.toHaveBeenCalled()
+  expect(screen.queryByText(/사용자 화면에 반영했습니다/)).not.toBeInTheDocument()
+})
+
+test('system settings excludes disabled sites from the default selector', async () => {
+  const api = siteSettingsApi({ sites: vi.fn().mockResolvedValue([mainSite, { ...mainSite, key: 'disabled', name: '중지 사이트', enabled: false, defaultSite: false }]) })
+  render(<OpsWorkspace route="system-settings" actorName="최고 관리자" roleLabel="최고관리자" role="SUPER_ADMIN" knowledgeApi={knowledgeApi()} profileApi={profileApi()} siteSettingsApi={api} />)
+  await screen.findByLabelText('기본 사이트')
+  expect(screen.queryByRole('option', { name: /중지 사이트/ })).not.toBeInTheDocument()
 })
 
 test('site management saves only the selected site settings', async () => {

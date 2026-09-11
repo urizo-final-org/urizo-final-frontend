@@ -5,6 +5,8 @@ import { SITE_UPDATE_EVENT, SiteApi, type Article, type Board, type Menu, type P
 import { ChatWidget } from './ChatWidget'
 import { ContentDocument } from './contentDocument'
 import { PortalFooter, PortalHeader, PortalHome, PortalSearch } from './TourPortal'
+import { SectionBreadcrumb, SectionNavigation } from './siteNavigation'
+import BoardBrowser from './BoardBrowser'
 
 export default function PublicSite() {
   const api = useMemo(() => new SiteApi(), [])
@@ -87,6 +89,7 @@ export default function PublicSite() {
   const template = site.template
   const roots = menus.filter((menu) => menu.parentId === null)
   const currentMenu = menus.find((menu) => menu.path === routePath)
+    ?? (post ? menus.find((menu) => menu.targetType === 'BOARD' && menu.targetId === post.boardId) : undefined)
   const currentBoard = currentMenu?.targetType === 'BOARD' ? boards.find((board) => board.id === currentMenu.targetId) : null
   const style = { '--brand': template.primaryColor } as CSSProperties
   const portalStyle = { ...style, '--primary': template.primaryColor } as CSSProperties
@@ -102,7 +105,7 @@ export default function PublicSite() {
         : routePath === '/'
           ? <PortalHome template={template} menus={menus} notices={notices} />
           : <SubPage menu={currentMenu} menus={menus} board={currentBoard} content={content} posts={posts} post={post} failure={failure} publicPath={site.publicPath} siteName={template.siteName} />}
-      <PortalFooter template={template} />
+      <PortalFooter template={template} menus={menus} />
       <ChatWidget />
     </div>
   }
@@ -168,9 +171,40 @@ export function Hero({ template, publicPath = '/' }: { template: SiteTemplate; p
 }
 
 export function SubPage({ menu, menus, board, content, posts, post, failure, publicPath = '/', siteName }: { menu?: Menu; menus: Menu[]; board: Board | null | undefined; content: Article | null; posts: Post[]; post: Post | null; failure: string | null; publicPath?: string; siteName: string }) {
+  const location = useLocation()
   const title = post?.title ?? content?.title ?? board?.name ?? menu?.name ?? '페이지를 찾을 수 없습니다'
   const children = menu ? menus.filter((item) => item.parentId === menu.id) : []
-  return <main><section className="px-5 py-[3.75rem] text-white" style={{ background: 'linear-gradient(135deg, var(--brand), #173b5b)' }}><div className="mx-auto max-w-[68.75rem]"><p className="mb-2 text-[0.625rem] font-bold tracking-[.14em] text-white/55">{siteName}</p><h1 className="m-0 text-[clamp(1.9rem,4vw,2.5rem)] font-medium tracking-[-.06em]">{title}</h1></div></section><div className="mx-auto min-h-[30rem] max-w-[68.75rem] px-5 py-14">{failure && <p className="flex items-start gap-2 rounded-[0.3125rem] border border-[#f2d5d3] bg-[#fdebea] p-4 text-xs leading-5 text-[#b4615d]" role="alert"><span aria-hidden="true">⚠</span>{failure}</p>}{content && <article className="mx-auto max-w-[53.125rem]"><ContentDocument body={content.body} /></article>}{post && <article className="mx-auto max-w-[53.125rem]"><p className="border-b border-[#e4ece9] pb-4 text-[0.6875rem] text-[#849597]">{date(post.createdAt)} · {post.authorName}</p><RichText body={post.body} /></article>}{board && <section><p className="mb-7 text-[0.8125rem] leading-[1.8] text-[#6a8184]">{board.description}</p><div className="border-t-2 border-[var(--brand)]">{posts.map((item, index) => <Link className="grid grid-cols-[3.75rem_1fr_auto] items-center gap-4 border-b border-[#e4ece9] px-3 py-[1.125rem] text-inherit no-underline hover:bg-[#f7fbfa]" key={item.id} to={siteUrl(publicPath, `/posts/${item.id}`)}><span className="text-center text-[0.6875rem] text-[#9aa8a9]">{posts.length - index}</span><strong className="text-[0.8125rem]">{item.title}</strong><span className="text-[0.6875rem] text-[#9aa8a9]">{date(item.createdAt)}</span></Link>)}{posts.length === 0 && <p className="border-b border-[#e4ece9] py-14 text-center text-[0.6875rem] text-[#9aa8a9]">등록된 게시물이 없습니다.</p>}</div></section>}{children.length > 0 && <div className="grid gap-[1.125rem] md:grid-cols-2">{children.map((child) => <Link className="border border-[#e2ebe8] bg-white p-6 text-inherit no-underline hover:border-[var(--brand)]" key={child.id} to={siteUrl(publicPath, child.path)}><span className="text-[0.625rem] font-bold tracking-[.14em] text-[var(--brand)]">{child.targetType === 'BOARD' ? 'BOARD' : 'PAGE'}</span><h2 className="mb-2 mt-3 text-lg tracking-[-.03em]">{child.name}</h2><p className="m-0 text-[0.6875rem] text-[#599793]">자세히 보기 →</p></Link>)}</div>}{!content && !board && !post && children.length === 0 && !failure && <p className="py-16 text-center text-[0.6875rem] text-[#9aa8a9]">연결된 페이지가 없습니다.</p>}</div></main>
+  const state = location.state as { boardReturnTo?: string } | null
+  const boardPath = menu ? siteUrl(publicPath, menu.path) : null
+  const returnTo = boardPath && state?.boardReturnTo?.split('?')[0] === boardPath ? state.boardReturnTo : boardPath
+
+  return <main>
+    <section className="px-5 pb-5 pt-12 text-white" style={{ background: 'linear-gradient(135deg, var(--brand), #173b5b)' }}>
+      <div className="mx-auto max-w-[68.75rem]">
+        <p className="mb-2 text-[0.625rem] font-bold tracking-[.14em] text-white/70">{siteName}</p>
+        <h1 className="m-0 text-[clamp(1.9rem,4vw,2.5rem)] font-medium tracking-[-.06em]">{title}</h1>
+        {publicPath === '/' && <SectionBreadcrumb menu={menu} menus={menus} />}
+      </div>
+    </section>
+    {publicPath === '/' && <SectionNavigation menu={menu} menus={menus} />}
+    <div className="mx-auto min-h-[30rem] max-w-[68.75rem] px-5 py-12">
+      {failure && <p className="rounded border border-[#f2d5d3] bg-[#fdebea] p-4 text-sm text-[#b4615d]" role="alert">{failure}</p>}
+      {content && <article className="mx-auto max-w-[53.125rem]"><ContentDocument body={content.body} /></article>}
+      {post && <article className="mx-auto max-w-[53.125rem]">
+        <p className="mb-7 border-b border-line pb-4 text-xs text-muted">{date(post.createdAt)} · {post.authorName}</p>
+        <ContentDocument body={post.body} />
+        {returnTo && <div className="mt-10 border-t border-line pt-6"><Link className="inline-flex rounded border border-line px-5 py-3 text-sm font-bold text-inherit no-underline hover:text-primary" to={returnTo}>목록으로</Link></div>}
+      </article>}
+      {board && !post && <BoardBrowser key={board.id} board={board} posts={posts} publicPath={publicPath} />}
+      {!post && children.length > 0 && <div className="mt-8 grid gap-[1.125rem] md:grid-cols-2">
+        {children.map((child) => <Link className="border border-line bg-panel p-6 text-inherit no-underline hover:border-primary" key={child.id} to={siteUrl(publicPath, child.path)}>
+          <span className="text-xs font-bold tracking-[.14em] text-primary">{child.targetType === 'BOARD' ? 'BOARD' : 'PAGE'}</span>
+          <h2 className="mb-2 mt-3 text-lg">{child.name}</h2><p className="m-0 text-xs text-primary">자세히 보기 →</p>
+        </Link>)}
+      </div>}
+      {!content && !board && !post && children.length === 0 && !failure && <p className="py-16 text-center text-sm text-muted">연결된 페이지가 없습니다.</p>}
+    </div>
+  </main>
 }
 
 export function RichText({ body }: { body: string }) {

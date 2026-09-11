@@ -29,7 +29,7 @@ afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); window.localStora
 test.each(['CLASSIC', 'MINIMAL', 'BOLD'])('%s preview renders the same portal markup and brand as the public main, outside the admin theme', (layout) => {
   const value = { ...template, layout }
   const resolved = { ...value, siteName: site.name }
-  const publicView = render(<MemoryRouter><PortalHeader template={resolved} menus={menus} /><PortalHome template={resolved} menus={menus} /><PortalFooter template={resolved} /></MemoryRouter>)
+  const publicView = render(<MemoryRouter><PortalHeader template={resolved} menus={menus} /><PortalHome template={resolved} menus={menus} /><PortalFooter template={resolved} menus={menus} /></MemoryRouter>)
   const expected = publicView.container.innerHTML
   publicView.unmount()
   const fetcher = vi.fn()
@@ -53,6 +53,8 @@ test('preview blocks navigation and search, and supports close and Escape', () =
   const dialog = screen.getByRole('dialog')
   fireEvent.click(dialog.querySelector('a[href="/about"]')!)
   fireEvent.submit(dialog.querySelector('form')!)
+  fireEvent.click(within(dialog).getByRole('button', { name: '통합검색 열기' }))
+  expect(screen.queryByRole('dialog', { name: '통합검색' })).not.toBeInTheDocument()
   expect(screen.getByTestId('location')).toHaveTextContent('/admin/templates')
   fireEvent.click(within(dialog).getByRole('button', { name: '닫기' }))
   fireEvent(dialog, new Event('cancel', { bubbles: false }))

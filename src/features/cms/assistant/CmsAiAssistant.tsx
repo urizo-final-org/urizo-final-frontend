@@ -3,7 +3,6 @@ import type { CmsRouteId } from '../../../app/routes'
 import { describeFailure } from '../../../shared/api/error'
 import { notifyCmsChanged, notifySiteUpdated } from '../api'
 // 게시물 미리보기는 사용자 화면과 같은 렌더러를 쓴다. `AI05-001`이 이 재사용을 위해 export를 뽑았다.
-import { RichText } from '../../site/PublicSite'
 import { ContentDocument } from '../../site/contentDocument'
 import { contentImageUrl, type ContentImage } from '../api'
 import { Icon } from '../../../shared/ui/icons'
@@ -49,7 +48,7 @@ function FieldDiff({ before, after }: { before: string; after: string }) {
   </div>
 }
 
-type AssistedRoute = Exclude<CmsRouteId, 'members'>
+type AssistedRoute = Exclude<CmsRouteId, 'members' | 'codes'>
 
 /**
  * 자연어 요청이 바꿀 대상. 화면에서 고른 항목을 그대로 전달한다.
@@ -62,6 +61,7 @@ export type CmsAssistantTarget = {
   id: string
   label: string
   fields: Record<string, string>
+  codeLabels?: Record<string, string>
 }
 
 type AssistantProfile = {
@@ -160,6 +160,13 @@ const FIELD_LABELS: Record<string, string> = {
   description: '설명',
   title: '제목',
   body: '내용',
+  displayType: '게시판 유형',
+  regionGroupKey: '지역 코드 그룹',
+  categoryGroupKey: '분류 코드 그룹',
+  thumbnailImageId: '대표 이미지',
+  thumbnailAlt: '대표 이미지 설명',
+  regionCodeId: '지역',
+  categoryCodeId: '분류',
 }
 
 function fieldLabel(name: string) {
@@ -454,12 +461,14 @@ export default function CmsAiAssistant({ route, target, candidates, menus, onTar
         <small className="block text-[0.65625rem] font-semibold text-muted-2">{fieldLabel(name)}</small>
         {value === null
           ? <p className="m-0 mt-[0.1875rem] text-[0.71875rem] text-muted-3">(비어 있음)</p>
-          : content && name === 'body'
+          : (content || post) && name === 'body'
             // 컨텐츠 본문은 편집기 문서다. 글자를 줄 단위로 견주면 부품 이름만 잔뜩 보인다.
             ? <div className="mt-[0.375rem] rounded-[0.3125rem] border border-line-soft bg-white px-4 py-3">
               <ContentDocument body={value} />
             </div>
-            : <FieldDiff before={target?.fields[name] ?? ''} after={value} />}
+            : name === 'thumbnailImageId'
+              ? <div className="mt-2"><img className="max-h-48 rounded" src={contentImageUrl(Number(value))} alt="변경할 대표 이미지" /></div>
+              : <FieldDiff before={(name === 'regionCodeId' || name === 'categoryCodeId' ? target?.codeLabels?.[target?.fields[name] ?? ''] : undefined) ?? target?.fields[name] ?? ''} after={(name === 'regionCodeId' || name === 'categoryCodeId' ? target?.codeLabels?.[value] : undefined) ?? value} />}
       </section>)}
       {post && postRender(job)}
     </>
@@ -474,13 +483,15 @@ export default function CmsAiAssistant({ route, target, candidates, menus, onTar
    */
   function postRender(job: NaturalCmsJob) {
     const sent = new Map(commandFields(job))
-    const value = (name: string) => sent.get(name) ?? target?.fields[name] ?? ''
+    const value = (name: string) => sent.has(name) ? sent.get(name) ?? '' : target?.fields[name] ?? ''
     return <section>
       <small className="block text-[0.65625rem] font-semibold text-muted-2">실제 화면</small>
       <div className="mt-[0.375rem] rounded-[0.3125rem] border border-line-soft bg-white px-4 py-[1.125rem]">
         <h3 className="m-0 text-[1.125rem] font-medium tracking-[-.03em] text-[#263e48]">{value('title')}</h3>
+        {value('thumbnailImageId') && <figure className="my-4"><img className="max-h-56 rounded" src={contentImageUrl(Number(value('thumbnailImageId')))} alt={value('thumbnailAlt')} /><figcaption className="mt-1 text-xs text-muted-2">목록에 표시될 대표 이미지</figcaption></figure>}
+        <p className="mt-2 text-xs text-muted-2">{['regionCodeId', 'categoryCodeId'].map((key) => value(key) ? target?.codeLabels?.[value(key)] ?? `${fieldLabel(key)} 코드 #${value(key)}` : '').filter(Boolean).join(' · ')}</p>
         <div className="mt-3 border-t border-[#e4ece9] pt-2">
-          <RichText body={value('body')} />
+          <ContentDocument body={value('body')} />
         </div>
       </div>
     </section>
