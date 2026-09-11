@@ -53,8 +53,9 @@ test('the public URL renders the tour portal home without login, isolated from t
   for (const section of ['관광지', '음식', '숙박']) {
     expect(screen.getByRole('heading', { name: section, level: 2 })).toBeInTheDocument()
   }
-  // 검색·챗봇은 배선됐지만 홈 큐레이션은 여전히 고정이다. 고지가 그 구분을 정확히 말해야 한다.
-  expect(within(screen.getByRole('note')).getByText('샘플 데이터 · 추천 목록은 고정입니다')).toBeInTheDocument()
+  // 노란 고지 3종(홈·검색·챗봇)을 모두 걷었다. 근거를 말하는 자리는 섹션 부제와 첫 안내
+  // 말풍선으로 옮겼고, 화면에는 상시 고지를 남기지 않는다.
+  expect(screen.queryByRole('note')).not.toBeInTheDocument()
   expect(screen.getByRole('button', { name: '관광 도우미 열기' })).toBeInTheDocument()
   // 탭은 확정 8종이다. 시안이 6종이어도 이 개수를 따라가지 않는다.
   const tabs = within(screen.getByRole('tablist', { name: '여행 검색 카테고리' })).getAllByRole('tab')
@@ -178,17 +179,18 @@ test('the tour helper opens as a floating panel and closes back to the launcher'
   expect(screen.getByRole('button', { name: '관광 도우미 열기' })).toBeInTheDocument()
 })
 
-test('the tour helper states that it answers only from collected documents', async () => {
+/**
+ * 상시 고지를 걷었다. 챗봇 패널이 좁아 고지가 첫 화면의 상당 부분을 먹었는데, 같은 말을
+ * 첫 안내 말풍선이 이미 하고 있었다 — 고지를 지운 것이지 근거 원칙을 지운 것이 아니다.
+ */
+test('the tour helper carries no standing notice above the conversation', async () => {
   vi.stubGlobal('fetch', publicFetch())
   render(<AppShell />)
-  await screen.findByRole('button', { name: '관광 도우미 열기' })
-  // 닫힌 상태에서는 고지가 없다. 홈 큐레이션 고지와 문구가 달라 서로 잡히지 않는다.
-  expect(screen.queryByText(/근거 문서에서 찾은 내용만 답합니다/)).not.toBeInTheDocument()
-
-  fireEvent.click(screen.getByRole('button', { name: '관광 도우미 열기' }))
+  fireEvent.click(await screen.findByRole('button', { name: '관광 도우미 열기' }))
   const panel = within(screen.getByRole('complementary', { name: '관광 도우미' }))
-  // 고지는 스크롤 영역 밖에 있어 대화를 내려도 사라지지 않는다(F8-a가 정한 위치).
-  expect(panel.getByRole('note')).toHaveTextContent('근거 문서에서 찾은 내용만 답합니다')
+
+  expect(panel.queryByRole('note')).not.toBeInTheDocument()
+  expect(panel.getByText(/수집된 관광 문서에서 근거를 찾아 답해 드립니다/)).toBeInTheDocument()
 })
 
 test('the tour helper answers a question with its citations', async () => {
@@ -441,7 +443,7 @@ test('a configured public path renders that site home and keeps links inside it'
 })
 
 test('an administrator reaches all five CMS sections', async () => {
-  window.history.pushState({}, '', '/admin')
+  window.history.pushState({}, '', '/admin/members')
   vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => {
     if (String(input) === '/api/auth/refresh') return Promise.resolve(json(session()))
     return Promise.resolve(json([]))
@@ -500,7 +502,7 @@ test('a general administrator is redirected away from Agent settings', async () 
   }))
 
   render(<AppShell />)
-  expect(await screen.findByRole('heading', { name: '회원 관리' })).toBeInTheDocument()
+  await waitFor(() => expect(window.location.pathname).toBe('/admin/home'))
   expect(within(screen.getByRole('navigation', { name: '관리자 메뉴' })).queryByRole('button', { name: /Agent 설정/ })).not.toBeInTheDocument()
 })
 
@@ -532,7 +534,7 @@ test('a general administrator is redirected away from system settings', async ()
   }))
 
   render(<AppShell />)
-  expect(await screen.findByRole('heading', { name: '회원 관리' })).toBeInTheDocument()
+  await waitFor(() => expect(window.location.pathname).toBe('/admin/home'))
   const navigation = screen.getByRole('navigation', { name: '관리자 메뉴' })
   expect(within(navigation).queryByRole('button', { name: /시스템 설정/ })).not.toBeInTheDocument()
 })
@@ -563,7 +565,7 @@ test('a general administrator is redirected away from site management', async ()
   }))
 
   render(<AppShell />)
-  expect(await screen.findByRole('heading', { name: '회원 관리' })).toBeInTheDocument()
+  await waitFor(() => expect(window.location.pathname).toBe('/admin/home'))
   const navigation = screen.getByRole('navigation', { name: '관리자 메뉴' })
   expect(within(navigation).queryByRole('button', { name: /사이트 관리/ })).not.toBeInTheDocument()
 })
@@ -913,35 +915,79 @@ function session(role: 'SUPER_ADMIN' | 'GENERAL_ADMIN' = 'GENERAL_ADMIN', name =
 }
 
 /**
- * 뱃지가 세는 둘(승인 대기 빌드 · 갱신 요청)은 모두 최고 관리자가 처리하는 일이다.
- * 한 숫자로 합치고 툴팁이 축을 나눠 말한다.
+ * 로그인 직후 두 관리자가 같은 자리에서 시작한다. 요청을 보낸 쪽과 처리하는 쪽이 서로 다른
+ * 화면에서 시작하면 "같은 종을 본다"는 것이 화면으로 드러나지 않는다.
  */
-test('the RAG badge counts approvals and requests together for a super administrator', async () => {
+test.each([
+  ['SUPER_ADMIN' as const],
+  ['GENERAL_ADMIN' as const],
+])('%s lands on the home screen right after signing in', async (role) => {
+  window.history.pushState({}, '', '/admin')
+  vi.stubGlobal('fetch', ragBadgeFetch(role))
+  render(<AppShell />)
+
+  const menu = within(await screen.findByRole('navigation', { name: '관리자 메뉴' }))
+  await waitFor(() => expect(window.location.pathname).toBe('/admin/home'))
+  expect(menu.getByRole('button', { name: /홈/ })).toBeInTheDocument()
+})
+
+/**
+ * 종은 **자료 갱신 요청만** 싣는다. 승인 대기 버전은 버전 표에 늘 떠 있어 언제든 볼 수 있는
+ * 상태이고, 상시 켜져 있는 숫자를 종에 올리면 방금 온 요청이 그 뒤로 묻힌다.
+ * 사이드바에는 이제 아무 숫자도 남기지 않는다.
+ */
+test('the bell carries only the RAG update requests for a super administrator', async () => {
   window.history.pushState({}, '', '/admin/rag')
   vi.stubGlobal('fetch', ragBadgeFetch('SUPER_ADMIN'))
   render(<AppShell />)
 
-  const menu = within(await screen.findByRole('navigation', { name: '관리자 메뉴' }))
-  expect(await menu.findByLabelText('승인 대기 1건 · 갱신 요청 2건')).toHaveTextContent('3')
+  fireEvent.click(await screen.findByRole('button', { name: /새 알림 2건/ }))
+  const bell = within(screen.getByRole('dialog', { name: '새 알림' }))
+  expect(bell.getByText('일반 관리자님이 자료 갱신을 요청했습니다')).toBeInTheDocument()
+  expect(bell.getByText('축제가 이미 끝났습니다')).toBeInTheDocument()
+  expect(bell.getByText('콘텐츠 담당자님이 자료 갱신을 요청했습니다')).toBeInTheDocument()
+  expect(bell.queryByText(/활성화 승인을 기다리고 있습니다/)).not.toBeInTheDocument()
+
+  const menu = within(screen.getByRole('navigation', { name: '관리자 메뉴' }))
+  expect(menu.queryByLabelText(/승인 대기|갱신 요청/)).not.toBeInTheDocument()
 })
 
 /**
- * 일반 관리자에게 같은 숫자를 띄우면 눌러 들어가도 할 수 있는 것이 없다 — 쓰기 3종이 전부
- * SUPER_ADMIN 전용이기 때문이다. 일반 관리자 몫은 "자동 감지된 갱신 필요" 알림인데 그것을
- * 만드는 쪽(스케줄러)이 아직 없다. 셀 것이 생길 때까지 0을 띄우지 않고 숨긴다.
+ * 줄을 고르면 그 줄은 사라지고 RAG 관리로 간다. 종의 기본 목적지(LLM DevOps)가 아니고,
+ * 확인하러 들어가는 행위가 곧 그 알림에 대한 응답이라 숫자도 함께 줄어든다.
  */
-test('a general administrator gets no RAG badge even when the counts are there to read', async () => {
+test('choosing a RAG line clears it and opens the RAG screen', async () => {
+  window.history.pushState({}, '', '/admin/menus')
+  vi.stubGlobal('fetch', ragBadgeFetch('SUPER_ADMIN'))
+  render(<AppShell />)
+
+  fireEvent.click(await screen.findByRole('button', { name: /새 알림 2건/ }))
+  fireEvent.click(screen.getByRole('button', { name: /일반 관리자님이 자료 갱신을 요청했습니다/ }))
+
+  expect(await screen.findByRole('heading', { name: 'RAG 관리' })).toBeInTheDocument()
+  expect(await screen.findByRole('button', { name: /새 알림 1건/ })).toBeInTheDocument()
+})
+
+/**
+ * 일반 관리자에게 같은 줄을 띄우면 눌러 들어가도 할 수 있는 것이 없다 — 쓰기 3종이 전부
+ * SUPER_ADMIN 전용이기 때문이다. 일반 관리자 몫은 "자동 감지된 갱신 필요" 알림인데 그것을
+ * 만드는 쪽(스케줄러)이 아직 없다. 알릴 것이 생길 때까지 띄우지 않는다.
+ */
+test('a general administrator gets no RAG lines even when the data is there to read', async () => {
   window.history.pushState({}, '', '/admin/rag')
   vi.stubGlobal('fetch', ragBadgeFetch('GENERAL_ADMIN'))
   render(<AppShell />)
 
   const menu = within(await screen.findByRole('navigation', { name: '관리자 메뉴' }))
   await menu.findByRole('button', { name: /RAG 관리/ })
-  expect(menu.queryByLabelText(/승인 대기|갱신 요청/)).not.toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: '알림 목록 열기' }))
+  expect(screen.queryByText(/자료 갱신을 요청했습니다/)).not.toBeInTheDocument()
+  expect(screen.queryByText(/활성화 승인을 기다리고 있습니다/)).not.toBeInTheDocument()
 })
 
-/** 뱃지가 셀 것을 다 내려주는 스텁. 역할만 바꿔 두 경로를 같은 데이터로 비교한다. */
+/** 종이 실을 것을 다 내려주는 스텁. 역할만 바꿔 두 경로를 같은 데이터로 비교한다. */
 function ragBadgeFetch(role: 'SUPER_ADMIN' | 'GENERAL_ADMIN') {
+  const at = new Date().toISOString()
   return vi.fn((input: RequestInfo | URL) => {
     const url = String(input)
     if (url === '/api/auth/refresh') {
@@ -954,10 +1000,16 @@ function ragBadgeFetch(role: 'SUPER_ADMIN' | 'GENERAL_ADMIN') {
       return Promise.resolve(json({ items: [{ knowledgeBaseId: 'kb-1', projectId: 'p-1', name: '관광 정보 지식베이스' }] }))
     }
     if (url.endsWith('/versions')) {
-      return Promise.resolve(json({ items: [{ status: 'APPROVAL_PENDING' }, { status: 'ACTIVE' }] }))
+      return Promise.resolve(json({ items: [
+        { status: 'APPROVAL_PENDING', knowledgeVersionId: 'kv-3', versionNumber: 3, createdAt: at },
+        { status: 'ACTIVE', knowledgeVersionId: 'kv-1', versionNumber: 1, createdAt: at },
+      ] }))
     }
     if (url.endsWith('/activation-requests')) {
-      return Promise.resolve(json({ items: [{ requestId: 'r-1' }, { requestId: 'r-2' }] }))
+      return Promise.resolve(json({ items: [
+        { requestId: 'r-1', requestedByName: '일반 관리자', reason: '축제가 이미 끝났습니다', createdAt: at },
+        { requestId: 'r-2', requestedByName: '콘텐츠 담당자', reason: null, createdAt: at },
+      ] }))
     }
     return Promise.resolve(json([]))
   })

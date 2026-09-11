@@ -53,7 +53,11 @@ export function isCmsRouteId(route: RouteId): route is CmsRouteId { return (cmsR
 
 export function routesForRole(role: AdminRole) { return routes.filter((route) => route.allowedRoles.includes(role)) }
 export function navigationRoutesForRole(role: AdminRole) { return routesForRole(role).filter((route) => !route.hiddenFromNavigation) }
-export function defaultRouteForRole(_role: AdminRole): RouteId { return 'members' }
+/**
+ * 로그인 직후 들어가는 화면. 역할과 무관하게 '홈'이다 — 두 관리자가 같은 자리에서
+ * 시작해야 헤더의 종(알림)을 같은 조건에서 보게 된다.
+ */
+export function defaultRouteForRole(_role: AdminRole): RouteId { return 'home' }
 export function pathForRoute(route: RouteId) { return routes.find((item) => item.id === route)?.path ?? '/admin/members' }
 export function routeIdForPath(pathname: string) { return routes.find((item) => item.path === pathname)?.id }
 export function groupForRoute(route: RouteId) { return routes.find((item) => item.id === route)?.group ?? '개요' }

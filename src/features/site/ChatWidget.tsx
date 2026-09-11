@@ -3,7 +3,7 @@ import { useRagQuery } from '../knowledge/useRagQuery'
 import type { PublicCitation } from '../knowledge/types'
 import { homepageLine } from './portal-meta'
 import { describePortalStatus } from './portal-status'
-import { CardPhoto, SampleNotice } from './portal-primitives'
+import { CardPhoto } from './portal-primitives'
 
 /**
  * 우하단 상시 노출 플로팅 챗봇. 버튼·패널 사양은 시안 `Portal-Chatbot.dc.html`을 따른다
@@ -46,6 +46,8 @@ export function ChatWidget() {
   const [locked, setLocked] = useState(false)
   const { state, ask } = useRagQuery()
   const scroller = useRef<HTMLDivElement>(null)
+  /** 마지막 문답의 머리. 스크롤을 여기에 맞춘다. */
+  const lastTurn = useRef<HTMLDivElement>(null)
 
   const sending = state.phase === 'loading'
 
@@ -73,11 +75,19 @@ export function ChatWidget() {
     })
   }, [state])
 
-  // 새 말풍선이 붙으면 바닥으로 내린다. scrollTo가 아니라 scrollTop을 쓰는 이유는
-  // jsdom에 scrollTo가 없어서다 — 화면 동작은 같고 테스트 환경만 넓어진다.
+  // 새 문답이 붙으면 **그 문답의 머리**를 스크롤 영역 맨 위에 둔다.
+  //
+  // 바닥으로 내리면 답변이 길수록 첫 문장이 위로 밀려 사라지고, 화면에는 맨 끝의 근거 카드만
+  // 남는다 — 읽어야 할 것이 답변인데 정작 답변이 안 보였다. 머리를 위에 두면 질문 → 답변
+  // 첫 줄 순으로 읽히고, 나머지는 내려서 본다.
+  //
+  // scrollIntoView가 아니라 offsetTop 산술을 쓰는 이유는 jsdom에 그 API가 없어서다 —
+  // 화면 동작은 같고 테스트 환경만 넓어진다(scrollTo를 안 쓰는 것과 같은 이유).
   useEffect(() => {
     const node = scroller.current
-    if (node) node.scrollTop = node.scrollHeight
+    if (!node) return
+    const head = lastTurn.current
+    node.scrollTop = head ? head.offsetTop - node.offsetTop : node.scrollHeight
   }, [turns, sending])
 
   function send(question: string) {
@@ -119,11 +129,6 @@ export function ChatWidget() {
       <button type="button" onClick={() => setOpen(false)} aria-label="관광 도우미 닫기" className="ml-auto bg-transparent px-1 py-0.5 text-lg leading-none text-sb-muted hover:text-white">×</button>
     </div>
 
-    {/* 스크롤 영역 밖에 둬서 대화를 내려도 고지가 사라지지 않는다(F8-a). */}
-    <div className="flex-none bg-sub px-[0.875rem] pt-[0.875rem]">
-      <SampleNotice label="근거 문서에서 찾은 내용만 답합니다" />
-    </div>
-
     <div ref={scroller} className="flex flex-1 flex-col gap-3 overflow-y-auto bg-sub px-[0.875rem] py-4">
       {turns.length === 0 && <>
         <p className="m-0 max-w-[88%] self-start rounded-xl rounded-bl-[3px] border border-line-soft bg-white px-[0.8125rem] py-[0.6875rem] text-[0.8125rem] leading-[1.65] text-body">
@@ -134,7 +139,11 @@ export function ChatWidget() {
         </div>
       </>}
 
-      {turns.map((turn, index) => <div key={index} className="flex flex-col gap-3">
+      {turns.map((turn, index) => <div
+        key={index}
+        ref={index === turns.length - 1 ? lastTurn : undefined}
+        className="flex flex-col gap-3"
+      >
         <p className="m-0 max-w-[82%] self-end rounded-xl rounded-br-[3px] bg-link px-[0.8125rem] py-[0.625rem] text-[0.8125rem] leading-relaxed text-white">{turn.question}</p>
 
         {turn.notice && <div className="flex max-w-[88%] flex-col gap-1 self-start rounded-xl rounded-bl-[3px] border border-line-soft bg-white px-[0.8125rem] py-[0.6875rem]">
