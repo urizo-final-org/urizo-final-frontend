@@ -176,7 +176,7 @@ export default function ApprovalBell({ api, onOpen, extra = [] }: {
         type="button"
         className="block w-full border-t border-line-soft px-4 py-[0.625rem] text-left text-[0.71875rem] font-semibold text-strong hover:bg-sub"
         onClick={read}
-      >LLM DevOps 열기</button>
+      >LLM CI/CD 열기</button>
     </div>}
   </div>
 }

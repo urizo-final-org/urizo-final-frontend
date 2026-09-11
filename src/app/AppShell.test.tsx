@@ -1049,7 +1049,7 @@ test('collapses the desktop sidebar without losing navigation and preserves the 
 })
 
 test.each([
-  ['/admin/llm-devops', 'LLM DevOps', 'LLM_OPS'],
+  ['/admin/llm-devops', 'LLM CI/CD', 'LLM_OPS'],
   ['/admin/menus', '메뉴 관리', 'NATURAL_CMS'],
   ['/admin/contents', '컨텐츠 관리', 'NATURAL_CMS'],
   ['/admin/boards', '게시판 관리', 'NATURAL_CMS'],

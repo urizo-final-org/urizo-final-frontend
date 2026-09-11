@@ -33,7 +33,7 @@ export const routes: RouteDefinition[] = [
   { id: 'agents', path: '/admin/agents', group: 'AI 운영', label: 'Agent 관리', glyph: '◈', icon: 'bot', allowedRoles: admins, mock: true, hiddenFromNavigation: true },
   { id: 'models', path: '/admin/models', group: 'AI 운영', label: 'Agent 설정', glyph: '◧', icon: 'boxes', allowedRoles: superAdmins },
   { id: 'rag', path: '/admin/rag', group: 'AI 운영', label: 'RAG 관리', glyph: '▩', icon: 'database', allowedRoles: admins },
-  { id: 'devops', path: '/admin/llm-devops', group: 'AI 운영', label: 'LLM DevOps', glyph: '◑', icon: 'code-2', allowedRoles: admins },
+  { id: 'devops', path: '/admin/llm-devops', group: 'AI 운영', label: 'LLM CI/CD', glyph: '◑', icon: 'code-2', allowedRoles: admins },
   // Super administrators only, because the server refuses the guardrail endpoints to anyone
   // else. A general administrator asks for a change; deciding where the AI may write is not
   // the same decision.

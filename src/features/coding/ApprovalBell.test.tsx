@@ -136,7 +136,7 @@ test('the way out at the bottom opens the screen even when the list is empty', a
 
   fireEvent.click(screen.getByRole('button', { name: '알림 목록 열기' }))
   expect(screen.getByRole('dialog')).toHaveTextContent('새 알림이 없습니다.')
-  fireEvent.click(screen.getByRole('button', { name: 'LLM DevOps 열기' }))
+  fireEvent.click(screen.getByRole('button', { name: 'LLM CI/CD 열기' }))
 
   expect(onOpen).toHaveBeenCalledTimes(1)
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
