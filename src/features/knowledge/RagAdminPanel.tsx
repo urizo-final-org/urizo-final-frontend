@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { describeFailure } from '../../shared/api/error'
 import type { AdminRole } from '../../shared/api/session'
-import { Badge, Callout, PageHead, PanelTitle, panel, primaryButton, secondaryButton, smallButton, type Tone } from '../../shared/ui/primitives'
+import { Badge, Callout, PageHead, PanelTitle, panel, primaryButton, secondaryButton, smallButton, tableButton, type Tone } from '../../shared/ui/primitives'
 import { Icon } from '../../shared/ui/icons'
 import { ActivationRequests } from './ActivationRequests'
 import { noHover } from './no-hover'
@@ -69,43 +69,14 @@ const NOT_SWITCHABLE: Partial<Record<KnowledgeVersionStatus, string>> = {
   BUILD_REQUESTED: '빌드가 끝나야 활성화할 수 있습니다.',
 }
 
-/**
- * 기본으로 보이는 버전 — **활성 · 승인 대기 · 최신 2건**의 합집합.
+/*
+ * 버전 표는 접지 않는다. 한때 "활성 · 승인 대기 · 최신 N건"만 펼치고 나머지를 접었는데,
+ * 접힘은 이 화면이 답해야 할 질문("버전끼리 무엇이 다른가")을 오히려 가렸다 — v3을 만들면
+ * v1이 보관으로 밀려 접힘 안으로 들어가, 비교 대상이 화면에서 사라졌다.
  *
- * <p>버전은 지우지 않는다. 실패한 빌드까지 남아 있는 것이 "버전은 고치지 않고 새로
- * 만든다"의 증거다. 다만 11건이 한 번에 깔리면 지금 무엇을 봐야 하는지가 묻힌다 —
- * 지우는 대신 접는다.
- *
- * <p>"최신 N건"만으로는 부족하다. 활성 버전이 목록 중간에 있을 수 있어서(롤백하면 그렇게
- * 된다) 최신순으로 자르면 정작 지금 쓰는 버전이 사라진다.
+ * 버전은 지우지 않으므로 목록은 계속 길어진다. 길어지면 표가 스크롤될 뿐이고, 그 편이
+ * "무엇이 숨어 있는지 모르는" 상태보다 낫다.
  */
-const ALWAYS_VISIBLE_RECENT = 2
-
-function visibleVersions(versions: KnowledgeVersion[]): KnowledgeVersion[] {
-  const keep = new Set<string>()
-  versions.slice(0, ALWAYS_VISIBLE_RECENT).forEach((v) => keep.add(v.knowledgeVersionId))
-  versions
-    .filter((v) => v.status === 'ACTIVE' || v.status === 'APPROVAL_PENDING')
-    .forEach((v) => keep.add(v.knowledgeVersionId))
-  return versions.filter((v) => keep.has(v.knowledgeVersionId))
-}
-
-/**
- * 표 안의 액션 버튼. 공용 `smallButton`은 배경이 패널과 같아 링크처럼 보였다 —
- * 배경·여백·모서리를 주어 「누를 수 있는 것」으로 읽히게 한다. hover 색 변화는 두지 않는다 —
- * 시연 화면에서 마우스가 표 위를 지나갈 때마다 버튼이 깜빡이는 것으로 보였다.
- *
- * <p>**공용 `primaryButton`을 쓰지 않는 이유**: `admin-theme.css`의
- * `.admin-app button { color: inherit }`가 명시도(0,1,1)에서 Tailwind `text-white`(0,1,0)를
- * 이겨, 남색 배경에 남색 글자가 되어 글자가 보이지 않는다. 앱 전체 36곳이 같은 조건이라
- * 공용 수정은 다른 담당자 화면까지 건드린다 — 여기서는 이 버튼만 표 버튼과 같은 형태로 둔다.
- *
- * <p>채움에 `line` 토큰을 쓴다. 이름은 선이지만 값이 라이트 #dfe6ed · 다크 #294156이라
- * **양쪽 테마에서 패널과 확실히 구분되는 유일한 기존 토큰**이다. `sub`(#f8fafc)는 흰 패널과
- * 붙어 보여 링크처럼 읽혔다. 공용 테마 CSS를 건드리지 않으려고 기존 값을 재사용한다.
- */
-const tableButton = 'inline-flex h-8 items-center justify-center gap-1 rounded-md border border-field-line bg-line px-4 text-[0.71875rem] font-semibold text-strong shadow-[0_1px_1px_#10203410] disabled:opacity-45'
-
 
 /** 확인 창 하나로 쓰기 3종을 받는다. 되돌리기 어려운 동작 앞에 사람 손을 한 번 더 둔다. */
 type Confirmation = { title: string; lines: string[]; label: string; run: () => Promise<unknown> }
@@ -685,8 +656,7 @@ function VersionTable({ versions, mayWrite, blocked, busy, canRollback, onSwitch
   onSwitch: (version: KnowledgeVersion) => void
   onRollback: () => void
 }) {
-  const [showAll, setShowAll] = useState(false)
-  const shown = versions == null ? null : showAll ? versions : visibleVersions(versions)
+  const shown = versions
   const activeVersion = versions?.find((v) => v.status === 'ACTIVE') ?? null
   const activeR5 = activeVersion ? offlineMetrics(activeVersion)?.metrics.r5 ?? null : null
   // 보이는 버전 중 하나라도 측정치가 있을 때만 열을 만든다. 이 환경의 버전을 하나도 모르면
@@ -696,7 +666,6 @@ function VersionTable({ versions, mayWrite, blocked, busy, canRollback, onSwitch
   const columns = hasMetrics
     ? 'grid-cols-[10fr_15fr_15fr_35fr_15fr_10fr]'
     : 'grid-cols-[12fr_18fr_18fr_40fr_12fr]'
-  const hidden = versions == null || shown == null ? 0 : versions.length - shown.length
   return <section className={panel}>
     <PanelTitle title="RAG 버전" sub={versions ? `${versions.length}건` : undefined}>
       <button
@@ -732,16 +701,6 @@ function VersionTable({ versions, mayWrite, blocked, busy, canRollback, onSwitch
               ><Icon name="repeat" size={12} />전환</button>}
           </span>
         </div>)}
-        {hidden > 0 && <button
-          type="button"
-          className="w-full border-t border-line bg-transparent px-4 py-[0.625rem] text-left text-[0.6875rem] text-muted-3"
-          onClick={() => setShowAll(true)}
-        >이전 버전 {hidden}건 더 보기</button>}
-        {showAll && versions != null && versions.length > ALWAYS_VISIBLE_RECENT && <button
-          type="button"
-          className="w-full border-t border-line bg-transparent px-4 py-[0.625rem] text-left text-[0.6875rem] text-muted-3"
-          onClick={() => setShowAll(false)}
-        >접기</button>}
       </div>
     </div>
   </section>

@@ -988,17 +988,21 @@ test('the screen lists what another administrator decided, naming them', async (
     }),
   })} />)
 
-  expect(await screen.findByText('새 소식')).toBeInTheDocument()
+  expect(await screen.findByText('승인 알림')).toBeInTheDocument()
   expect(screen.getByText('최고 관리자님이 코드 단계를 승인했습니다')).toBeInTheDocument()
   expect(screen.getByText('3분 전')).toBeInTheDocument()
   expect(screen.getByText('계획 단계에서 승인을 기다리고 있습니다')).toBeInTheDocument()
 })
 
-test('no news means no panel rather than an empty one', async () => {
+/*
+ * AI04-025: the panel used to vanish when it had nothing to say, and the page changed shape every
+ * time an alert came or went. The frame now stays and says so.
+ */
+test('no approval alerts keeps the panel and says there are none', async () => {
   render(<CodingWorkspace role="GENERAL_ADMIN" api={consoleApi()} />)
 
-  await screen.findByRole('button', { name: '요청 보내기' })
-  expect(screen.queryByText('새 소식')).not.toBeInTheDocument()
+  expect(await screen.findByText('승인 알림이 없습니다.')).toBeInTheDocument()
+  expect(screen.getByRole('tab', { name: /승인 알림/ })).toHaveAttribute('aria-selected', 'true')
 })
 
 /*
@@ -1110,8 +1114,8 @@ test('news already read does not come back on the next visit', async () => {
     }),
   })} />)
 
-  await screen.findByRole('button', { name: '요청 보내기' })
-  expect(screen.queryByText('새 소식')).not.toBeInTheDocument()
+  expect(await screen.findByText('승인 알림이 없습니다.')).toBeInTheDocument()
+  expect(screen.queryByText('어제 승인한 요청')).not.toBeInTheDocument()
 })
 
 /*
@@ -1182,4 +1186,66 @@ test('a finished request offers nothing to cancel', async () => {
   await screen.findByRole('button', { name: '요청 보내기' })
   expect(screen.queryByRole('button', { name: '이 요청 그만두기' })).not.toBeInTheDocument()
   expect(screen.queryByText(/작업이 끝나면 취소할 수 있습니다/)).not.toBeInTheDocument()
+})
+
+/*
+ * AI04-025, the layout borrowed from the Agent 설정 screen. The summary row answers "어디까지
+ * 왔나" before the reader scrolls, using only what the screen already polls.
+ */
+test('the summary row names the open request and whose turn it is', async () => {
+  render(<CodingWorkspace role="SUPER_ADMIN" api={waitingApi()} />)
+
+  expect(await screen.findByText('계획 확인 차례')).toBeInTheDocument()
+  expect(screen.getByText('1건 · 승인 대기')).toBeInTheDocument()
+  expect(screen.getByText('최근 1건 · 완료 0 · 멈춤 0')).toBeInTheDocument()
+})
+
+test('with nothing sent yet, the request column says so and the form stays open', async () => {
+  render(<CodingWorkspace role="GENERAL_ADMIN" api={consoleApi()} />)
+
+  expect(await screen.findByText('진행 중인 요청이 없습니다')).toBeInTheDocument()
+  expect(screen.getByLabelText('무엇을 바꿀까요')).toBeEnabled()
+  expect(screen.getByText('아직 없음')).toBeInTheDocument()
+})
+
+test('the status strip tells a live runner from a silent one', async () => {
+  const { unmount } = render(<CodingWorkspace role="GENERAL_ADMIN" api={consoleApi()} />)
+  expect(await screen.findByText('실행기 연결됨')).toBeInTheDocument()
+  unmount()
+
+  render(<CodingWorkspace role="GENERAL_ADMIN" api={consoleApi({
+    runnerStatus: vi.fn().mockResolvedValue({ schemaVersion: '1.0', alive: false }),
+  })} />)
+  expect(await screen.findByText('실행기 응답 없음')).toBeInTheDocument()
+})
+
+test('the cancel control is a card of its own, apart from the approval buttons', async () => {
+  render(<CodingWorkspace role="SUPER_ADMIN" api={waitingApi()} />)
+
+  const cancel = await screen.findByRole('button', { name: '이 요청 그만두기' })
+  expect(screen.getByText('더 필요 없는 요청이면 여기서 끝낼 수 있습니다')).toBeInTheDocument()
+  const approve = screen.getByRole('button', { name: '네, 진행하세요' })
+  expect(cancel.closest('section')).not.toBe(approve.closest('section'))
+})
+
+test('the live status card names itself and shows the attempt it is on', async () => {
+  render(<CodingWorkspace role="SUPER_ADMIN" api={waitingApi()} />)
+
+  expect(await screen.findByText('실시간 상태')).toBeInTheDocument()
+  expect(await screen.findByText(/^\d{2}:\d{2}:\d{2} 갱신 · 시도 1\/3$/)).toBeInTheDocument()
+})
+
+test('approval alerts and the history share one panel and switch by tab', async () => {
+  render(<CodingWorkspace role="GENERAL_ADMIN" api={consoleApi()} />)
+
+  const alertsTab = await screen.findByRole('tab', { name: /승인 알림/ })
+  expect(alertsTab).toHaveAttribute('aria-selected', 'true')
+  expect(screen.getByText('승인 알림이 없습니다.')).toBeVisible()
+  expect(screen.getByText('아직 보낸 요청이 없습니다.')).not.toBeVisible()
+
+  fireEvent.click(screen.getByRole('tab', { name: /실행 이력/ }))
+
+  expect(screen.getByRole('tab', { name: /실행 이력/ })).toHaveAttribute('aria-selected', 'true')
+  expect(screen.getByText('아직 보낸 요청이 없습니다.')).toBeVisible()
+  expect(screen.getByText('승인 알림이 없습니다.')).not.toBeVisible()
 })

@@ -351,32 +351,21 @@ function ladder() {
   ]
 }
 
-/** 11건이 한 번에 깔리면 지금 무엇을 봐야 하는지가 묻힌다. 지우지 않고 접는다. */
-test('the table opens on the versions that matter and folds the rest away', async () => {
+/**
+ * 버전 표는 접지 않는다. 접힘은 이 화면이 답해야 할 질문("버전끼리 무엇이 다른가")을
+ * 오히려 가렸다 — v3을 만들면 v1이 보관으로 밀려 접힘 안으로 들어가, 비교 대상이 화면에서
+ * 사라졌다. 실패한 빌드까지 남아 있는 것이 "버전은 고치지 않고 새로 만든다"의 증거다.
+ */
+test('the table shows every version without folding', async () => {
   show(<RagAdminPanel api={api({ listVersions: vi.fn().mockResolvedValue({ items: ladder() }) })} role="SUPER_ADMIN" />)
 
   // v8은 요약 카드에도 나오므로 버전 표 안으로 좁혀 단언한다.
   const table = within((await screen.findByText('RAG 버전')).closest('section') as HTMLElement)
-  expect(table.getByText('v11')).toBeInTheDocument()
-  expect(table.getByText('v10')).toBeInTheDocument()
-  // 활성 버전은 최신 2건 밖에 있어도 항상 보인다 — 롤백하면 목록 중간으로 내려간다.
-  expect(table.getByText('v8')).toBeInTheDocument()
-  expect(table.queryByText('v9')).not.toBeInTheDocument()
-  expect(table.queryByText('v4')).not.toBeInTheDocument()
-  // 접었을 뿐 지운 것이 아니라는 사실을 숫자로 남긴다.
+  for (const label of ['v11', 'v10', 'v9', 'v8', 'v4', 'v3']) {
+    expect(table.getByText(label)).toBeInTheDocument()
+  }
   expect(table.getByText('6건')).toBeInTheDocument()
-  expect(table.getByRole('button', { name: '이전 버전 3건 더 보기' })).toBeInTheDocument()
-})
-
-test('the folded versions are still one click away', async () => {
-  show(<RagAdminPanel api={api({ listVersions: vi.fn().mockResolvedValue({ items: ladder() }) })} role="SUPER_ADMIN" />)
-
-  fireEvent.click(await screen.findByRole('button', { name: '이전 버전 3건 더 보기' }))
-  // 실패한 빌드가 남아 있는 것이 "버전은 고치지 않고 새로 만든다"의 증거다.
-  expect(screen.getByText('v4')).toBeInTheDocument()
-  expect(screen.getByText('v3')).toBeInTheDocument()
-  fireEvent.click(screen.getByRole('button', { name: '접기' }))
-  expect(screen.queryByText('v4')).not.toBeInTheDocument()
+  expect(table.queryByRole('button', { name: /더 보기|접기/ })).not.toBeInTheDocument()
 })
 
 function building() {

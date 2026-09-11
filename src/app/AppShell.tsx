@@ -3,7 +3,7 @@ import { BrowserRouter, Navigate, Route, Routes, useLocation, useNavigate } from
 import LoginScreen from '../features/auth/LoginScreen'
 import { clearExplicitSignOut, clearStoredToken, hasExplicitSignOutMarker, markExplicitSignOut, readStoredToken, storeToken } from '../features/auth/session-store'
 import CmsWorkspace from '../features/cms/CmsWorkspace'
-import ApprovalBell from '../features/coding/ApprovalBell'
+import ApprovalBell, { type BellNotice } from '../features/coding/ApprovalBell'
 import CodingWorkspace from '../features/coding/CodingWorkspace'
 import GuardrailWorkspace from '../features/coding/GuardrailWorkspace'
 import { KnowledgeAdminApi } from '../features/knowledge/admin-api'
@@ -136,28 +136,33 @@ function AuthenticatedAdmin({ session, theme, onToggleTheme, onRefresh, onExpire
   const naturalCmsApi = useMemo(() => new NaturalCmsApi(session.sessionToken, lifecycle.refreshed, lifecycle.expired), [session.sessionToken, lifecycle])
   const codingApi = useMemo(() => new CodingConsoleApi(session.sessionToken, lifecycle.refreshed, lifecycle.expired), [session.sessionToken, lifecycle])
   const knowledgeApi = useMemo(() => new KnowledgeAdminApi(session.sessionToken, lifecycle.refreshed, lifecycle.expired), [session.sessionToken, lifecycle])
-  // 승인 대기는 화면에 들어가야만 보였다. 메뉴에 건수를 띄워 들어가기 전에 알린다.
+  // 자료 갱신 요청은 화면에 들어가야만 보였다. 헤더 종에 실어 들어가기 전에 알린다.
   //
-  // **최고 관리자만 본다.** 이 뱃지가 세는 둘(승인 대기 빌드·갱신 요청)은 모두 SUPER_ADMIN이
-  // 처리하는 일이다. 같은 숫자를 일반 관리자에게 띄우면 눌러 들어가도 할 수 있는 것이 없어,
-  // 알림이 아니라 잡음이 된다. 일반 관리자 몫은 "자동 감지된 갱신 필요" 알림인데 그것을
-  // 만드는 쪽(스케줄러)이 아직 없으므로, 셀 것이 생길 때까지 0을 띄우지 않고 숨긴다.
-  const showsRagBadge = session.actor.role === 'SUPER_ADMIN'
+  // **최고 관리자만 본다.** 요청을 처리하는(활성화·롤백) 쪽이 SUPER_ADMIN이다. 같은 줄을
+  // 일반 관리자에게 띄우면 눌러 들어가도 할 수 있는 것이 없어, 알림이 아니라 잡음이 된다.
+  // 일반 관리자 몫은 "자동 감지된 갱신 필요" 알림인데 그것을 만드는 쪽(스케줄러)이 아직
+  // 없으므로, 알릴 것이 생길 때까지 띄우지 않는다.
+  const showsRagNews = session.actor.role === 'SUPER_ADMIN'
     && permitted.some((route) => route.id === 'rag')
-  const pendingApprovals = usePendingApprovals(knowledgeApi, showsRagBadge)
-  // 두 축을 한 숫자로 합산한다. 답하는 질문이 "들어가 볼 일이 있나" 하나이기 때문이다.
-  // 어느 쪽인지는 툴팁이 나눠 말하고, 화면 안에서 각각 따로 보인다.
-  const navBadges = useMemo(() => {
-    if (!pendingApprovals) return undefined
-    const { approvals, requests } = pendingApprovals
-    const title = [
-      approvals > 0 ? `승인 대기 ${approvals}건` : null,
-      requests > 0 ? `갱신 요청 ${requests}건` : null,
-    ].filter(Boolean).join(' · ')
-    return { rag: { count: approvals + requests, title } }
-  }, [pendingApprovals])
+  const pendingApprovals = usePendingApprovals(knowledgeApi, showsRagNews)
 
   function go(route: RouteId) { navigate(pathForRoute(route)); setMenuOpen(false) }
+
+  /*
+   * 메뉴 옆 숫자 대신 종이다. 숫자 하나는 "들어가 볼 일이 있다"까지만 말하고 무엇이 왔는지는
+   * 결국 들어가야 알았다 — 종은 누가 무엇을 요청했는지 한 줄로 먼저 말하고, 그 줄이 화면까지
+   * 데려간다. 코딩 알림과 한 자리를 쓰는 이유는 읽는 사람이 던지는 질문이 하나이기 때문이다.
+   *
+   * 승인 대기 버전은 여기에 싣지 않는다 — 버전 표에 늘 떠 있어 언제든 볼 수 있는 상태를
+   * 종에까지 올리면, 상시 켜져 있는 숫자가 방금 온 요청을 가린다.
+   */
+  const ragNotices: BellNotice[] = (pendingApprovals ?? []).map((request) => ({
+    id: `request-${request.requestId}`,
+    text: `${request.requestedByName}님이 자료 갱신을 요청했습니다`,
+    detail: request.reason ?? undefined,
+    at: request.createdAt,
+    onPick: () => go('rag'),
+  }))
 
   const initials = session.actor.name.replace(/\s+/g, '').slice(0, 2)
   const onMockScreen = routes.find((item) => item.id === visible)?.mock === true
@@ -186,7 +191,7 @@ function AuthenticatedAdmin({ session, theme, onToggleTheme, onRefresh, onExpire
         <button type="button" className="ml-auto text-sb-muted min-[901px]:hidden" onClick={() => setMenuOpen(false)} aria-label="메뉴 닫기">✕</button>
       </div>
 
-      <AppNavigation activeRoute={visible} role={session.actor.role} onNavigate={go} badges={navBadges} compact={sidebarCollapsed} />
+      <AppNavigation activeRoute={visible} role={session.actor.role} onNavigate={go} compact={sidebarCollapsed} />
 
       <div className="border-t border-sb-border px-3 pb-3 pt-[0.625rem]">
         <a className="flex w-full items-center gap-2 rounded-[0.3125rem] px-2 py-[0.4375rem] text-[0.71875rem] text-sb-muted hover:bg-sb-active hover:text-white" href="/" target="_blank" rel="noreferrer" title="사용자 사이트 열기">
@@ -228,7 +233,7 @@ function AuthenticatedAdmin({ session, theme, onToggleTheme, onRefresh, onExpire
           <i className="block h-[0.3125rem] w-[0.3125rem] rounded-full bg-run-dot" aria-hidden="true" />임시 목업
         </span>}
         <div className="flex items-center gap-3 text-muted max-[720px]:hidden">
-          <ApprovalBell api={codingApi} onOpen={() => go('devops')} />
+          <ApprovalBell api={codingApi} onOpen={() => go('devops')} extra={ragNotices} />
           <Icon name="circle-help" size={16} />
         </div>
         <button
