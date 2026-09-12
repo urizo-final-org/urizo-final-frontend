@@ -50,6 +50,42 @@ test('프리셋 secretRef가 백엔드 Secret 이름 규칙을 지킨다', () =>
   expect(PRESETS.fixture.form.secretRef).toMatch(/^fixture:\/\/.+/)
 })
 
+test('중기부 프리셋은 dataType=json을 값과 함께 싣는다', () => {
+  // 이게 없으면 공공데이터포털이 XML을 돌려주고 백엔드가 "did not return JSON."으로 죽는다.
+  // 이름·타입만 있고 값이 없으면 수집기가 파라미터를 통째로 건너뛰므로 값까지 확인한다.
+  expect(buildCreateRequest(PRESETS.sme.form).requestParameters).toEqual([
+    { name: 'dataType', type: 'STRING', required: true, defaultValue: 'json' },
+  ])
+})
+
+test('값이 빈 요청 파라미터는 defaultValue 키를 싣지 않는다', () => {
+  const form = {
+    ...PRESETS.sme.form,
+    requestParameters: [
+      { name: 'dataType', type: 'STRING' as const, required: true, defaultValue: ' json ' },
+      { name: '값없음', type: 'STRING' as const, required: false, defaultValue: '   ' },
+    ],
+  }
+  const sent = JSON.parse(JSON.stringify(buildCreateRequest(form))).requestParameters
+
+  expect(sent[0].defaultValue).toBe('json')
+  // 빈 문자열을 실으면 `값없음=` 으로 나가 원천이 다르게 해석한다. 키 자체를 뺀다.
+  expect(sent[1]).not.toHaveProperty('defaultValue')
+})
+
+test('폼에서 추가한 파라미터의 값이 계약 본문까지 간다', async () => {
+  render(<ConnectorPanel api={api()} projectId="p-1" mayWrite />)
+  fireEvent.click(await screen.findByRole('button', { name: /커넥터 등록/ }))
+
+  // 프리셋이 실어 둔 dataType 행이 접히지 않고 값과 함께 보인다 — 이 칸이 숨으면
+  // 시연에서 왜 XML이 오는지 화면만 보고는 알 수 없다.
+  expect(screen.getByDisplayValue('dataType')).toBeInTheDocument()
+  expect(screen.getByDisplayValue('json')).toBeInTheDocument()
+
+  fireEvent.change(screen.getByDisplayValue('json'), { target: { value: 'xml' } })
+  expect(screen.getByDisplayValue('xml')).toBeInTheDocument()
+})
+
 test('metadata는 적은 순서를 표시 순서로 지킨다', () => {
   // 02번 문서가 정한 순서다. 객체 키 순서가 깨지면 화면 라벨 순서가 그대로 뒤집힌다.
   expect(Object.keys(buildCreateRequest(PRESETS.sme.form).documentMapping.metadata ?? {}))
