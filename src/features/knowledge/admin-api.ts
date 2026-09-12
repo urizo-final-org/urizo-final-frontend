@@ -5,6 +5,10 @@ import {
   type ActivationRequest,
   type ActivationRequestList,
   type AgentJob,
+  type Connector,
+  type ConnectorList,
+  type ConnectorPreview,
+  type CreateConnectorRequest,
   type KnowledgeBase,
   type KnowledgeTarget,
   type KnowledgeVersion,
@@ -144,6 +148,44 @@ export class KnowledgeAdminApi {
     this.request<KnowledgeVersion>(
       `/api/knowledge-bases/${encodeURIComponent(knowledgeBaseId)}/rollback`,
       { method: 'POST', body: JSON.stringify({ schemaVersion: ADMIN_SCHEMA_VERSION, targetKnowledgeVersionId }) },
+    )
+
+  /** 프로젝트 단위 목록이다 — 전체 커넥터 엔드포인트가 없다. */
+  listConnectors = (projectId: string) => this.request<ConnectorList>(
+    `/api/projects/${encodeURIComponent(projectId)}/connectors`,
+  )
+
+  /**
+   * 등록은 **Draft 커넥터 + 불변 버전**을 한 번에 만든다(201). 같은 이름으로 다시 등록하면
+   * 기존 커넥터에 버전만 쌓이므로, 설정을 고치는 방법은 수정이 아니라 재등록이다.
+   *
+   * <p>실패는 대부분 **422**로 오고 사유가 응답 메시지에 그대로 들어 있다. 화면이 자체
+   * 판정으로 막지 않고 서버 문장을 그대로 보이는 이유다.
+   */
+  createConnector = (projectId: string, request: CreateConnectorRequest) =>
+    this.request<Connector>(
+      `/api/projects/${encodeURIComponent(projectId)}/connectors`,
+      { method: 'POST', body: JSON.stringify({ schemaVersion: ADMIN_SCHEMA_VERSION, ...request }) },
+    )
+
+  /** `maxItems`는 계약상 1~20이다. 넘기면 400이므로 화면이 먼저 자른다. */
+  previewConnector = (connectorId: string, maxItems: number) =>
+    this.request<ConnectorPreview>(
+      `/api/connectors/${encodeURIComponent(connectorId)}/preview`,
+      { method: 'POST', body: JSON.stringify({ schemaVersion: ADMIN_SCHEMA_VERSION, maxItems }) },
+    )
+
+  /**
+   * 커넥터 버전 활성화. **지식 버전 활성화와 다른 엔드포인트다** — 이쪽은 "다음 빌드가 쓸
+   * 자료원"을 정하고, 포털 답변은 지식 버전을 활성화해야 바뀐다.
+   *
+   * <p>`DRAFT`·`ACTIVE`만 받는다(`ConnectorStore:145`). 보관된 버전에 부르면 409
+   * `CONNECTOR_VERSION_NOT_ACTIVATABLE`이다.
+   */
+  activateConnectorVersion = (connectorId: string, connectorVersionId: string) =>
+    this.request<Connector>(
+      `/api/connectors/${encodeURIComponent(connectorId)}/versions/${encodeURIComponent(connectorVersionId)}/activate`,
+      { method: 'POST', body: JSON.stringify({ schemaVersion: ADMIN_SCHEMA_VERSION }) },
     )
 }
 
