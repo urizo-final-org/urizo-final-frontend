@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
 import { describeFailure } from '../../../shared/api/error'
 import { Icon } from '../../../shared/ui/icons'
 import { Callout, PanelTitle, panel, primaryButton } from '../../../shared/ui/primitives'
@@ -283,10 +283,18 @@ export default function NaturalCmsGuardrailPanel({ api }: { api: NaturalCmsGuard
                   </label>
                 })}
             </div>
-            {/* 필드는 정하는 단위가 아니라 이 대상이 무엇을 다루는지 알려 주는 표시다. */}
+            {/*
+              * 필드는 정하는 단위가 아니라 이 대상이 무엇을 다루는지 알려 주는 표시다.
+              * 그래서 한글로 적는다 — `parentId`·`targetType` 은 관리자에게 그것을 말해주지
+              * 못한다. 명령서의 키는 title 에 남겨 필요할 때만 보이게 한다. 고정폭은 쓰지
+              * 않는다. 한글에 씌우면 자간이 어그러진다.
+              */}
             <p className="mb-[0.1875rem] mt-[0.625rem] font-mono text-[0.5625rem] uppercase tracking-[0.1em] text-muted-3">쓸 수 있는 필드</p>
-            <p className="font-mono text-[0.625rem] leading-5 text-body">
-              {resource.fields.map((name) => fieldLabel(resource.resourceKey, name)).join(' · ')}
+            <p className="text-[0.6875rem] leading-5 text-muted-2">
+              {resource.fields.map((name, index) => <Fragment key={name}>
+                {index > 0 && <span aria-hidden="true"> · </span>}
+                <span title={name}>{fieldLabel(resource.resourceKey, name)}</span>
+              </Fragment>)}
             </p>
           </div>
 
@@ -314,9 +322,13 @@ export default function NaturalCmsGuardrailPanel({ api }: { api: NaturalCmsGuard
               className="flex flex-col gap-[0.25rem]"
               aria-label={`${RESOURCE_LABELS[resource.resourceKey]}만의 잠금`}
             >
-              {resource.lock.rules.map((rule) => <li key={rule.key} className="flex gap-[0.375rem] text-[0.6875rem] leading-5 text-body">
+              {resource.lock.rules.map((rule) => <li key={rule.key} className="flex gap-[0.375rem] text-[0.6875rem] leading-5 text-muted-2">
                 <span aria-hidden="true" className="text-[0.5625rem] leading-[1.8]">🔒</span>
-                {lockLabel(rule.key, rule.value)}
+                <span>{lockLabel(rule.key, rule.value).map((part, index) => (
+                  typeof part === 'string'
+                    ? <Fragment key={index}>{part}</Fragment>
+                    : <b key={index} className="font-semibold text-ink">{part.strong}</b>
+                ))}</span>
               </li>)}
             </ul>
           </div>

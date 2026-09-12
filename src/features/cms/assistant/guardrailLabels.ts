@@ -83,21 +83,32 @@ export function fieldLabel(resourceKey: NaturalCmsGuardrailResourceKey, name: st
 /**
  * 그 대상에만 걸리는 제약의 문구.
  *
+ * 조건이 되는 부분만 굵게 한다. 문장이 길어 핵심이 어디인지 훑어지지 않으면, 카드 세 칸
+ * 중에서 이 칸만 읽고 넘어가지 못한다. 문자열을 잘라 찾지 않고 조각으로 선언한다 —
+ * 같은 낱말이 문장에 두 번 나오면 자르는 쪽은 엉뚱한 데를 굵게 한다.
+ *
  * 숫자는 서버가 실어 보낸다. 화면이 상한을 적어 두면 코드가 그 값을 바꿀 때 화면이 거짓말을
  * 한다. 모르는 키는 키를 그대로 보여준다 — 감추면 제약이 사라진 것처럼 보인다.
  */
-const LOCK_LABELS: Record<string, (value: number | null) => string> = {
-  MENU_DELETE_CASCADE: (value) => `하위를 포함해 한 번에 ${value ?? '?'}개까지만 삭제`,
-  MENU_POSITION_ORDINAL: () => '자리는 형제 안의 순서로만 말함',
-  MENU_LINK_TARGET_ONLY: () => '연결 대상은 고르기만 함. 그 컨텐츠·게시판을 고치지는 못함',
-  BOARD_DELETE_EMPTY_ONLY: () => '비어 있는 게시판만 삭제. 사람은 글이 있어도 지울 수 있음',
-  POST_BOARD_BOUND: () => '고른 게시판에 속한 글만 다룸. 소속을 서버가 대조',
-  POST_NO_BOARD_MOVE: () => '글을 다른 게시판으로 옮길 수 없음',
-  CONTENT_BODY_ALLOWLIST: () => '본문은 지정된 서식 · 색 10개만. 저장 전에 서버가 검증',
-  CONTENT_IMAGE_SOURCE: () => '사진은 본문에 있거나 첨부된 것만',
+export type LockPart = string | { strong: string }
+
+const LOCK_LABELS: Record<string, (value: number | null) => LockPart[]> = {
+  MENU_DELETE_CASCADE: (value) => [
+    '하위를 포함해 ', { strong: `한 번에 ${value ?? '?'}개까지만` }, ' 삭제'],
+  MENU_POSITION_ORDINAL: () => ['자리는 형제 안의 ', { strong: '순서로만' }, ' 말함'],
+  MENU_LINK_TARGET_ONLY: () => [
+    { strong: '연결 대상은 고르기만 함.' }, ' 그 컨텐츠·게시판을 고치지는 못함'],
+  BOARD_DELETE_EMPTY_ONLY: () => [
+    { strong: '비어 있는 게시판만' }, ' 삭제. 사람은 글이 있어도 지울 수 있음'],
+  POST_BOARD_BOUND: () => [
+    '고른 ', { strong: '게시판에 속한 글만' }, ' 다룸. 소속을 서버가 대조'],
+  POST_NO_BOARD_MOVE: () => ['글을 ', { strong: '다른 게시판으로 옮길 수 없음' }],
+  CONTENT_BODY_ALLOWLIST: () => [
+    '본문은 ', { strong: '지정된 서식 · 색 10개' }, '만. 저장 전에 서버가 검증'],
+  CONTENT_IMAGE_SOURCE: () => ['사진은 ', { strong: '본문에 있거나 첨부된 것' }, '만'],
 }
 
-export function lockLabel(key: string, value: number | null): string {
+export function lockLabel(key: string, value: number | null): LockPart[] {
   const write = LOCK_LABELS[key]
-  return write ? write(value) : key
+  return write ? write(value) : [key]
 }

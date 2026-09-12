@@ -66,7 +66,10 @@ test('목록은 서버가 여는 대상과 동작에서 나온다', async () => 
     .map((box) => box.closest('label')?.textContent?.trim()))
     .toEqual(['등록', '수정', '삭제'])
   // 필드는 체크박스가 아니라 그 대상이 무엇을 다루는지 알려 주는 표시다.
-  expect(within(menu).getByText('이름 · 주소')).toBeInTheDocument()
+  // 한글 라벨로 적고 명령서의 키는 title 에 남는다.
+  const name = within(menu).getByTitle('name')
+  expect(name).toHaveTextContent('이름')
+  expect(within(menu).getByTitle('path')).toHaveTextContent('주소')
 })
 
 /**
@@ -93,7 +96,10 @@ test('관리별 잠금을 서버가 준 숫자로 말한다', async () => {
   render(<NaturalCmsGuardrailPanel api={api(open())} />)
   const menu = await menuCard()
 
-  expect(within(menu).getByText('하위를 포함해 한 번에 10개까지만 삭제')).toBeInTheDocument()
+  // 조건이 되는 부분만 굵어 문장이 여러 요소로 쪼개진다. 목록 전체 글자로 본다.
+  const locks = within(menu).getByRole('list', { name: '메뉴만의 잠금' })
+  expect(locks).toHaveTextContent('하위를 포함해 한 번에 10개까지만 삭제')
+  expect(within(locks).getByText('한 번에 10개까지만').tagName).toBe('B')
   // 이 대상의 가드레일이 어디에 있는지. 패키지는 넷이 같아 클래스까지 내려가야 갈린다.
   expect(within(menu).getByText('cms.assistant · MenuHandler')).toBeInTheDocument()
   expect(within(menu).getByText('app.cms_menu')).toBeInTheDocument()
