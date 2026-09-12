@@ -57,7 +57,20 @@ const PREVIEW_CONTENT_CHARS = 200
 const STATUS_TONE: Record<ConnectorStatus, Tone> = { DRAFT: 'wait', ACTIVE: 'ok', ARCHIVED: 'idle' }
 const STATUS_LABEL: Record<ConnectorStatus, string> = { DRAFT: '초안', ACTIVE: '활성', ARCHIVED: '보관' }
 
-type ParameterRow = { name: string; type: ConnectorParameterType; required: boolean }
+/**
+ * ⚠️ **`defaultValue`가 곧 전송값이다.** 수집기는 `requestParameters`를 돌면서
+ * `defaultValue`가 있는 것만 쿼리에 싣고, 없으면 그 파라미터를 통째로 건너뛴다
+ * (`ConnectorDocumentClient.request()`). 이름·타입만 적은 행은 요청에 아무것도 더하지 않는다.
+ *
+ * <p>값은 문자열로만 받는다. 계약은 정수·실수·불리언도 받지만 쿼리 문자열은 어차피 문자열이고,
+ * 백엔드 검증도 문자열을 그대로 통과시킨다. 타입별 변환을 넣어도 나가는 요청이 달라지지 않는다.
+ */
+type ParameterRow = {
+  name: string
+  type: ConnectorParameterType
+  required: boolean
+  defaultValue: string
+}
 
 export type ConnectorForm = {
   name: string
@@ -102,7 +115,9 @@ export const PRESETS: Record<'sme' | 'fixture', { label: string; hint: string; f
       authLocation: 'QUERY',
       authName: 'serviceKey',
       secretRef: 'cms-secret://sme-support-api',
-      requestParameters: [],
+      // 공공데이터포털은 dataType이 없으면 XML을 돌려주고, 백엔드는 JSON만 읽는다
+      // (`ConnectorDocumentClient`가 "did not return JSON."으로 중단). 선택 항목이 아니다.
+      requestParameters: [{ name: 'dataType', type: 'STRING', required: true, defaultValue: 'json' }],
       itemsPath: '$.response.body.items.item',
       successCodePath: '$.response.header.resultCode',
       successValues: '00',
@@ -137,6 +152,7 @@ export const PRESETS: Record<'sme' | 'fixture', { label: string; hint: string; f
       authLocation: 'QUERY',
       authName: 'serviceKey',
       secretRef: 'fixture://local-demo',
+      // 픽스처 어댑터는 설정을 읽지 않고 고정 문서를 돌려준다. 실을 파라미터가 없다.
       requestParameters: [],
       itemsPath: '$.items',
       successCodePath: '',
@@ -205,7 +221,11 @@ export function buildCreateRequest(form: ConnectorForm): CreateConnectorRequest 
     requestParameters: form.requestParameters
       .filter((row) => row.name.trim().length > 0)
       .map((row): ConnectorRequestParameter => ({
-        name: row.name.trim(), type: row.type, required: row.required,
+        name: row.name.trim(),
+        type: row.type,
+        required: row.required,
+        // 빈 값은 키를 뺀다. 빈 문자열을 실으면 `name=` 으로 나가 원천이 다르게 해석한다.
+        ...(row.defaultValue.trim() ? { defaultValue: row.defaultValue.trim() } : {}),
       })),
     response: {
       itemsPath: form.itemsPath.trim(),
@@ -554,18 +574,29 @@ function RegisterForm({ form, busy, onChange, onSubmit }: {
       </small>
     </label>
 
-    <details>
-      <summary className="cursor-pointer text-[0.6875rem] text-muted-3">요청 파라미터 (선택 · {form.requestParameters.length}건)</summary>
-      <div className="mt-2 flex flex-col gap-2">
+    {/* 접어 두지 않는다. 중기부 프리셋의 dataType=json이 여기 있고 그게 없으면 원천이 XML을
+        돌려줘 수집이 통째로 실패한다 — 접힌 칸에 시연의 성패가 들어 있으면 안 된다. */}
+    <fieldset className="m-0 border-0 p-0">
+      <legend className="mb-2 p-0 text-[0.71875rem] font-semibold text-muted-2">요청 파라미터</legend>
+      <div className="flex flex-col gap-2">
+        {form.requestParameters.length === 0 && <p className="m-0 text-[0.6875rem] text-muted-3">
+          없음. 원천이 요구하는 고정 파라미터가 있으면 추가하세요.
+        </p>}
         {form.requestParameters.map((row, index) => <div key={index} className="flex flex-wrap items-center gap-2">
           <input
-            className={`${control} mt-0 w-[10rem]`}
+            className={`${control} mt-0 w-[9rem]`}
             value={row.name}
             placeholder="이름"
             onChange={(event) => set('requestParameters', form.requestParameters.map((item, at) => at === index ? { ...item, name: event.target.value } : item))}
           />
+          <input
+            className={`${control} mt-0 w-[9rem]`}
+            value={row.defaultValue}
+            placeholder="값"
+            onChange={(event) => set('requestParameters', form.requestParameters.map((item, at) => at === index ? { ...item, defaultValue: event.target.value } : item))}
+          />
           <select
-            className={`${control} mt-0 w-[8rem]`}
+            className={`${control} mt-0 w-[7rem]`}
             value={row.type}
             onChange={(event) => set('requestParameters', form.requestParameters.map((item, at) => at === index ? { ...item, type: event.target.value as ConnectorParameterType } : item))}
           >
@@ -587,10 +618,13 @@ function RegisterForm({ form, busy, onChange, onSubmit }: {
         <button
           type="button"
           className={noHover(smallButton)}
-          onClick={() => set('requestParameters', [...form.requestParameters, { name: '', type: 'STRING', required: false }])}
+          onClick={() => set('requestParameters', [...form.requestParameters, { name: '', type: 'STRING', required: false, defaultValue: '' }])}
         >파라미터 추가</button>
+        <small className="text-[0.65625rem] text-muted-3">
+          <b>값이 없는 파라미터는 요청에 실리지 않습니다.</b> 수집기가 쿼리에 붙이는 것은 값뿐입니다.
+        </small>
       </div>
-    </details>
+    </fieldset>
 
     <div>
       {/* 만들어지는 것은 DRAFT 버전이다. "등록"이라고 쓰면 이미 쓰이는 것처럼 읽힌다 —
