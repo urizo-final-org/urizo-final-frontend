@@ -129,19 +129,19 @@ test('폼에는 secretRef만 있고 키 값을 받는 입력이 없다', async (
   expect(screen.getByDisplayValue('cms-secret://sme-support-api')).toBeInTheDocument()
   // 비밀번호 입력도, API Key 값을 받는 칸도 없다. 화면에 남을 수 있는 것은 참조 문자열뿐이다.
   expect(document.querySelectorAll('input[type="password"]')).toHaveLength(0)
-  expect(screen.queryByText(/API Key 값은 여기에 넣지 않습니다/)).toBeInTheDocument()
+  expect(screen.queryByText(/API Key 값은 입력하지 않습니다/)).toBeInTheDocument()
 })
 
-test('초안 저장이 성공하면 목록을 다시 읽고 폼을 닫는다', async () => {
+test('저장이 성공하면 목록을 다시 읽고 폼을 닫는다', async () => {
   const client = api()
   render(<ConnectorPanel api={client} projectId="p-1" mayWrite />)
   fireEvent.click(await screen.findByRole('button', { name: /커넥터 등록/ }))
-  fireEvent.click(screen.getByRole('button', { name: '초안 저장' }))
+  fireEvent.click(screen.getByRole('button', { name: '저장' }))
 
   await waitFor(() => expect(client.createConnector).toHaveBeenCalledWith('p-1', buildCreateRequest(PRESETS.sme.form)))
   // 눌렀는데 아무 일도 안 일어난 것처럼 보이지 않게 하는 유일한 증거가 목록 재조회다.
   await waitFor(() => expect(client.listConnectors).toHaveBeenCalledTimes(2))
-  expect(screen.queryByRole('button', { name: '초안 저장' })).not.toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: '저장' })).not.toBeInTheDocument()
 })
 
 test('저장이 실패하면 서버 문장을 그대로 보이고 폼을 지우지 않는다', async () => {
@@ -152,11 +152,11 @@ test('저장이 실패하면 서버 문장을 그대로 보이고 폼을 지우�
   })
   render(<ConnectorPanel api={client} projectId="p-1" mayWrite />)
   fireEvent.click(await screen.findByRole('button', { name: /커넥터 등록/ }))
-  fireEvent.click(screen.getByRole('button', { name: '초안 저장' }))
+  fireEvent.click(screen.getByRole('button', { name: '저장' }))
 
   // 화면이 자체 판정으로 다시 쓰지 않는다 — 422 사유는 서버만 안다.
   await screen.findByText(/fixture.invalid/)
-  expect(screen.getByRole('button', { name: '초안 저장' })).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: '저장' })).toBeInTheDocument()
 })
 
 test('목록 조회가 실패해도 패널은 서 있고 다시 시도할 수 있다', async () => {

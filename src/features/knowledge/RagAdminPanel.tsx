@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { qualityMeasured } from './quality-metrics'
+import { portalPathOf } from '../site/portal-projects'
 import { describeFailure } from '../../shared/api/error'
 import type { AdminRole } from '../../shared/api/session'
 import { Badge, Callout, PageHead, PanelTitle, panel, primaryButton, secondaryButton, smallButton, tableButton, type Tone } from '../../shared/ui/primitives'
@@ -314,6 +315,8 @@ export function RagAdminPanel({ api, role }: { api: KnowledgeAdminApi; role: Adm
         name={target?.kind === 'ready' ? target.name : null}
         loading={target == null && failure == null}
         blocked={target != null && target.kind !== 'ready'}
+        portalPath={target?.kind === 'ready'
+          ? portalPathOf(target.projectId, target.project?.name ?? null) : null}
       />
       {view && <BuildProgress view={view} />}
       {/* 시연 동선(등록 → 빌드 → 승인 → 활성화)의 첫 칸이라 빌드보다 위에 둔다. */}
@@ -453,7 +456,14 @@ function Field({ label, value, options, onPick }: {
 }
 
 /** A2 요약. 활성 버전이 없으면 그렇게 말한다(콜드 스타트·전 버전 보관 상태). */
-function Summary({ active, name, loading, blocked }: { active: KnowledgeVersion | null; name: string | null; loading: boolean; blocked: boolean }) {
+function Summary({ active, name, loading, blocked, portalPath }: {
+  active: KnowledgeVersion | null
+  name: string | null
+  loading: boolean
+  blocked: boolean
+  /** 이 고객사의 공개 포털 딥링크(AI02-021). 모르는 고객사는 null — 칸을 그리지 않는다. */
+  portalPath: string | null
+}) {
   const placeholder = blocked ? '—' : loading ? '조회 중…' : '없음'
   const cells = [
     { label: '활성 버전', value: active ? `v${active.versionNumber}` : placeholder },
@@ -463,11 +473,19 @@ function Summary({ active, name, loading, blocked }: { active: KnowledgeVersion 
   ]
   return <section className={panel}>
     <PanelTitle title={name ?? '지식 베이스'} sub={active?.label ?? undefined} />
-    <div className="grid sm:grid-cols-2 xl:grid-cols-4">
+    <div className={`grid sm:grid-cols-2 ${portalPath ? 'xl:grid-cols-5' : 'xl:grid-cols-4'}`}>
       {cells.map((cell) => <div key={cell.label} className="border-r border-row-line px-4 py-[0.875rem]">
         <small className="block text-[0.65625rem] text-muted-3">{cell.label}</small>
         <b className="mt-[0.3125rem] block text-[0.78125rem] font-semibold">{cell.value}</b>
       </div>)}
+      {portalPath && <div className="border-r border-row-line px-4 py-[0.875rem]">
+        <small className="block text-[0.65625rem] text-muted-3">포털 주소</small>
+        <a
+          className="mt-[0.3125rem] block truncate text-[0.78125rem] font-semibold text-primary underline"
+          href={portalPath} target="_blank" rel="noreferrer"
+          title="이 고객사의 사용자 포털을 새 탭에서 엽니다."
+        >{portalPath.split('?')[0]}</a>
+      </div>}
     </div>
   </section>
 }
@@ -548,11 +566,9 @@ function InfoTip({ hint }: { hint: string }) {
 
 function QualityMetrics({ projectId }: { projectId?: string }) {
   // 스냅샷은 관광(1호) 측정치다. 다른 고객사에서 이 수치를 그대로 보이면 잘못된 신뢰를 만든다.
+  // 미측정 안내판은 그리지 않는다(AI02-021) — 버전 표의 빌드 평가가 고객사별 지표 자리다.
   if (!qualityMeasured(projectId)) {
-    return <section className={panel}>
-      <PanelTitle title="품질 지표" sub="오프라인 실측 스냅샷" />
-      <p className="m-0 px-4 pb-4 pt-[0.875rem] text-xs text-muted">미측정 — 이 고객사의 검색 품질은 아직 측정되지 않았습니다. 지표는 측정을 마친 고객사에서만 표시됩니다.</p>
-    </section>
+    return null
   }
   return <section className={panel}>
     <PanelTitle title="품질 지표" sub="2026-08-29 측정 · 252 TC 전건 · 오프라인 실측 스냅샷" />

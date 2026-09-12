@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from 'vitest'
-import { portalProjectKey, projectIdOf } from './portal-projects'
+import { portalPathOf, portalProjectKey, projectIdOf } from './portal-projects'
 
 const NEW_ID = '11111111-2222-3333-4444-555555555555'
 const LINKED = '99999999-8888-7777-6666-555555555555'
@@ -28,6 +28,14 @@ test('prefers the onboarding-recorded project over the constant', () => {
 test('prefers an explicit deep-link query over everything', () => {
   window.localStorage.setItem(portalProjectKey('sme'), LINKED)
   expect(projectIdOf('/sme', `?project=${NEW_ID}`)).toBe(NEW_ID)
+})
+
+// 관리 화면의 포털 주소 표기(AI02-021): 등록 기록이 상수보다 먼저고, 관광은 루트다.
+test('portalPathOf hands the admin a working deep link', () => {
+  window.localStorage.setItem(portalProjectKey('sme'), LINKED)
+  expect(portalPathOf(LINKED)).toBe(`/sme?project=${LINKED}`)
+  expect(portalPathOf('관광 아님이고 매핑도 없음', null)).toBeNull()
+  expect(portalPathOf(NEW_ID, '관광 포털')).toBe('/')
 })
 
 // 쿼리·기록이 UUID 꼴이 아니면 무시한다 — 깨진 값으로 서버 400을 만들지 않는다.

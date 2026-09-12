@@ -196,9 +196,11 @@ test('the quality panel labels its source and leaves Faithfulness out', async ()
 })
 
 // 측정 안 된 고객사(기본 mock의 p-1)에서 관광 수치가 그대로 보이면 잘못된 신뢰를 만든다.
-test('quality metrics stay unmeasured for a project without a snapshot', async () => {
+// 미측정 안내판도 그리지 않는다(AI02-021) — 지표 자리는 버전 표의 빌드 평가다.
+test('quality metrics render nothing for a project without a snapshot', async () => {
   show(<RagAdminPanel api={api()} role="SUPER_ADMIN" />)
-  expect(await screen.findByText(/미측정 — 이 고객사의 검색 품질/)).toBeInTheDocument()
+  expect(await screen.findByText('RAG 버전')).toBeInTheDocument()
+  expect(screen.queryByText('품질 지표')).not.toBeInTheDocument()
   expect(screen.queryByText('0.975')).not.toBeInTheDocument()
 })
 

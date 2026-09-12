@@ -28,7 +28,7 @@ function SmeHeader() {
       <Link to="/sme" className="flex items-center gap-[0.625rem] text-ink no-underline">
         <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg text-[0.625rem] font-black text-white" style={{ background: ACCENT }}>SME</span>
         <span className="flex min-w-0 flex-col gap-0.5">
-          <span className="break-words text-[1.25rem] font-black leading-tight tracking-[-.05em] max-[560px]:text-lg">중기부 지원사업 포털</span>
+          <span className="break-words text-[1.25rem] font-black leading-tight tracking-[-.05em] max-[560px]:text-lg">중소벤처기업부</span>
           <span className="text-[0.59375rem] font-extrabold tracking-[.22em] text-muted">BIZ SUPPORT PORTAL</span>
         </span>
       </Link>

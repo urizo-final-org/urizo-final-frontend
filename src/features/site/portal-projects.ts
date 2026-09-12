@@ -14,7 +14,7 @@
  * </ol>
  */
 const PORTAL_PROJECTS: Readonly<Record<string, string>> = {
-  sme: '596724c8-1a4f-4ea4-b9d1-46f2f08ccc4f',
+  sme: '95725d1e-eeb2-45a8-9065-8118928fddd6',
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -22,6 +22,23 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 /** 온보딩과 포털이 같은 키를 쓴다. 형식을 바꾸면 온보딩 쪽 기록도 함께 바꿔야 한다. */
 export function portalProjectKey(slug: string): string {
   return `axms-portal-project:${slug}`
+}
+
+/**
+ * 관리 화면이 보여줄 그 고객사의 포털 주소(AI02-021). 모르면 null — 억지로 만들지 않는다.
+ * 쿼리를 실은 딥링크를 돌려주는 이유: 다른 브라우저에서 열어도 그 자리에서 연결이 복구된다.
+ */
+export function portalPathOf(projectId: string, projectName?: string | null): string | null {
+  for (const slug of Object.keys(PORTAL_PROJECTS)) {
+    let stored: string | null = null
+    try { stored = window.localStorage.getItem(portalProjectKey(slug)) }
+    catch { /* 저장소가 막혀도 상수 비교는 남는다 */ }
+    if (stored === projectId || PORTAL_PROJECTS[slug] === projectId) {
+      return `/${slug}?project=${projectId}`
+    }
+  }
+  // 관광은 루트 포털이고 slug 매핑이 의도적으로 없다(위 주석) — 시드 프로젝트 이름으로 식별한다.
+  return projectName === '관광 포털' ? '/' : null
 }
 
 export function projectIdOf(pathname: string, search = ''): string | undefined {

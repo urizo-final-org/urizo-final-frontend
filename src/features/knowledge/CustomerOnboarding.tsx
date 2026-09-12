@@ -131,7 +131,7 @@ export function CustomerOnboarding({ api, role, onCreated }: {
       type="button"
       onClick={() => setOpen(true)}
       className="mb-3 flex w-full items-center justify-center gap-2 rounded-md border border-dashed border-line px-4 py-3 text-xs font-semibold text-muted-2 hover:border-primary hover:text-primary"
-    >+ 새 고객사 등록 — API 연결정보만 있으면 수집·빌드까지 이어집니다</button>
+    >+ 새 고객사 등록</button>
   }
 
   return <section className={`${panel} mb-3 p-4`} aria-label="새 고객사 등록">

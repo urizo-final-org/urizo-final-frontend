@@ -377,7 +377,7 @@ export function ConnectorPanel({ api, projectId, mayWrite, onFirstBuild }: {
 
     {created && <div className="border-b border-line-soft px-4 py-[0.875rem]">
       <Callout tone="ok" icon="check">
-        {created} 초안을 저장했습니다. 아래 목록에서 미리보기로 매핑을 확인한 뒤 활성화하세요.
+        {created} 저장됨 — 미리보기로 확인 후 활성화하세요.
       </Callout>
     </div>}
     {failure != null && <div className="border-b border-line-soft px-4 py-[0.875rem]">
@@ -505,10 +505,7 @@ function RegisterForm({ form, busy, onChange, onSubmit }: {
     </div>
 
     <Callout tone="warn" icon="lock">
-      API Key 값은 여기에 넣지 않습니다. 서버가 보관한 비밀의 <b>참조 문자열</b>만 적습니다.
-      참조 방식은 원천과 짝이어야 합니다 — 픽스처는 <code className="font-mono">fixture://</code>,
-      실제 원천은 <code className="font-mono">cms-secret://</code>입니다. 허용되지 않은 호스트는
-      서버가 등록을 거절하며, 사유는 아래에 응답 문장 그대로 나옵니다.
+      API Key 값은 입력하지 않습니다 — 서버가 보관한 비밀의 <b>참조 문자열</b>(<code className="font-mono">cms-secret://…</code>)만 적습니다.
     </Callout>
 
     <Group title="연결">
@@ -630,7 +627,7 @@ function RegisterForm({ form, busy, onChange, onSubmit }: {
       {/* 만들어지는 것은 DRAFT 버전이다. "등록"이라고 쓰면 이미 쓰이는 것처럼 읽힌다 —
           실제로 자료원이 되는 시점은 활성화이고, 그 전까지는 되돌릴 것도 없다. */}
       <button className={tableButton} type="submit" disabled={busy}>
-        {busy ? '저장 중…' : '초안 저장'}
+        {busy ? '저장 중…' : '저장'}
       </button>
     </div>
   </form>

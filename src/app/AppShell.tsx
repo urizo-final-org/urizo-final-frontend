@@ -194,9 +194,8 @@ function AuthenticatedAdmin({ session, theme, onToggleTheme, onRefresh, onExpire
       <AppNavigation activeRoute={visible} role={session.actor.role} onNavigate={go} compact={sidebarCollapsed} />
 
       <div className="border-t border-sb-border px-3 pb-3 pt-[0.625rem]">
-        <a className="flex w-full items-center gap-2 rounded-[0.3125rem] px-2 py-[0.4375rem] text-[0.71875rem] text-sb-muted hover:bg-sb-active hover:text-white" href="/" target="_blank" rel="noreferrer" title="사용자 사이트 열기">
-          <Icon name="globe-2" /><span className={sidebarCollapsed ? 'min-[901px]:sr-only' : ''}>사용자 사이트 열기</span><span className={`ml-auto flex ${sidebarCollapsed ? 'min-[901px]:hidden' : ''}`}><Icon name="arrow-up-right" size={13} /></span>
-        </a>
+        {/* 고객사별 포털 주소는 RAG 관리의 지식 베이스 요약이 보여준다(AI02-021).
+            전역 링크는 관광(/)만 가리켜 다른 고객사에서 오해를 만들었다. */}
         <div className="flex items-center gap-2 px-2 pb-[0.125rem] pt-2">
           <div className="grid h-[1.5625rem] w-[1.5625rem] shrink-0 place-items-center rounded-full bg-teal-bg text-[0.59375rem] font-bold text-teal-ink" aria-hidden="true">{initials}</div>
           <div className={`min-w-0 flex-1 ${sidebarCollapsed ? 'min-[901px]:sr-only' : ''}`}>
