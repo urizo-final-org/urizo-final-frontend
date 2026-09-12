@@ -7,7 +7,7 @@ import { Icon } from '../../shared/ui/icons'
 import { ActivationRequests } from './ActivationRequests'
 import { noHover } from './no-hover'
 import { KnowledgeAdminApi } from './admin-api'
-import type { KnowledgeBase, KnowledgeTarget, KnowledgeVersion, KnowledgeVersionStatus, AgentJob, Project } from './admin-types'
+import type { ChunkingStrategy, KnowledgeBase, KnowledgeTarget, KnowledgeVersion, KnowledgeVersionStatus, AgentJob, Project } from './admin-types'
 import { buildView, findInProgress, formatElapsed, BUILD_STEPS, stepStates, type BuildView } from './build-progress'
 
 /**
@@ -687,7 +687,10 @@ function VersionTable({ versions, mayWrite, blocked, busy, canRollback, onSwitch
         {shown?.map((version) => <div key={version.knowledgeVersionId} className={`${bodyRow} ${columns}`}>
           <span><b className="text-[0.78125rem] font-semibold text-ink">v{version.versionNumber}</b></span>
           <span><Badge tone={STATUS_TONE[version.status]}>{STATUS_LABEL[version.status]}</Badge></span>
-          <span className="font-mono">{version.documentCount}/{version.chunkCount}</span>
+          <span className="flex flex-col gap-[0.125rem]">
+            <span className="font-mono">{version.documentCount}/{version.chunkCount}</span>
+            <ChunkingNote strategy={version.chunkingStrategy} />
+          </span>
           {hasMetrics && <MetricsCell version={version} activeR5={activeR5} />}
           <span className="font-mono text-[0.6875rem]">{version.activatedAt ? new Date(version.activatedAt).toLocaleDateString('ko-KR') : '—'}</span>
           <span className="flex justify-end">
@@ -704,6 +707,23 @@ function VersionTable({ versions, mayWrite, blocked, busy, canRollback, onSwitch
       </div>
     </div>
   </section>
+}
+
+/**
+ * 어떤 청킹 규칙으로 만든 버전인가(AI02-018). 청크 수만으로는 "왜 달라졌는가"를 답할 수
+ * 없어서 이 줄이 필요하다 — 버전 비교의 근거는 숫자가 아니라 규칙이다.
+ *
+ * <p>값이 없는 버전은 **오래된 버전이 아니라 문서당 1청크로 만든 버전**이다. 계약상
+ * 선택 항목이고 AI02-018 이전 빌드에는 값이 없다.
+ */
+function ChunkingNote({ strategy }: { strategy?: ChunkingStrategy }) {
+  if (!strategy) {
+    return <span className="text-[0.65625rem] text-muted-3">문서당 1청크</span>
+  }
+  return <span
+    className="cursor-help text-[0.65625rem] text-muted-2"
+    title={`LLM이 정한 규칙 — ${strategy.reason}`}
+  >LLM {strategy.maxCharacters}자{strategy.overlapCharacters > 0 ? ` · 겹침 ${strategy.overlapCharacters}` : ''}</span>
 }
 
 const headRow = 'bg-sub px-4 py-2 text-[0.6875rem] font-semibold text-muted-2 border-b border-line-soft grid'

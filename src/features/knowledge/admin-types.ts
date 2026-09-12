@@ -28,6 +28,13 @@ export function isBuildInProgress(status: string): boolean {
   return (IN_PROGRESS_STATUSES as readonly string[]).includes(status)
 }
 
+/** 빌드가 LLM에게 받아 저장한 청킹 규칙. `reason`은 모델이 적은 근거 한 문장이다. */
+export type ChunkingStrategy = {
+  maxCharacters: number
+  overlapCharacters: number
+  reason: string
+}
+
 export type KnowledgeVersion = {
   knowledgeVersionId: string
   knowledgeBaseId: string
@@ -40,6 +47,11 @@ export type KnowledgeVersion = {
   configDigest?: string
   documentCount: number
   chunkCount: number
+  /**
+   * AI02-018. 이 버전이 쓴 청킹 규칙. **없으면 문서당 1청크로 만든 버전이다** —
+   * 계약상 선택 항목이라 AI02-018 이전에 만들어진 버전은 값이 없다.
+   */
+  chunkingStrategy?: ChunkingStrategy
   /** 빌드 시작 시각. 경과 시간의 기준이며 새로고침 후에도 복구된다. */
   createdAt: string
   /**

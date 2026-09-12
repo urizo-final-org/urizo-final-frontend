@@ -210,6 +210,27 @@ test('a failed build cannot be activated — it would make the chatbot see an em
   expect(rollback).not.toHaveBeenCalled()
 })
 
+// 청크 수만으로는 "왜 달라졌는가"를 답할 수 없다. 버전 비교의 근거는 숫자가 아니라 규칙이다.
+test('a version shows which chunking rule built it', async () => {
+  show(<RagAdminPanel api={api({
+    listVersions: vi.fn().mockResolvedValue({
+      items: [
+        version({
+          versionNumber: 3, knowledgeVersionId: 'kv-3', chunkCount: 1247, activatedAt: undefined,
+          status: 'APPROVAL_PENDING',
+          chunkingStrategy: { maxCharacters: 900, overlapCharacters: 120, reason: '공고 본문이 짧아 문단 단위로 충분합니다.' },
+        }),
+        version(),
+      ],
+    }),
+  })} role="SUPER_ADMIN" />)
+
+  expect(await screen.findByText('LLM 900자 · 겹침 120')).toBeInTheDocument()
+  expect(screen.getByTitle(/공고 본문이 짧아 문단 단위로 충분합니다/)).toBeInTheDocument()
+  // 규칙이 없는 버전은 "오래된 버전"이 아니라 문서당 1청크로 만든 버전이다.
+  expect(screen.getByText('문서당 1청크')).toBeInTheDocument()
+})
+
 test('the confirmation shows the document count before a switch — an empty version activates silently otherwise', async () => {
   show(<RagAdminPanel api={api({
     listVersions: vi.fn().mockResolvedValue({
