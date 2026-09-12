@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { useLocation } from 'react-router-dom'
 import { useRagQuery } from '../knowledge/useRagQuery'
 import type { PublicCitation } from '../knowledge/types'
 import { homepageLine } from './portal-meta'
+import { projectIdOf } from './portal-projects'
 import { describePortalStatus } from './portal-status'
 import { CardPhoto } from './portal-primitives'
 
@@ -45,6 +47,7 @@ export function ChatWidget() {
   const [turns, setTurns] = useState<Turn[]>([])
   const [locked, setLocked] = useState(false)
   const { state, ask } = useRagQuery()
+  const location = useLocation()
   const scroller = useRef<HTMLDivElement>(null)
   /** 마지막 문답의 머리. 스크롤을 여기에 맞춘다. */
   const lastTurn = useRef<HTMLDivElement>(null)
@@ -98,7 +101,7 @@ export function ChatWidget() {
     // "가족이 즐길 축제"가 제주 가족 놀이공원을 근거로 잡았다. 대명사 질문을 살리려면
     // 문맥이 필요한지 판정하는 쪽이 먼저다. 클라이언트의 previousQuery 지원은 남겨 둔다.
     setTurns((previous) => [...previous, { question }])
-    ask({ query: question })
+    ask({ query: question, projectId: projectIdOf(location.pathname, location.search) })
   }
 
   function submit(event: FormEvent) {

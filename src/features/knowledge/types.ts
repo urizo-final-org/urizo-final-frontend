@@ -44,6 +44,11 @@ export type PublicChatRequest = {
    */
   previousQuery?: string
   /**
+   * 질문이 향하는 프로젝트(고객사). 포털 경로에서 계산한다(`site/portal-projects.ts`).
+   * 비우면 서버가 기본(관광) 챗봇 설정으로 해석한다 — 1호 경로 보존용 전환 규칙.
+   */
+  projectId?: string
+  /**
    * `category_id` 접두 목록. 탭 하나가 접두 둘 이상인 경우(체험·레저 = LS + EX,
    * 관광지 = NA + HS + VE)가 있어 단일 값으로는 표현되지 않는다. "전체" 탭은 보내지 않는다.
    */

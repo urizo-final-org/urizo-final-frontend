@@ -28,6 +28,7 @@ export async function queryPublicChat(
       conversationId: request.conversationId ?? null,
       ...(request.category?.length ? { category: request.category } : {}),
       ...(request.previousQuery ? { previousQuery: request.previousQuery } : {}),
+      ...(request.projectId ? { projectId: request.projectId } : {}),
     }),
     cache: 'no-store',
     signal,

@@ -7,6 +7,7 @@ import { tabToCategory } from '../knowledge/category'
 import { useRagQuery } from '../knowledge/useRagQuery'
 import { withParticle } from './particle'
 import { addressLine, festivalBadge, highlightTitles, PORTAL_TABS } from './portal-meta'
+import { projectIdOf } from './portal-projects'
 import { describePortalStatus } from './portal-status'
 import { CardPhoto, Placeholder, PhotoTag } from './portal-primitives'
 import { PortalResultCard } from './PortalResultCard'
@@ -537,10 +538,10 @@ export function PortalSearch() {
       return
     }
     const timer = setTimeout(() => {
-      ask({ query, category: tabToCategory(active) })
+      ask({ query, category: tabToCategory(active), projectId: projectIdOf(location.pathname, location.search) })
     }, SEARCH_DEBOUNCE_MS)
     return () => clearTimeout(timer)
-  }, [query, active, ask, reset])
+  }, [query, active, location.pathname, location.search, ask, reset])
 
   // 탭 전환은 프론트 필터링이 아니라 category 파라미터를 바꾼 재검색 URL이다.
   // 프론트에서 상위 N건을 걸러내면 결과가 0건이 되기 쉽다 — SQL 평가 순서상 WHERE가
