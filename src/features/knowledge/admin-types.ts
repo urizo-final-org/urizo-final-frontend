@@ -38,11 +38,17 @@ export function isBuildInProgress(status: string): boolean {
  * 정답이 질의당 하나라 Recall@K와 Hit@K가 같은 값이고, 그래서 Hit만 싣는다.
  */
 export type BuildEvaluation = {
-  method: 'TITLE_SELF_RETRIEVAL'
+  method: 'TITLE_SELF_RETRIEVAL' | 'GOLDEN_QUESTION'
   sampleSize: number
   hit5: number
   hit10: number
   mrr10: number
+  /** AI02-020. 골든 세트 버전. 같은 값으로 잰 버전끼리만 점수 비교가 성립한다. */
+  setVersion?: number
+  /** 채점 **전에** 동결된 제외 문항. 순위를 보고 뺀 문항은 이 목록에 존재할 수 없다. */
+  excluded?: { id: string; reason: string }[]
+  /** 정답 문서 내용이 세트 생성 시점과 달라진 문항 수 — 제외 사유가 아니라 기록이다. */
+  modifiedCount?: number
 }
 
 /** 빌드가 LLM에게 받아 저장한 청킹 규칙. `reason`은 모델이 적은 근거 한 문장이다. */

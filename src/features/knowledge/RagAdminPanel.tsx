@@ -667,18 +667,30 @@ function meetsBaseline(metrics: OfflineMetrics): boolean {
 }
 
 /**
- * 빌드가 잰 검색 평가(AI02-019). 오프라인 스냅샷과 **다른 것을 재므로** 라벨을 분리한다 —
- * 이쪽은 "색인이 검색되는가", 저쪽은 시험지 기반 품질이다. 한 이름으로 묶으면 관리자가
- * 제목 검색 결과를 품질 검증으로 읽는다.
+ * 빌드가 잰 검색 평가(AI02-019·020). 방식에 따라 라벨을 가른다 — 제목 자가검색은
+ * "색인이 검색되는가"이고, 골든 질문은 확정 시험지 기반 품질이다. 한 이름으로 묶으면
+ * 관리자가 제목 검색 결과를 품질 검증으로 읽는다. 골든 점수는 같은 세트 버전끼리만
+ * 비교가 성립하므로 세트 버전을 항상 함께 보인다.
  */
 function BuildEvaluationCell({ evaluation }: { evaluation: BuildEvaluation }) {
-  const detail = `제목으로 검색해 그 문서가 상위에 오는지 잰 값입니다. 표본 ${evaluation.sampleSize}건 · 사용자 질문 기반 시험지가 아닙니다.`
+  const golden = evaluation.method === 'GOLDEN_QUESTION'
+  const excludedCount = evaluation.excluded?.length ?? 0
+  const detail = golden
+    ? `확정·동결된 골든 질문 세트 v${evaluation.setVersion ?? 1}로 잰 값입니다. 같은 세트 버전끼리만 비교하세요.`
+      + (excludedCount > 0 ? ` 정답 문서 부재로 채점 전에 제외된 문항 ${excludedCount}건.` : '')
+    : `제목으로 검색해 그 문서가 상위에 오는지 잰 값입니다. 표본 ${evaluation.sampleSize}건 · 사용자 질문 기반 시험지가 아닙니다.`
   return <span className="flex flex-col items-start gap-[0.1875rem]" title={detail}>
-    <b className="text-[0.71875rem] font-semibold text-ink">색인 검색 {(evaluation.hit5 * 100).toFixed(1)}%</b>
+    <b className="text-[0.71875rem] font-semibold text-ink">
+      {golden ? '골든 질문' : '색인 검색'} {(evaluation.hit5 * 100).toFixed(1)}%
+    </b>
     <span className="font-mono text-[0.625rem] text-muted-2">
       {`Hit@5 ${evaluation.hit5.toFixed(3)} · Hit@10 ${evaluation.hit10.toFixed(3)} · MRR ${evaluation.mrr10.toFixed(3)}`}
     </span>
-    <span className="text-[0.625rem] text-muted-3">빌드 측정 · 표본 {evaluation.sampleSize}</span>
+    <span className="text-[0.625rem] text-muted-3">
+      {golden
+        ? `세트 v${evaluation.setVersion ?? 1} · 문항 ${evaluation.sampleSize}${excludedCount > 0 ? ` · 제외 ${excludedCount}` : ''}`
+        : `빌드 측정 · 표본 ${evaluation.sampleSize}`}
+    </span>
   </span>
 }
 
