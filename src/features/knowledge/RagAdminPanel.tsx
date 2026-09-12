@@ -6,9 +6,10 @@ import type { AdminRole } from '../../shared/api/session'
 import { Badge, Callout, PageHead, PanelTitle, panel, primaryButton, secondaryButton, smallButton, tableButton, type Tone } from '../../shared/ui/primitives'
 import { Icon } from '../../shared/ui/icons'
 import { ActivationRequests } from './ActivationRequests'
+import { ConnectorPanel } from './ConnectorPanel'
 import { noHover } from './no-hover'
 import { KnowledgeAdminApi } from './admin-api'
-import type { KnowledgeBase, KnowledgeTarget, KnowledgeVersion, KnowledgeVersionStatus, AgentJob, Project } from './admin-types'
+import type { Connector, KnowledgeBase, KnowledgeTarget, KnowledgeVersion, KnowledgeVersionStatus, AgentJob, Project } from './admin-types'
 import { buildView, findInProgress, formatElapsed, BUILD_STEPS, stepStates, type BuildView } from './build-progress'
 
 /**
@@ -18,8 +19,11 @@ import { buildView, findInProgress, formatElapsed, BUILD_STEPS, stepStates, type
  * 실연동 코드를 `ops`에 쌓으면 경계를 되돌리기 어려워 여기에 둔다. `ops`의 나머지 화면
  * 이동은 별도 작업이다.
  *
- * <p>**범위 밖**: 알림 패널(폐기) · 질의 콘솔 A1(폐기 — 실동작 챗봇은 포털에만) ·
- * 데이터 소스 추가(커넥터 — 도메인 교체 흐름을 시연에서 빼기로 해 버튼도 지웠다).
+ * <p>**범위 밖**: 알림 패널(폐기) · 질의 콘솔 A1(폐기 — 실동작 챗봇은 포털에만).
+ *
+ * <p>데이터 소스(커넥터)는 `AXMS-AI02-013`에서 시연 동선 밖이라 버튼까지 지웠다가
+ * `AXMS-AI02-016`에서 되돌렸다 — 2호 도메인 교체가 범위에 들어오면서 자료원을 사람이 SQL로
+ * 넣어야 하는 것이 막는 벽이 됐다. `ConnectorPanel`이 그 자리다.
  */
 
 const POLL_INTERVAL_MS = 5_000
@@ -260,6 +264,30 @@ export function RagAdminPanel({ api, role }: { api: KnowledgeAdminApi; role: Adm
     })
   }, [api, knowledgeBaseId, newest])
 
+  /**
+   * 첫 빌드 진입점. **`Build 시작`은 새 지식 베이스에서 눌리지 않는다** — 최신 버전이 쓴
+   * 커넥터를 재사용하는 구조라 버전이 0개면 `newest == null`이고 버튼이 꺼진다. 갓 만든
+   * 고객사에서 첫 빌드를 시작할 길이 화면에 없었고, 그 자리가 시연 동선
+   * (등록 → 커넥터 → 첫 빌드 → 활성화 → 포털)의 유일한 단절점이었다.
+   *
+   * <p>확인창·busy·목록 재조회는 기존 기계를 그대로 쓴다. 8분짜리 작업이 확인 없이
+   * 시작되면 안 되고, 빌드의 주인은 여전히 이 화면이다 — `ConnectorPanel`은 어느 커넥터로
+   * 시작할지만 알려 준다.
+   */
+  const askFirstBuild = useCallback((connector: Connector) => {
+    if (!knowledgeBaseId) return
+    setConfirmation({
+      title: `${connector.name}으로 첫 빌드`,
+      lines: [
+        '수집 → 청크 → 임베딩까지 도는 작업입니다. 실측 8분대가 걸립니다.',
+        '완료돼도 자동 활성화되지 않고 승인 대기 상태로 멈춥니다.',
+        '이 지식 베이스의 첫 버전이 만들어집니다.',
+      ],
+      label: '빌드 시작',
+      run: () => api.startBuild(knowledgeBaseId, connector.connectorVersionId, `first build ${new Date().toISOString().slice(0, 10)}`),
+    })
+  }, [api, knowledgeBaseId])
+
   const canWrite = mayWrite && knowledgeBaseId != null
 
   return <>
@@ -288,6 +316,16 @@ export function RagAdminPanel({ api, role }: { api: KnowledgeAdminApi; role: Adm
         blocked={target != null && target.kind !== 'ready'}
       />
       {view && <BuildProgress view={view} />}
+      {/* 시연 동선(등록 → 빌드 → 승인 → 활성화)의 첫 칸이라 빌드보다 위에 둔다. */}
+      {/* onFirstBuild는 버전이 0건일 때만 넘긴다 — 하나라도 있으면 위 「Build 시작」이 그 일을
+          하므로 진입점을 둘로 두지 않는다. 조회 중(versions == null)에도 넘기지 않는다:
+          곧 사라질 버튼을 먼저 보이면 눌렀다가 없어진다. */}
+      <ConnectorPanel
+        api={api}
+        projectId={target?.kind === 'ready' ? target.projectId : null}
+        mayWrite={mayWrite}
+        onFirstBuild={canWrite && versions?.length === 0 && view == null ? askFirstBuild : undefined}
+      />
       <ActivationRequests
         api={api}
         knowledgeBaseId={knowledgeBaseId}

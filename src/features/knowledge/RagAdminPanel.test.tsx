@@ -32,10 +32,55 @@ function api(overrides: Partial<Record<keyof KnowledgeAdminApi, unknown>> = {}) 
     }),
     listVersions: vi.fn().mockResolvedValue({ items: [version()] }),
     listActivationRequests: vi.fn().mockResolvedValue({ items: [] }),
+    listConnectors: vi.fn().mockResolvedValue({ items: [] }),
     getJob: vi.fn(),
     ...overrides,
   } as unknown as KnowledgeAdminApi
 }
+
+/**
+ * 새 지식 베이스의 첫 빌드. `Build 시작`은 최신 버전의 커넥터를 재사용하는 구조라 버전이
+ * 0개면 눌리지 않는다 — 갓 만든 고객사에서 첫 빌드를 시작할 길이 화면에 없었다.
+ */
+test('a knowledge base with no versions starts its first build from the connector', async () => {
+  const startBuild = vi.fn().mockResolvedValue({ jobId: 'j-1', status: 'QUEUED', statusUrl: '/x' })
+  const fresh = api({
+    listVersions: vi.fn().mockResolvedValue({ items: [] }),
+    listConnectors: vi.fn().mockResolvedValue({
+      items: [{
+        schemaVersion: '1.0', traceId: 't', projectId: 'p-1', connectorId: 'c-1',
+        connectorVersionId: 'cv-7', name: 'SME_SUPPORT_ANNOUNCEMENT', status: 'ACTIVE',
+        configDigest: `sha256:${'a'.repeat(64)}`, createdAt: '2026-09-12T03:00:00.000Z',
+      }],
+    }),
+    startBuild,
+  })
+  show(<RagAdminPanel api={fresh} role="SUPER_ADMIN" />)
+
+  // 기존 진입점은 여전히 꺼져 있다 — 재사용할 최신 버전이 없다.
+  expect(await screen.findByRole('button', { name: 'Build 시작' })).toBeDisabled()
+
+  fireEvent.click(await screen.findByRole('button', { name: /첫 빌드/ }))
+  // 8분짜리 작업이라 확인창을 거친다. 커넥터 패널이 직접 시작하지 않는 이유다.
+  fireEvent.click(await screen.findByRole('button', { name: '빌드 시작' }))
+  await waitFor(() => expect(startBuild).toHaveBeenCalledWith('kb-1', 'cv-7', expect.stringContaining('first build')))
+})
+
+test('a knowledge base that already has versions keeps one build entry point', async () => {
+  const used = api({
+    listConnectors: vi.fn().mockResolvedValue({
+      items: [{
+        schemaVersion: '1.0', traceId: 't', projectId: 'p-1', connectorId: 'c-1',
+        connectorVersionId: 'cv-7', name: 'SME_SUPPORT_ANNOUNCEMENT', status: 'ACTIVE',
+        configDigest: `sha256:${'a'.repeat(64)}`, createdAt: '2026-09-12T03:00:00.000Z',
+      }],
+    }),
+  })
+  show(<RagAdminPanel api={used} role="SUPER_ADMIN" />)
+  await screen.findByText('관광 지식 베이스')
+  // 버전이 있으면 위 「Build 시작」이 그 일을 한다. 같은 동작의 버튼을 둘로 두지 않는다.
+  expect(screen.queryByRole('button', { name: /첫 빌드/ })).not.toBeInTheDocument()
+})
 
 test('a summary reads the active version from the versions call', async () => {
   show(<RagAdminPanel api={api()} role="SUPER_ADMIN" />)
