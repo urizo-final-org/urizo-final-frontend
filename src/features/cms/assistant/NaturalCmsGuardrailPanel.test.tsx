@@ -19,6 +19,13 @@ function resource(key: NaturalCmsGuardrailResourceKey, on: string[], fields: str
     })),
     fields,
     excludes: ['MENU', 'BOARD', 'BOARD_POST', 'CONTENT', 'TEMPLATE'].filter((it) => it !== key),
+    lock: {
+      handler: `${key[0]}${key.slice(1).toLowerCase()}Handler`,
+      dataTable: `app.cms_${key.toLowerCase()}`,
+      rules: key === 'MENU'
+        ? [{ key: 'MENU_DELETE_CASCADE', value: 10 }]
+        : [{ key: 'CONTENT_IMAGE_SOURCE', value: null }],
+    },
   }
 }
 
@@ -76,6 +83,20 @@ test('넘어갈 수 없는 대상을 서버 목록 그대로 보여준다', asyn
   expect(excludes.getByText('컨텐츠')).toBeInTheDocument()
   // 자기 자신은 자기 목록에 없다.
   expect(excludes.queryByText('메뉴')).not.toBeInTheDocument()
+})
+
+/**
+ * 잠금은 동작을 켜 두어도 여전히 걸린다. 숫자는 서버가 실어 보낸다 — 화면이 상한을 적어 두면
+ * 코드가 그 값을 바꿀 때 화면이 거짓말을 한다.
+ */
+test('관리별 잠금을 서버가 준 숫자로 말한다', async () => {
+  render(<NaturalCmsGuardrailPanel api={api(open())} />)
+  const menu = await menuCard()
+
+  expect(within(menu).getByText('하위를 포함해 한 번에 10개까지만 삭제')).toBeInTheDocument()
+  // 이 대상의 가드레일이 어디에 있는지. 패키지는 넷이 같아 클래스까지 내려가야 갈린다.
+  expect(within(menu).getByText('cms.assistant · MenuHandler')).toBeInTheDocument()
+  expect(within(menu).getByText('app.cms_menu')).toBeInTheDocument()
 })
 
 /**

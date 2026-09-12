@@ -44,6 +44,22 @@ export interface NaturalCmsGuardrailResource {
    * 관리자가 실제로 하는 질문이라 목록에는 있어야 한다.
    */
   excludes: string[]
+  lock: NaturalCmsGuardrailLock
+}
+
+/**
+ * 이 대상의 가드레일이 어디에 있는지와, 그 대상에만 걸리는 제약.
+ *
+ * `rules`는 동작을 켜 두어도 여전히 걸리는 것들이라 체크박스와 성격이 다르다. 사람이 관리
+ * 화면에서 하는 것보다 AI 가 좁다는 사실이 여기서 드러난다 — 게시판 삭제가 그 예다.
+ *
+ * 키만 오고 문구는 화면이 만든다. 서버가 한글을 들고 있으면 화면의 다른 라벨과 말이 어긋나고,
+ * 화면이 목록을 들고 있으면 코드가 바뀔 때 화면이 거짓말을 한다.
+ */
+export interface NaturalCmsGuardrailLock {
+  handler: string
+  dataTable: string
+  rules: { key: string; value: number | null }[]
 }
 
 /** @param configured 한 번이라도 저장했는가. false면 아직 코드 기본값을 따른다. */

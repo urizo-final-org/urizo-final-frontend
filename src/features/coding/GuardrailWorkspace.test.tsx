@@ -22,8 +22,14 @@ const OPEN = [
 const CMS_VIEW: NaturalCmsGuardrailView = {
   configured: false,
   resources: [
-    { resourceKey: 'MENU', operations: OPEN, fields: ['name', 'path'], excludes: ['CONTENT'] },
-    { resourceKey: 'CONTENT', operations: OPEN, fields: ['title', 'body'], excludes: ['MENU'] },
+    {
+      resourceKey: 'MENU', operations: OPEN, fields: ['name', 'path'], excludes: ['CONTENT'],
+      lock: { handler: 'MenuHandler', dataTable: 'app.cms_menu', rules: [] },
+    },
+    {
+      resourceKey: 'CONTENT', operations: OPEN, fields: ['title', 'body'], excludes: ['MENU'],
+      lock: { handler: 'ContentHandler', dataTable: 'app.cms_content', rules: [] },
+    },
   ],
 }
 

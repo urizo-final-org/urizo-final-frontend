@@ -7,7 +7,8 @@ import type {
   NaturalCmsGuardrailApi, NaturalCmsGuardrailResourceKey, NaturalCmsGuardrailView,
 } from './guardrailApi'
 import {
-  RESOURCE_LABELS, RESOURCE_SCREENS, fieldLabel, operationLabel, operationRank, resourceLabel,
+  RESOURCE_LABELS, RESOURCE_SCREENS, fieldLabel, lockLabel, operationLabel, operationRank,
+  resourceLabel,
 } from './guardrailLabels'
 
 /**
@@ -245,51 +246,80 @@ export default function NaturalCmsGuardrailPanel({ api }: { api: NaturalCmsGuard
         className={`${panel} mt-[0.375rem]`}
         aria-label={`${RESOURCE_LABELS[resource.resourceKey]} 가드레일`}
       >
-        <div className="flex items-baseline gap-2 border-b border-row-line px-4 py-[0.5625rem]">
-          <b className="text-[0.84375rem] font-semibold text-ink">{RESOURCE_LABELS[resource.resourceKey]}</b>
-          {/* 사람이 같은 자료를 직접 관리하는 화면. 그쪽에는 이 설정이 걸리지 않는다. */}
-          <span className="ml-auto font-mono text-[0.625rem] text-muted-3">
-            직접 관리 {RESOURCE_SCREENS[resource.resourceKey]}
-          </span>
-        </div>
-        <div className="px-4 pb-[0.6875rem] pt-[0.5rem]">
-          <p className="mb-[0.4375rem] font-mono text-[0.5625rem] uppercase tracking-[0.1em] text-muted-3">AI 에게 여는 동작</p>
-          <div className="flex flex-wrap gap-x-[0.875rem] gap-y-[0.3125rem]">
-            {[...resource.operations]
-              .sort((left, right) => operationRank(left.name) - operationRank(right.name))
-              .map((operation) => {
-                const key = `${resource.resourceKey}:${operation.name}`
-                return <label key={operation.name} className="inline-flex cursor-pointer items-center gap-[0.3125rem] text-[0.71875rem] text-body" title={operation.name}>
-                  <input
-                    type="checkbox"
-                    checked={draft[key] === true}
-                    onChange={() => toggle(resource.resourceKey, operation.name)}
-                    disabled={saving}
-                  />
-                  {operationLabel(operation.name)}
-                </label>
-              })}
+        <div className="border-b border-row-line px-4 py-[0.5625rem]">
+          <div className="flex items-baseline gap-2">
+            <b className="text-[0.84375rem] font-semibold text-ink">{RESOURCE_LABELS[resource.resourceKey]}</b>
+            <span className="rounded-[0.1875rem] border border-line px-[0.3125rem] font-mono text-[0.625rem] tracking-[0.06em] text-primary">
+              {resource.resourceKey}
+            </span>
           </div>
-          {/* 필드는 정하는 단위가 아니라 이 대상이 무엇을 다루는지 알려 주는 표시다. */}
-          <p className="mb-[0.1875rem] mt-[0.625rem] font-mono text-[0.5625rem] uppercase tracking-[0.1em] text-muted-3">다루는 항목</p>
-          <p className="text-[0.6875rem] leading-5 text-muted-2">
-            {resource.fields.map((name) => fieldLabel(resource.resourceKey, name)).join(' · ')}
-          </p>
+          {/*
+            * 이 대상의 가드레일이 어디에 있는지. 셋이 관리마다 다르다 — 패키지는 넷이 같아
+            * 클래스까지 내려가야 갈린다. 「화면」은 사람이 같은 자료를 직접 다루는 곳이고
+            * 그쪽에는 이 설정이 걸리지 않으므로 라벨 없이 주소만 두면 반대로 읽힌다.
+            */}
+          <div className="mt-[0.375rem] flex flex-wrap gap-x-[0.875rem] gap-y-[0.125rem] font-mono text-[0.625rem]">
+            <span className="text-muted-3">경계 <span className="text-body">cms.assistant · {resource.lock.handler}</span></span>
+            <span className="text-muted-3">데이터 <span className="text-body">{resource.lock.dataTable}</span></span>
+            <span className="text-muted-3">화면 <span className="text-body">{RESOURCE_SCREENS[resource.resourceKey]}</span></span>
+          </div>
+        </div>
+        <div className="grid lg:grid-cols-3">
+          <div className="border-b border-row-line px-4 pb-[0.6875rem] pt-[0.5rem] lg:border-b-0 lg:border-r">
+            <p className="mb-[0.4375rem] font-mono text-[0.5625rem] uppercase tracking-[0.1em] text-muted-3">AI 에게 여는 동작</p>
+            <div className="flex flex-wrap gap-x-[0.875rem] gap-y-[0.3125rem]">
+              {[...resource.operations]
+                .sort((left, right) => operationRank(left.name) - operationRank(right.name))
+                .map((operation) => {
+                  const key = `${resource.resourceKey}:${operation.name}`
+                  return <label key={operation.name} className="inline-flex cursor-pointer items-center gap-[0.3125rem] text-[0.71875rem] text-body" title={operation.name}>
+                    <input
+                      type="checkbox"
+                      checked={draft[key] === true}
+                      onChange={() => toggle(resource.resourceKey, operation.name)}
+                      disabled={saving}
+                    />
+                    {operationLabel(operation.name)}
+                  </label>
+                })}
+            </div>
+            {/* 필드는 정하는 단위가 아니라 이 대상이 무엇을 다루는지 알려 주는 표시다. */}
+            <p className="mb-[0.1875rem] mt-[0.625rem] font-mono text-[0.5625rem] uppercase tracking-[0.1em] text-muted-3">쓸 수 있는 필드</p>
+            <p className="font-mono text-[0.625rem] leading-5 text-body">
+              {resource.fields.map((name) => fieldLabel(resource.resourceKey, name)).join(' · ')}
+            </p>
+          </div>
+
           {/*
             * 설정으로 열 수 없는 칸이라 체크박스와 섞지 않는다. 근거가 Handler 고정이므로
             * 「할 수 없다」고 단정해도 과장이 아니다. 판정 지시문이었다면 모델이 무시할 수 있어
             * 이렇게 말하지 못한다.
             */}
-          <p className="mb-[0.1875rem] mt-[0.625rem] font-mono text-[0.5625rem] uppercase tracking-[0.1em] text-muted-3">넘어갈 수 없는 곳</p>
-          <ul
-            className="flex flex-wrap gap-x-[0.75rem] gap-y-[0.125rem]"
-            aria-label={`${RESOURCE_LABELS[resource.resourceKey]}에서 넘어갈 수 없는 곳`}
-          >
-            {resource.excludes.map((key) => <li key={key} className="flex items-center gap-[0.25rem] text-[0.6875rem] text-muted-3">
-              <span aria-hidden="true" className="font-mono text-[0.625rem]">✕</span>
-              {resourceLabel(key)}
-            </li>)}
-          </ul>
+          <div className="border-b border-row-line px-4 pb-[0.6875rem] pt-[0.5rem] lg:border-b-0 lg:border-r">
+            <p className="mb-[0.375rem] font-mono text-[0.5625rem] uppercase tracking-[0.1em] text-muted-3">넘어갈 수 없는 곳</p>
+            <ul
+              className="flex flex-col gap-[0.125rem]"
+              aria-label={`${RESOURCE_LABELS[resource.resourceKey]}에서 넘어갈 수 없는 곳`}
+            >
+              {resource.excludes.map((key) => <li key={key} className="flex items-center gap-[0.3125rem] text-[0.6875rem] text-muted-2">
+                <span aria-hidden="true" className="font-mono text-[0.625rem] text-muted-3">✕</span>
+                {resourceLabel(key)}
+              </li>)}
+            </ul>
+          </div>
+
+          <div className="px-4 pb-[0.6875rem] pt-[0.5rem]">
+            <p className="mb-[0.375rem] font-mono text-[0.5625rem] uppercase tracking-[0.1em] text-muted-3">이 관리만의 잠금</p>
+            <ul
+              className="flex flex-col gap-[0.25rem]"
+              aria-label={`${RESOURCE_LABELS[resource.resourceKey]}만의 잠금`}
+            >
+              {resource.lock.rules.map((rule) => <li key={rule.key} className="flex gap-[0.375rem] text-[0.6875rem] leading-5 text-body">
+                <span aria-hidden="true" className="text-[0.5625rem] leading-[1.8]">🔒</span>
+                {lockLabel(rule.key, rule.value)}
+              </li>)}
+            </ul>
+          </div>
         </div>
       </section>)}
 
@@ -297,8 +327,7 @@ export default function NaturalCmsGuardrailPanel({ api }: { api: NaturalCmsGuard
       <PanelTitle title="부가 규칙" sub="관리와 무관하게 모든 명령에 적용됩니다" />
       <div className="px-4 pb-4 pt-[0.375rem]">
         <ul className="flex flex-col gap-[0.3125rem]">
-          {/* 메뉴만의 잠금이지만 관리별 카드에 그 자리를 아직 두지 않았다. 빼면 정보가 사라진다. */}
-          <li className="flex items-center gap-2 text-[0.71875rem] text-muted-2">메뉴 삭제 연쇄<span className="ml-auto font-mono text-[0.625rem] text-body">한 번에 10개까지</span></li>
+          {/* 메뉴 삭제 연쇄는 메뉴 카드의 잠금으로 옮겼다. 그 대상에만 걸리는 것이라 여기가 아니다. */}
           <li className="flex items-center gap-2 text-[0.71875rem] text-muted-2">AI 가 바꿀 수 없는 필드<span className="ml-auto font-mono text-[0.625rem] text-body">id · updatedAt · active</span></li>
           {/* Profile 스냅샷의 `discard --retry--> analyze` 간선 한도다. 되돌아가는 횟수를 세므로
             * analyze 를 밟는 횟수(최초 1 + 2)와 다르다. 관리자에게는 다시 만드는 횟수가 맞다. */}
