@@ -4,6 +4,7 @@ import { MemoryRouter } from 'react-router-dom'
 import { expect, test, vi } from 'vitest'
 import type { KnowledgeAdminApi } from './admin-api'
 import type { KnowledgeVersion } from './admin-types'
+import { MEASURED_PROJECT_ID } from './quality-metrics'
 import { RagAdminPanel } from './RagAdminPanel'
 
 function version(overrides: Partial<KnowledgeVersion> = {}): KnowledgeVersion {
@@ -131,7 +132,13 @@ test('a cold start says the knowledge base is missing', async () => {
 })
 
 test('the quality panel labels its source and leaves Faithfulness out', async () => {
-  show(<RagAdminPanel api={api()} role="SUPER_ADMIN" />)
+  // 스냅샷은 관광(1호) 측정치라 측정된 프로젝트에서만 값이 보인다(AI02-011).
+  const measured = { ...project, projectId: MEASURED_PROJECT_ID }
+  const resolveTarget = vi.fn().mockResolvedValue({
+    kind: 'ready', projectId: MEASURED_PROJECT_ID, knowledgeBaseId: 'kb-1', name: '관광 지식 베이스',
+    projects: [measured], project: measured, bases: [{ ...base, projectId: MEASURED_PROJECT_ID }],
+  })
+  show(<RagAdminPanel api={api({ resolveTarget })} role="SUPER_ADMIN" />)
   const metrics = within(await screen.findByText('품질 지표').then((node) => node.closest('section') as HTMLElement))
   // 계약에 지표가 없다. 실시간으로 보이면 안 되고 출처가 붙어야 한다.
   expect(metrics.getByText(/2026-08-29 측정 · 252 TC/)).toBeInTheDocument()
@@ -141,6 +148,13 @@ test('the quality panel labels its source and leaves Faithfulness out', async ()
   expect(metrics.queryByText(/Faithfulness/)).not.toBeInTheDocument()
   // 용어는 ⓘ 툴팁이 푼다. 값만 있으면 0.897이 좋은 값인지 알 수 없다.
   expect(metrics.getByLabelText(/여러 곳을 엮어 묻는 어려운 질문/)).toBeInTheDocument()
+})
+
+// 측정 안 된 고객사(기본 mock의 p-1)에서 관광 수치가 그대로 보이면 잘못된 신뢰를 만든다.
+test('quality metrics stay unmeasured for a project without a snapshot', async () => {
+  show(<RagAdminPanel api={api()} role="SUPER_ADMIN" />)
+  expect(await screen.findByText(/미측정 — 이 고객사의 검색 품질/)).toBeInTheDocument()
+  expect(screen.queryByText('0.975')).not.toBeInTheDocument()
 })
 
 test('StrictMode double mount still fills the screen', async () => {

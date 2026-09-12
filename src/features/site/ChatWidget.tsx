@@ -3,6 +3,7 @@ import { useLocation } from 'react-router-dom'
 import { useRagQuery } from '../knowledge/useRagQuery'
 import type { PublicCitation } from '../knowledge/types'
 import { homepageLine } from './portal-meta'
+import { TOUR_DOMAIN, type PortalDomain } from './portal-domains'
 import { projectIdOf } from './portal-projects'
 import { describePortalStatus } from './portal-status'
 import { CardPhoto } from './portal-primitives'
@@ -32,8 +33,7 @@ type Turn = {
   notice?: { title: string; detail?: string; trace?: string }
 }
 
-/** 시안의 첫 화면 추천 질문. 코퍼스에 근거가 있는 질의만 둔다. */
-const SUGGESTIONS = ['지금 하는 축제 알려줘', '전주 한옥스테이 추천']
+/* 첫 화면 추천 질문은 도메인 상수다(portal-domains) — 코퍼스에 근거가 있는 질의만 둔다. */
 
 function ChatGlyph({ size = 22 }: { size?: number }) {
   return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
@@ -41,7 +41,7 @@ function ChatGlyph({ size = 22 }: { size?: number }) {
   </svg>
 }
 
-export function ChatWidget() {
+export function ChatWidget({ domain = TOUR_DOMAIN }: { domain?: PortalDomain } = {}) {
   const [open, setOpen] = useState(false)
   const [draft, setDraft] = useState('')
   const [turns, setTurns] = useState<Turn[]>([])
@@ -138,7 +138,7 @@ export function ChatWidget() {
           전주 한옥스테이, 축제 일정처럼 여행지에 대해 물어보세요. 수집된 관광 문서에서 근거를 찾아 답해 드립니다.
         </p>
         <div className="flex flex-wrap gap-2">
-          {SUGGESTIONS.map((question) => <button key={question} type="button" onClick={() => send(question)} className="rounded-full border border-field-line bg-white px-[0.8125rem] py-2 text-xs font-semibold text-body">{question}</button>)}
+          {domain.chatSuggestions.map((question) => <button key={question} type="button" onClick={() => send(question)} className="rounded-full border border-field-line bg-white px-[0.8125rem] py-2 text-xs font-semibold text-body">{question}</button>)}
         </div>
       </>}
 

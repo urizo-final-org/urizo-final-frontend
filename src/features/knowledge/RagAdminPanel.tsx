@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
+import { qualityMeasured } from './quality-metrics'
 import { describeFailure } from '../../shared/api/error'
 import type { AdminRole } from '../../shared/api/session'
 import { Badge, Callout, PageHead, PanelTitle, panel, primaryButton, secondaryButton, smallButton, tableButton, type Tone } from '../../shared/ui/primitives'
@@ -294,7 +295,7 @@ export function RagAdminPanel({ api, role }: { api: KnowledgeAdminApi; role: Adm
         versions={versions}
         refreshKey={requestsKey}
       />
-      <QualityMetrics />
+      <QualityMetrics projectId={target?.kind === 'ready' ? target.projectId : undefined} />
       <VersionTable
         versions={versions}
         mayWrite={mayWrite}
@@ -507,7 +508,14 @@ function InfoTip({ hint }: { hint: string }) {
   </span>
 }
 
-function QualityMetrics() {
+function QualityMetrics({ projectId }: { projectId?: string }) {
+  // 스냅샷은 관광(1호) 측정치다. 다른 고객사에서 이 수치를 그대로 보이면 잘못된 신뢰를 만든다.
+  if (!qualityMeasured(projectId)) {
+    return <section className={panel}>
+      <PanelTitle title="품질 지표" sub="오프라인 실측 스냅샷" />
+      <p className="m-0 px-4 pb-4 pt-[0.875rem] text-xs text-muted">미측정 — 이 고객사의 검색 품질은 아직 측정되지 않았습니다. 지표는 측정을 마친 고객사에서만 표시됩니다.</p>
+    </section>
+  }
   return <section className={panel}>
     <PanelTitle title="품질 지표" sub="2026-08-29 측정 · 252 TC 전건 · 오프라인 실측 스냅샷" />
     <div className="grid gap-x-6 gap-y-[0.875rem] px-4 pb-4 pt-[0.875rem] sm:grid-cols-2">
