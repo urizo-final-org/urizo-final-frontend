@@ -24,6 +24,14 @@ export type NaturalCmsJob = {
   previewValid: boolean
   approvalDecision: string | null
   approvalFeedback: string | null
+  /**
+   * 파이프라인이 막았을 때만 채워진다.
+   *
+   * 코드는 「관리자가 껐다」와 「지금 코드로도 안 된다」를 가르고, 사유는 모델이 쓴 한글
+   * 문장이다. 둘 다 없으면 화면은 요청 문장을 보고 추측하던 예전 안내로 되돌아간다.
+   */
+  refusalCode: string | null
+  refusalReason: string | null
   createdAt: string
   updatedAt: string
 }

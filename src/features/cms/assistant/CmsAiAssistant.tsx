@@ -11,7 +11,7 @@ import { Badge, control, panel, primaryButton, secondaryButton, textarea } from 
 import AssistantPreviewModal from './AssistantPreviewModal'
 import MenuRemovalNotice from './MenuRemovalNotice'
 import MenuTreePreview from './MenuTreePreview'
-import { refusalGuide } from './refusal'
+import { refusalMessage } from './refusal'
 import type { NaturalCmsApi, NaturalCmsJob } from './api'
 import { hasChange, lineDiff } from './diff'
 import { menuPreviewTree, menuRemoval, type AssistantMenu, type MenuCommand } from './menuTree'
@@ -722,7 +722,9 @@ export default function CmsAiAssistant({ route, target, candidates, menus, onTar
           <Badge tone="wait">{phase.job.approvalDecision === 'REJECTED' ? '반려됨' : '지원하지 않는 요청'}</Badge>
           <p className="mt-[0.625rem] text-[0.71875rem] leading-[1.55] text-muted">{phase.job.approvalDecision === 'REJECTED'
             ? '반영하지 않았습니다. 요청을 고쳐 다시 시도해 주세요.'
-            : refusalGuide(phase.job.requestText, profile.section)}</p>
+            : refusalMessage(
+              phase.job.refusalCode, phase.job.refusalReason,
+              phase.job.requestText, profile.section)}</p>
           <button type="button" className={`${secondaryButton} mt-[0.625rem] w-full justify-center`} onClick={reset}>새 요청</button>
         </>}
 
