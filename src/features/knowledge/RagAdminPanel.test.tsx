@@ -210,6 +210,25 @@ test('a failed build cannot be activated — it would make the chatbot see an em
   expect(rollback).not.toHaveBeenCalled()
 })
 
+// 빌드가 잰 값이 있으면 그것을 쓴다. 정적 스냅샷은 관광 한 도메인의 과거 측정치라
+// 다른 고객사 화면에 보이면 잘못된 신뢰를 만든다.
+test('a version shows the evaluation its own build measured', async () => {
+  show(<RagAdminPanel api={api({
+    listVersions: vi.fn().mockResolvedValue({
+      items: [version({
+        versionNumber: 3, knowledgeVersionId: 'kv-3', activatedAt: undefined,
+        status: 'APPROVAL_PENDING',
+        evaluation: { method: 'TITLE_SELF_RETRIEVAL', sampleSize: 50, hit5: 0.94, hit10: 0.98, mrr10: 0.882 },
+      })],
+    }),
+  })} role="SUPER_ADMIN" />)
+
+  expect(await screen.findByText('색인 검색 94.0%')).toBeInTheDocument()
+  expect(screen.getByText(/Hit@5 0\.940 · Hit@10 0\.980 · MRR 0\.882/)).toBeInTheDocument()
+  // 무엇을 잰 것인지가 화면에 남아야 한다 — 시험지로 읽히면 안 된다.
+  expect(screen.getByTitle(/사용자 질문 기반 시험지가 아닙니다/)).toBeInTheDocument()
+})
+
 // 청크 수만으로는 "왜 달라졌는가"를 답할 수 없다. 버전 비교의 근거는 숫자가 아니라 규칙이다.
 test('a version shows which chunking rule built it', async () => {
   show(<RagAdminPanel api={api({

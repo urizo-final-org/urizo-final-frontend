@@ -7,7 +7,7 @@ import { Icon } from '../../shared/ui/icons'
 import { ActivationRequests } from './ActivationRequests'
 import { noHover } from './no-hover'
 import { KnowledgeAdminApi } from './admin-api'
-import type { ChunkingStrategy, KnowledgeBase, KnowledgeTarget, KnowledgeVersion, KnowledgeVersionStatus, AgentJob, Project } from './admin-types'
+import type { BuildEvaluation, ChunkingStrategy, KnowledgeBase, KnowledgeTarget, KnowledgeVersion, KnowledgeVersionStatus, AgentJob, Project } from './admin-types'
 import { buildView, findInProgress, formatElapsed, BUILD_STEPS, stepStates, type BuildView } from './build-progress'
 
 /**
@@ -620,7 +620,27 @@ function meetsBaseline(metrics: OfflineMetrics): boolean {
   return metrics.r5 >= BASELINE_R5 && metrics.cType >= BASELINE_C_TYPE
 }
 
+/**
+ * 빌드가 잰 검색 평가(AI02-019). 오프라인 스냅샷과 **다른 것을 재므로** 라벨을 분리한다 —
+ * 이쪽은 "색인이 검색되는가", 저쪽은 시험지 기반 품질이다. 한 이름으로 묶으면 관리자가
+ * 제목 검색 결과를 품질 검증으로 읽는다.
+ */
+function BuildEvaluationCell({ evaluation }: { evaluation: BuildEvaluation }) {
+  const detail = `제목으로 검색해 그 문서가 상위에 오는지 잰 값입니다. 표본 ${evaluation.sampleSize}건 · 사용자 질문 기반 시험지가 아닙니다.`
+  return <span className="flex flex-col items-start gap-[0.1875rem]" title={detail}>
+    <b className="text-[0.71875rem] font-semibold text-ink">색인 검색 {(evaluation.hit5 * 100).toFixed(1)}%</b>
+    <span className="font-mono text-[0.625rem] text-muted-2">
+      {`Hit@5 ${evaluation.hit5.toFixed(3)} · Hit@10 ${evaluation.hit10.toFixed(3)} · MRR ${evaluation.mrr10.toFixed(3)}`}
+    </span>
+    <span className="text-[0.625rem] text-muted-3">빌드 측정 · 표본 {evaluation.sampleSize}</span>
+  </span>
+}
+
 function MetricsCell({ version, activeR5 }: { version: KnowledgeVersion; activeR5: number | null }) {
+  // 서버가 잰 값이 있으면 그것을 쓴다. 정적 스냅샷은 관광 한 도메인의 과거 측정치다.
+  if (version.evaluation) {
+    return <BuildEvaluationCell evaluation={version.evaluation} />
+  }
   const hit = offlineMetrics(version)
   if (!hit) return <span className="text-[0.6875rem] text-muted-3">측정 전</span>
   const { metrics, reused } = hit
@@ -661,7 +681,8 @@ function VersionTable({ versions, mayWrite, blocked, busy, canRollback, onSwitch
   const activeR5 = activeVersion ? offlineMetrics(activeVersion)?.metrics.r5 ?? null : null
   // 보이는 버전 중 하나라도 측정치가 있을 때만 열을 만든다. 이 환경의 버전을 하나도 모르면
   // "측정 전"만 늘어놓는 빈 열이 되므로 아예 없는 편이 낫다.
-  const hasMetrics = (shown ?? []).some((version) => offlineMetrics(version) != null)
+  const hasMetrics = (shown ?? []).some(
+    (version) => version.evaluation != null || offlineMetrics(version) != null)
   // 전체 100%를 비율로 나눈다 — 지표에 1fr을 주면 남는 폭을 전부 먹어 텅 비어 보인다.
   const columns = hasMetrics
     ? 'grid-cols-[10fr_15fr_15fr_35fr_15fr_10fr]'
