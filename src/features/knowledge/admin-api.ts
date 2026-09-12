@@ -145,6 +145,26 @@ export class KnowledgeAdminApi {
       `/api/knowledge-bases/${encodeURIComponent(knowledgeBaseId)}/rollback`,
       { method: 'POST', body: JSON.stringify({ schemaVersion: ADMIN_SCHEMA_VERSION, targetKnowledgeVersionId }) },
     )
+
+  /* ----- 고객사 온보딩(AI02-017). 셋을 이어 불러 프로젝트·지식베이스·챗봇을 한 흐름으로 만든다. ----- */
+
+  createProject = (name: string, description?: string) =>
+    this.request<Project>('/api/projects', {
+      method: 'POST',
+      body: JSON.stringify({ schemaVersion: ADMIN_SCHEMA_VERSION, name, ...(description ? { description } : {}) }),
+    })
+
+  createKnowledgeBase = (projectId: string, name: string) =>
+    this.request<KnowledgeBase>('/api/knowledge-bases', {
+      method: 'POST',
+      body: JSON.stringify({ schemaVersion: ADMIN_SCHEMA_VERSION, projectId, name }),
+    })
+
+  createChatbot = (projectId: string, name: string, knowledgeBaseId: string) =>
+    this.request<{ chatbotId: string }>(`/api/projects/${encodeURIComponent(projectId)}/chatbots`, {
+      method: 'POST',
+      body: JSON.stringify({ schemaVersion: ADMIN_SCHEMA_VERSION, name, knowledgeBaseId }),
+    })
 }
 
 /** 제품 경로는 `{ traceId, error: { code, message, retryable, retryAfterMs } }` 봉투를 쓴다. */

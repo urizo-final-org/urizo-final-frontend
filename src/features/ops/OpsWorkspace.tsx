@@ -12,12 +12,12 @@ import { notifySiteUpdated, type SiteTemplate } from '../cms/api'
 import type { CmsSite, CmsSiteSettings, CmsSiteSettingsApiClient } from '../site-settings/api'
 import type { AdminRole } from '../../shared/api/session'
 import type { KnowledgeAdminApi } from '../knowledge/admin-api'
-import { RagAdminPanel } from '../knowledge/RagAdminPanel'
+import { RagRoute } from '../knowledge/CustomerOnboarding'
 
 /** Operations screens added on top of the CMS; only Profile-backed sections call an API. */
 export default function OpsWorkspace({ route, roleLabel, role, knowledgeApi, profileApi, siteSettingsApi }: { route: Exclude<OpsRouteId, 'home'>; actorName: string; roleLabel: string; role: AdminRole; knowledgeApi: KnowledgeAdminApi; profileApi: ProfileVersionApiClient; siteSettingsApi: CmsSiteSettingsApiClient }) {
   if (route === 'agents') return <Agents />
-  if (route === 'rag') return <RagAdminPanel api={knowledgeApi} role={role} />
+  if (route === 'rag') return <RagRoute api={knowledgeApi} role={role} />
   if (route === 'devops') return <Devops />
   if (route === 'system-settings') return <SystemSettings profileApi={profileApi} siteSettingsApi={siteSettingsApi} />
   if (route === 'sites') return <Sites api={siteSettingsApi} />
