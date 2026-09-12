@@ -17,6 +17,16 @@ export const RESOURCE_LABELS: Record<NaturalCmsGuardrailResourceKey, string> = {
   CONTENT: '컨텐츠',
 }
 
+/**
+ * 닿을 수 없는 대상의 이름.
+ *
+ * 설정 대상 넷에 템플릿이 더해진다. 템플릿은 켜고 끌 수 없지만 「여기서 템플릿을 바꿀 수
+ * 있나」는 관리자가 실제로 하는 질문이라 목록에는 나와야 한다.
+ */
+export function resourceLabel(key: string): string {
+  return (RESOURCE_LABELS as Record<string, string>)[key] ?? (key === 'TEMPLATE' ? '템플릿' : key)
+}
+
 /** 이 설정이 적용되는 대상을 사람이 직접 관리하는 화면. 여기는 가드레일이 걸리지 않는다. */
 export const RESOURCE_SCREENS: Record<NaturalCmsGuardrailResourceKey, string> = {
   MENU: '/admin/menus',

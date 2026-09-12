@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { expect, test, vi } from 'vitest'
 import NaturalCmsGuardrailPanel from './NaturalCmsGuardrailPanel'
 import type {
@@ -18,6 +18,7 @@ function resource(key: NaturalCmsGuardrailResourceKey, on: string[], fields: str
       name, enabled: on.includes(name),
     })),
     fields,
+    excludes: ['MENU', 'BOARD', 'BOARD_POST', 'CONTENT', 'TEMPLATE'].filter((it) => it !== key),
   }
 }
 
@@ -33,6 +34,14 @@ function open(): NaturalCmsGuardrailView {
     resource('CONTENT', ALL, ['title', 'body']))
 }
 
+/**
+ * 대상 이름은 카드 제목에도 제외 목록에도 나온다. 본문 글자로 찾으면 갈리지 않으므로
+ * 카드의 접근 가능한 이름으로 집는다.
+ */
+function menuCard() {
+  return screen.findByRole('region', { name: '메뉴 가드레일' })
+}
+
 function api(current: NaturalCmsGuardrailView, saved = current): NaturalCmsGuardrailApi {
   return {
     guardrail: vi.fn(async () => current),
@@ -43,14 +52,30 @@ function api(current: NaturalCmsGuardrailView, saved = current): NaturalCmsGuard
 test('목록은 서버가 여는 대상과 동작에서 나온다', async () => {
   render(<NaturalCmsGuardrailPanel api={api(open())} />)
 
-  expect(await screen.findByText('메뉴')).toBeInTheDocument()
-  expect(screen.getByText('컨텐츠')).toBeInTheDocument()
+  const menu = await menuCard()
+  expect(screen.getByRole('region', { name: '컨텐츠 가드레일' })).toBeInTheDocument()
   // 동작은 한 대상 안에서 등록 · 수정 · 삭제 순으로 선다. 서버 정렬은 알파벳순이다.
-  const boxes = screen.getAllByRole('checkbox')
-  expect(boxes.slice(0, 3).map((box) => box.closest('label')?.textContent?.trim()))
+  expect(within(menu).getAllByRole('checkbox')
+    .map((box) => box.closest('label')?.textContent?.trim()))
     .toEqual(['등록', '수정', '삭제'])
   // 필드는 체크박스가 아니라 그 대상이 무엇을 다루는지 알려 주는 표시다.
-  expect(screen.getByText('이름 · 주소')).toBeInTheDocument()
+  expect(within(menu).getByText('이름 · 주소')).toBeInTheDocument()
+})
+
+/**
+ * 닿을 수 없는 대상은 서버가 준다. 화면이 목록을 갖고 있으면 서버가 새 대상을 열 때
+ * 화면이 거짓말을 한다 — 메뉴 제외 목록이 빠져 있던 것을 찾아 고친 그 문제다.
+ */
+test('넘어갈 수 없는 대상을 서버 목록 그대로 보여준다', async () => {
+  render(<NaturalCmsGuardrailPanel api={api(open())} />)
+  await menuCard()
+  const excludes = within(screen.getByRole('list', { name: '메뉴에서 넘어갈 수 없는 곳' }))
+
+  // 설정 대상이 아닌 템플릿도 나온다. 「여기서 템플릿을 바꿀 수 있나」는 실제로 나오는 질문이다.
+  expect(excludes.getByText('템플릿')).toBeInTheDocument()
+  expect(excludes.getByText('컨텐츠')).toBeInTheDocument()
+  // 자기 자신은 자기 목록에 없다.
+  expect(excludes.queryByText('메뉴')).not.toBeInTheDocument()
 })
 
 /**
@@ -60,7 +85,7 @@ test('목록은 서버가 여는 대상과 동작에서 나온다', async () => 
 test('저장은 대상마다 따로 담아 보낸다', async () => {
   const client = api(open())
   render(<NaturalCmsGuardrailPanel api={client} />)
-  await screen.findByText('메뉴')
+  await menuCard()
 
   // 메뉴 삭제만 끈다.
   fireEvent.click(screen.getAllByRole('checkbox')[2])
@@ -80,7 +105,7 @@ test('저장은 대상마다 따로 담아 보낸다', async () => {
 test('저장 전에 무엇이 바뀌는지 보여주고 한 번 더 받는다', async () => {
   const client = api(open())
   render(<NaturalCmsGuardrailPanel api={client} />)
-  await screen.findByText('메뉴')
+  await menuCard()
 
   fireEvent.click(screen.getAllByRole('checkbox')[0])
   fireEvent.click(screen.getAllByRole('checkbox')[2])
@@ -125,7 +150,7 @@ test('모든 대상이 닫히면 기능 자체가 멎었다고 알린다', async
 
 test('바꾼 것이 없으면 저장할 수 없다', async () => {
   render(<NaturalCmsGuardrailPanel api={api(open())} />)
-  await screen.findByText('메뉴')
+  await menuCard()
 
   expect(screen.getByRole('button', { name: '저장' })).toBeDisabled()
 })

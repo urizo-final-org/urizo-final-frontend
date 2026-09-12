@@ -7,7 +7,7 @@ import type {
   NaturalCmsGuardrailApi, NaturalCmsGuardrailResourceKey, NaturalCmsGuardrailView,
 } from './guardrailApi'
 import {
-  RESOURCE_LABELS, RESOURCE_SCREENS, fieldLabel, operationLabel, operationRank,
+  RESOURCE_LABELS, RESOURCE_SCREENS, fieldLabel, operationLabel, operationRank, resourceLabel,
 } from './guardrailLabels'
 
 /**
@@ -238,7 +238,13 @@ export default function NaturalCmsGuardrailPanel({ api }: { api: NaturalCmsGuard
 
     {view === null
       ? <p className={`${panel} mt-[0.375rem] px-4 py-[0.875rem] text-[0.71875rem] text-muted-2`}>불러오는 중입니다…</p>
-      : view.resources.map((resource) => <section key={resource.resourceKey} className={`${panel} mt-[0.375rem]`}>
+      /* 같은 모양의 블록이 넷이라 이름을 준다. 이름이 없으면 읽어 주는 쪽에서 「구역」 넷이
+       * 구분 없이 이어지고, 대상 이름은 제외 목록에도 나와 본문만으로는 갈리지 않는다. */
+      : view.resources.map((resource) => <section
+        key={resource.resourceKey}
+        className={`${panel} mt-[0.375rem]`}
+        aria-label={`${RESOURCE_LABELS[resource.resourceKey]} 가드레일`}
+      >
         <div className="flex items-baseline gap-2 border-b border-row-line px-4 py-[0.5625rem]">
           <b className="text-[0.84375rem] font-semibold text-ink">{RESOURCE_LABELS[resource.resourceKey]}</b>
           {/* 사람이 같은 자료를 직접 관리하는 화면. 그쪽에는 이 설정이 걸리지 않는다. */}
@@ -269,6 +275,21 @@ export default function NaturalCmsGuardrailPanel({ api }: { api: NaturalCmsGuard
           <p className="text-[0.6875rem] leading-5 text-muted-2">
             {resource.fields.map((name) => fieldLabel(resource.resourceKey, name)).join(' · ')}
           </p>
+          {/*
+            * 설정으로 열 수 없는 칸이라 체크박스와 섞지 않는다. 근거가 Handler 고정이므로
+            * 「할 수 없다」고 단정해도 과장이 아니다. 판정 지시문이었다면 모델이 무시할 수 있어
+            * 이렇게 말하지 못한다.
+            */}
+          <p className="mb-[0.1875rem] mt-[0.625rem] font-mono text-[0.5625rem] uppercase tracking-[0.1em] text-muted-3">넘어갈 수 없는 곳</p>
+          <ul
+            className="flex flex-wrap gap-x-[0.75rem] gap-y-[0.125rem]"
+            aria-label={`${RESOURCE_LABELS[resource.resourceKey]}에서 넘어갈 수 없는 곳`}
+          >
+            {resource.excludes.map((key) => <li key={key} className="flex items-center gap-[0.25rem] text-[0.6875rem] text-muted-3">
+              <span aria-hidden="true" className="font-mono text-[0.625rem]">✕</span>
+              {resourceLabel(key)}
+            </li>)}
+          </ul>
         </div>
       </section>)}
 

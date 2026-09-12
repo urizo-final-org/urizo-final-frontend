@@ -33,6 +33,17 @@ export interface NaturalCmsGuardrailResource {
   resourceKey: NaturalCmsGuardrailResourceKey
   operations: NaturalCmsGuardrailOperation[]
   fields: string[]
+  /**
+   * 이 대상의 요청이 닿을 수 없는 나머지 대상.
+   *
+   * 근거는 모델에게 주는 판정 지시문이 아니라 Handler 고정이다. 대상이 정해지면 그 Handler
+   * 하나만 쓰이므로 다른 대상의 표에 닿을 코드 경로가 없다. 지시문은 모델이 무시하면
+   * 지나가지만 이쪽은 모델과 무관하게 성립해, 화면이 「할 수 없다」고 말해도 과장이 아니다.
+   *
+   * 템플릿처럼 설정 대상이 아닌 것도 들어온다. 「메뉴 화면에서 템플릿을 바꿀 수 있나」는
+   * 관리자가 실제로 하는 질문이라 목록에는 있어야 한다.
+   */
+  excludes: string[]
 }
 
 /** @param configured 한 번이라도 저장했는가. false면 아직 코드 기본값을 따른다. */
