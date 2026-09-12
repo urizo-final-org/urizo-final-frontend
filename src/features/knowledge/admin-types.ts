@@ -142,12 +142,27 @@ export type Project = {
   status: string
 }
 
+/**
+ * 원천 변경 점검 요약(AI02-022). 스케줄러가 활성 버전과 원천 API를 (공고 ID, 내용 해시)로
+ * 대조해 남긴다. "소멸"은 삭제가 아니라 원천 조회 창에서 빠진 것까지 포함한다.
+ */
+export type SourceChangeSummary = {
+  checkedAt: string
+  /** 비교 기준이 된 활성 버전 번호. 이 버전을 갈아끼우면 요약도 0으로 돌아간다. */
+  comparedVersion: number
+  added: number
+  modified: number
+  missing: number
+}
+
 export type KnowledgeBase = {
   knowledgeBaseId: string
   projectId: string
   name: string
   /** 활성 버전이 없으면 null. 계약이 ALWAYS 직렬화라 키는 항상 온다. */
   activeVersionId: string | null
+  /** AI02-022. 점검된 적 없으면 없다. 활성 버전이 없는 지식베이스는 점검 대상이 아니다. */
+  sourceChangeSummary?: SourceChangeSummary
 }
 
 /**

@@ -38,6 +38,47 @@ function api(overrides: Partial<Record<keyof KnowledgeAdminApi, unknown>> = {}) 
   } as unknown as KnowledgeAdminApi
 }
 
+// 스케줄러가 남긴 변경 요약이 있으면 갱신 필요 콜아웃이 뜨고, 요청 패널로 안내한다(AI02-022).
+test('a stored source change summary raises the refresh-needed callout', async () => {
+  const changed = {
+    ...base,
+    sourceChangeSummary: {
+      checkedAt: '2026-09-13T09:00:00.000Z', comparedVersion: 8,
+      added: 3, modified: 5, missing: 1,
+    },
+  }
+  show(<RagAdminPanel api={api({
+    resolveTarget: vi.fn().mockResolvedValue({
+      kind: 'ready', projectId: 'p-1', knowledgeBaseId: 'kb-1', name: '관광 지식 베이스',
+      projects: [project], project, bases: [changed],
+    }),
+  })} role="GENERAL_ADMIN" />)
+
+  expect(await screen.findByText(/원천 데이터 변경 감지/)).toBeInTheDocument()
+  expect(screen.getByText(/신규 3 · 수정 5 · 소멸 1건/)).toBeInTheDocument()
+  expect(screen.getByText(/RAG 갱신이 필요합니다/)).toBeInTheDocument()
+})
+
+// 0건 요약은 "점검했고 이상 없음"이다 — 알림으로 띄우면 늑대 소년이 된다.
+test('an all-zero change summary raises nothing', async () => {
+  const unchanged = {
+    ...base,
+    sourceChangeSummary: {
+      checkedAt: '2026-09-13T09:00:00.000Z', comparedVersion: 8,
+      added: 0, modified: 0, missing: 0,
+    },
+  }
+  show(<RagAdminPanel api={api({
+    resolveTarget: vi.fn().mockResolvedValue({
+      kind: 'ready', projectId: 'p-1', knowledgeBaseId: 'kb-1', name: '관광 지식 베이스',
+      projects: [project], project, bases: [unchanged],
+    }),
+  })} role="GENERAL_ADMIN" />)
+
+  await screen.findByText('관광 지식 베이스')
+  expect(screen.queryByText(/원천 데이터 변경 감지/)).not.toBeInTheDocument()
+})
+
 /**
  * 새 지식 베이스의 첫 빌드. `Build 시작`은 최신 버전의 커넥터를 재사용하는 구조라 버전이
  * 0개면 눌리지 않는다 — 갓 만든 고객사에서 첫 빌드를 시작할 길이 화면에 없었다.

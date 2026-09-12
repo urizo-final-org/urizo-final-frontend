@@ -181,6 +181,14 @@ export function RagAdminPanel({ api, role }: { api: KnowledgeAdminApi; role: Adm
   const active = versions?.find((version) => version.status === 'ACTIVE') ?? null
   const view = inProgress ? buildView(inProgress, job, nowMs) : null
 
+  // 선택된 지식베이스의 원천 변경 요약(AI02-022). 0건 요약은 "점검했고 이상 없음"이라 그리지 않는다.
+  const storedSummary = target?.kind === 'ready'
+    ? target.bases.find((base) => base.knowledgeBaseId === target.knowledgeBaseId)?.sourceChangeSummary
+    : undefined
+  const changeSummary = storedSummary
+    && storedSummary.added + storedSummary.modified + storedSummary.missing > 0
+    ? storedSummary : undefined
+
   // 프로젝트를 바꾸면 하위 선택은 버린다 — 다른 프로젝트의 지식 베이스 id가 남으면
   // 목록에 없어 무시되고, 남아 있는 것만으로 헷갈린다.
   const pickTarget = useCallback((what: 'project' | 'knowledgeBase', id: string) => {
@@ -301,6 +309,12 @@ export function RagAdminPanel({ api, role }: { api: KnowledgeAdminApi; role: Adm
       >Build 시작</button>
     </PageHead>
 
+    {/* 스케줄러 감지분(AI02-022). 활성 버전 기준 괴리라 갱신(새 버전 활성화) 전까지 남는다. */}
+    {changeSummary && <Callout tone="warn" icon="triangle-alert">
+      원천 데이터 변경 감지({new Date(changeSummary.checkedAt).toLocaleString('ko-KR')} 확인 · 활성 v{changeSummary.comparedVersion} 기준)
+      — 신규 {changeSummary.added} · 수정 {changeSummary.modified} · 소멸 {changeSummary.missing}건.
+      RAG 갱신이 필요합니다. 아래 「갱신 요청」에 남겨 주세요.
+    </Callout>}
     {/* 이 문장은 원래 아무 데로도 가지 않았다. 이제 아래 요청 패널이 그 경로다. */}
     {!mayWrite && <Callout tone="warn" icon="lock">조회만 가능합니다. {WRITE_DENIED} 아래 「갱신 요청」에 남기면 그대로 전달됩니다.</Callout>}
     {failure != null && <Callout tone="warn" icon="triangle-alert">{describeFailure(failure)}</Callout>}

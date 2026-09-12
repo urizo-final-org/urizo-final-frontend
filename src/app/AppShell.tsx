@@ -8,6 +8,7 @@ import CodingWorkspace from '../features/coding/CodingWorkspace'
 import GuardrailWorkspace from '../features/coding/GuardrailWorkspace'
 import { KnowledgeAdminApi } from '../features/knowledge/admin-api'
 import { usePendingApprovals } from '../features/knowledge/pending-approvals'
+import { useSourceChanges } from '../features/knowledge/source-changes'
 import OpsWorkspace from '../features/ops/OpsWorkspace'
 import HomeDashboard from '../features/ops/HomeDashboard'
 import GovernanceWorkspace from '../features/governance/GovernanceWorkspace'
@@ -138,13 +139,16 @@ function AuthenticatedAdmin({ session, theme, onToggleTheme, onRefresh, onExpire
   const knowledgeApi = useMemo(() => new KnowledgeAdminApi(session.sessionToken, lifecycle.refreshed, lifecycle.expired), [session.sessionToken, lifecycle])
   // 자료 갱신 요청은 화면에 들어가야만 보였다. 헤더 종에 실어 들어가기 전에 알린다.
   //
-  // **최고 관리자만 본다.** 요청을 처리하는(활성화·롤백) 쪽이 SUPER_ADMIN이다. 같은 줄을
-  // 일반 관리자에게 띄우면 눌러 들어가도 할 수 있는 것이 없어, 알림이 아니라 잡음이 된다.
-  // 일반 관리자 몫은 "자동 감지된 갱신 필요" 알림인데 그것을 만드는 쪽(스케줄러)이 아직
-  // 없으므로, 알릴 것이 생길 때까지 띄우지 않는다.
+  // 역할별로 다른 것을 싣는다 — 같은 줄을 반대 역할에게 띄우면 눌러 들어가도 할 수 있는
+  // 것이 없어, 알림이 아니라 잡음이 된다.
+  // * 최고 관리자: 사람이 남긴 갱신 요청(처리하는 쪽이 SUPER_ADMIN이다)
+  // * 일반 관리자: 스케줄러가 감지한 "원천 변경 — 갱신 필요"(요청을 남기는 쪽이다, AI02-022)
   const showsRagNews = session.actor.role === 'SUPER_ADMIN'
     && permitted.some((route) => route.id === 'rag')
   const pendingApprovals = usePendingApprovals(knowledgeApi, showsRagNews)
+  const showsChangeNews = session.actor.role === 'GENERAL_ADMIN'
+    && permitted.some((route) => route.id === 'rag')
+  const sourceChanges = useSourceChanges(knowledgeApi, showsChangeNews)
 
   function go(route: RouteId) { navigate(pathForRoute(route)); setMenuOpen(false) }
 
@@ -156,13 +160,23 @@ function AuthenticatedAdmin({ session, theme, onToggleTheme, onRefresh, onExpire
    * 승인 대기 버전은 여기에 싣지 않는다 — 버전 표에 늘 떠 있어 언제든 볼 수 있는 상태를
    * 종에까지 올리면, 상시 켜져 있는 숫자가 방금 온 요청을 가린다.
    */
-  const ragNotices: BellNotice[] = (pendingApprovals ?? []).map((request) => ({
-    id: `request-${request.requestId}`,
-    text: `${request.requestedByName}님이 자료 갱신을 요청했습니다`,
-    detail: request.reason ?? undefined,
-    at: request.createdAt,
-    onPick: () => go('rag'),
-  }))
+  const ragNotices: BellNotice[] = [
+    ...(pendingApprovals ?? []).map((request) => ({
+      id: `request-${request.requestId}`,
+      text: `${request.requestedByName}님이 자료 갱신을 요청했습니다`,
+      detail: request.reason ?? undefined,
+      at: request.createdAt,
+      onPick: () => go('rag'),
+    })),
+    // 스케줄러 감지분(AI02-022). 갱신(새 버전 활성화) 전까지 유지되는 알림이다.
+    ...(sourceChanges ?? []).map((change) => ({
+      id: `source-change-${change.knowledgeBaseId}`,
+      text: `${change.name}의 원천 데이터가 변경되었습니다 — RAG 갱신이 필요합니다`,
+      detail: `신규 ${change.summary.added} · 수정 ${change.summary.modified} · 소멸 ${change.summary.missing}`,
+      at: change.summary.checkedAt,
+      onPick: () => go('rag'),
+    })),
+  ]
 
   const initials = session.actor.name.replace(/\s+/g, '').slice(0, 2)
   const onMockScreen = routes.find((item) => item.id === visible)?.mock === true
