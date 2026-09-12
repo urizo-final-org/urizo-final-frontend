@@ -2,49 +2,48 @@ import { ProductApiError } from '../../../shared/api/error'
 import { fetchWithSessionRefresh, type AdminSession } from '../../../shared/api/session'
 
 /**
- * 자연어 CMS 울타리 설정.
+ * 자연어 CMS 가드레일 설정.
  *
  * 어시스턴트가 쓰는 Job API와 같은 폴더에 두되 클라이언트는 나눈다. 이쪽은 최고 관리자
  * 전용 설정이고 어시스턴트는 일반 관리자가 쓰는 실행 경로라, 한 클라이언트에 합치면
  * 어시스턴트가 쓰지도 않는 관리자 메서드를 들고 다니게 된다.
  *
  * 계약과 설정 패널은 여기 있고, `features/coding/`에는 그 패널을 거는 탭 한 줄만 남는다.
- * 울타리 화면이 LLM Ops와 탭을 공유할 뿐 자연어 CMS 설정의 소유는 이쪽이다.
+ * 가드레일 화면이 LLM Ops와 탭을 공유할 뿐 자연어 CMS 설정의 소유는 이쪽이다.
  */
 
-/** 필드 선택의 저장 단위. 게시물은 계약상 BOARD지만 필드를 따로 연다. */
+/** 동작 선택의 저장 단위. 게시물은 계약상 BOARD지만 동작을 따로 연다. */
 export type NaturalCmsGuardrailResourceKey = 'MENU' | 'BOARD' | 'BOARD_POST' | 'CONTENT'
 
-export interface NaturalCmsGuardrailField {
+export interface NaturalCmsGuardrailOperation {
   name: string
   enabled: boolean
 }
 
 /**
- * 한 대상이 지금 여는 동작과 필드.
+ * 한 대상이 지금 여는 동작과, 그 대상이 다루는 필드 이름.
  *
- * 서버가 Handler에서 읽어 내려주는 목록이다. 화면이 대상·필드를 갖고 있지 않으므로
- * 서버가 필드를 늘리면 저절로 나타나고, 없앤 필드가 옛 목록에서 계속 제공되지 않는다.
+ * 서버가 Handler에서 읽어 내려주는 목록이다. 화면이 대상·동작을 갖고 있지 않으므로
+ * 서버가 동작을 늘리면 저절로 나타나고, 없앤 동작이 옛 목록에서 계속 제공되지 않는다.
+ *
+ * 필드는 이름만 온다. 관리자가 정하는 단위가 아니라 그 대상이 무엇을 다루는지 알려 주는
+ * 표시다. 필드 하나하나를 켜고 끄는 것은 판단할 근거가 없어 동작 단위로 올렸다.
  */
 export interface NaturalCmsGuardrailResource {
   resourceKey: NaturalCmsGuardrailResourceKey
-  operations: string[]
-  fields: NaturalCmsGuardrailField[]
+  operations: NaturalCmsGuardrailOperation[]
+  fields: string[]
 }
 
-/**
- * @param configured 한 번이라도 저장했는가. false면 아직 코드 기본값을 따른다.
- * @param allowDelete 삭제 명령을 여는가. 대상과 무관한 전역 값이다.
- */
+/** @param configured 한 번이라도 저장했는가. false면 아직 코드 기본값을 따른다. */
 export interface NaturalCmsGuardrailView {
   configured: boolean
-  allowDelete: boolean
   resources: NaturalCmsGuardrailResource[]
 }
 
-export interface NaturalCmsGuardrailFieldSelection {
+export interface NaturalCmsGuardrailOperationSelection {
   resourceKey: NaturalCmsGuardrailResourceKey
-  fieldName: string
+  operation: string
   enabled: boolean
 }
 
@@ -52,11 +51,10 @@ export interface NaturalCmsGuardrailFieldSelection {
  * 저장은 선택을 통째로 바꾼다.
  *
  * 켠 것만 보내면 나머지가 "선택된 적 없음"인지 "꺼짐"인지 서버가 알 수 없다.
- * 목록에 있는 필드를 전부 담아 보낸다.
+ * 목록에 있는 동작을 전부 담아 보낸다.
  */
 export interface NaturalCmsGuardrailSaveRequest {
-  allowDelete: boolean
-  fields: NaturalCmsGuardrailFieldSelection[]
+  operations: NaturalCmsGuardrailOperationSelection[]
 }
 
 async function responseBody<T>(response: Response): Promise<T> {

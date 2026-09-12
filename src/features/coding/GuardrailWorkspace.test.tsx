@@ -13,20 +13,17 @@ const SCAN_ID = '33333333-4444-4555-8666-777777777777'
  * 아래 대부분의 테스트는 LLM Ops 탭만 본다. 자연어 CMS 쪽은 열지 않으므로 저장 전 상태를
  * 돌려주는 최소 구현이면 된다. CMS 탭 자체는 별도 테스트가 본다.
  */
+const OPEN = [
+  { name: 'CREATE', enabled: true },
+  { name: 'UPDATE', enabled: true },
+  { name: 'DELETE', enabled: true },
+]
+
 const CMS_VIEW: NaturalCmsGuardrailView = {
   configured: false,
-  allowDelete: true,
   resources: [
-    {
-      resourceKey: 'MENU',
-      operations: ['CREATE', 'UPDATE', 'DELETE'],
-      fields: [{ name: 'name', enabled: true }, { name: 'path', enabled: true }],
-    },
-    {
-      resourceKey: 'CONTENT',
-      operations: ['CREATE', 'UPDATE', 'DELETE'],
-      fields: [{ name: 'title', enabled: true }, { name: 'body', enabled: true }],
-    },
+    { resourceKey: 'MENU', operations: OPEN, fields: ['name', 'path'] },
+    { resourceKey: 'CONTENT', operations: OPEN, fields: ['title', 'body'] },
   ],
 }
 
@@ -103,7 +100,7 @@ test('guardrail tabs hold two separate settings and preserve unsaved LLM Ops cho
   expect(screen.getByRole('tabpanel', { name: '자연어 CMS' })).toBeVisible()
   // 한 번에 한쪽만 읽힌다. 두 설정이 같은 화면에 겹쳐 보이면 관리자가 어느 쪽을
   // 고치고 있는지 잃는다. 열린 탭에 반대편 항목이 남아 있지 않아야 한다.
-  expect(await screen.findByText('AI 가 닿을 수 없는 곳')).toBeVisible()
+  expect(await screen.findByText('요청 하나는 관리 하나에 묶입니다')).toBeVisible()
   expect(screen.queryByRole('checkbox', { name: /CMS 화면/ })).not.toBeInTheDocument()
   // 각 탭이 자기 저장 버튼을 갖는다. 아직 바꾼 것이 없으니 눌리지 않는다.
   expect(screen.getByRole('button', { name: '저장' })).toBeDisabled()

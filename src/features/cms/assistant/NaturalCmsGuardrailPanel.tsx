@@ -1,70 +1,94 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { describeFailure } from '../../../shared/api/error'
+import { Icon } from '../../../shared/ui/icons'
 import { Callout, PanelTitle, panel, primaryButton } from '../../../shared/ui/primitives'
+import AssistantPreviewModal from './AssistantPreviewModal'
 import type {
   NaturalCmsGuardrailApi, NaturalCmsGuardrailResourceKey, NaturalCmsGuardrailView,
 } from './guardrailApi'
-import { RESOURCE_LABELS, RESOURCE_SCREENS, fieldLabel, isRequiredField } from './guardrailLabels'
+import {
+  RESOURCE_LABELS, RESOURCE_SCREENS, fieldLabel, operationLabel, operationRank,
+} from './guardrailLabels'
 
 /**
- * 자연어 CMS 울타리 설정.
+ * 자연어 CMS 가드레일 설정.
  *
  * LLM Ops 탭과 성격이 반대라는 것이 이 화면의 전제다. 저쪽은 허용 폴더가 비어 있으면
  * 파이프라인이 "제한 없음"으로 읽어 저장소가 실제로 뚫려 있다. 이쪽은 미리보기와 사람
- * 승인이 모든 반영 앞에 서 있어 활짝 열린 상태가 없다. 그래서 경고가 아니라 안내를 쓰고,
- * 관리자가 놓치는 것은 뚫린 설정이 아니라 기능이 조용히 멈춘 설정이다.
+ * 승인이 모든 반영 앞에 서 있어 활짝 열린 상태가 없다. 관리자가 놓치는 것은 뚫린 설정이
+ * 아니라 기능이 조용히 멈춘 설정이다.
  *
- * 대상과 필드 목록은 서버가 Handler에서 읽어 내려준다. 화면이 갖고 있지 않으므로 서버가
- * 필드를 늘리면 저절로 나타나고, 없앤 필드가 옛 목록에서 계속 제공되지 않는다.
+ * 정하는 단위는 `대상 × 동작`이다. 필드 하나하나를 켜고 끄는 것은 관리자가 판단할 근거가
+ * 없었다 — 「메뉴 주소는 AI 가 못 바꾸게」를 실제로 원하는 관리자는 드물고 「게시판은
+ * 만들기만, 지우지는 못하게」는 자주 원한다. 필드는 그 대상이 무엇을 다루는지 알려 주는
+ * 표시로만 남는다.
+ *
+ * 대상과 동작 목록은 서버가 Handler에서 읽어 내려준다. 화면이 갖고 있지 않으므로 서버가
+ * 동작을 늘리면 저절로 나타나고, 없앤 동작이 옛 목록에서 계속 제공되지 않는다.
  */
 
-/** 구조가 보장해 설정으로 열 수 없는 것들. 관리자가 실제로 알고 싶어 하는 목록이다. */
+/** 설정으로 열 수 없는 것들. 관리자가 실제로 알고 싶어 하는 목록이다. */
 const OUTSIDE = [
   ['코드 작성', '파일을 읽거나 쓰는 도구가 없습니다'],
-  ['AI 운영 설정', '가드레일·AI 프로필·Job 은 CMS 대상이 아닙니다'],
-  ['로그인 · 회원', '회원 관리는 자연어 CMS 대상이 아닙니다'],
-  ['DB 구조 · 서버 설정', '바꿀 경로가 없습니다'],
-] as const
-
-const INSIDE = [
-  ['다른 화면의 대상', '요청 하나가 화면에서 연 대상 하나에 묶입니다'],
-  ['계약 밖 입력값', '정해진 필드와 값 형태만 받습니다. 삭제 명령은 필드를 실을 수 없습니다'],
-  ['비어 있지 않은 게시판 삭제', '사람은 가능하지만 AI 는 막혀 있습니다'],
-  ['다른 게시판의 게시물', '소속 게시판을 서버가 확인합니다'],
-  ['게시물 본문 서식', '제목 · 강조 · 목록 셋만'],
-  ['컨텐츠 본문 서식', '지정된 이미지 · 링크 · 색상만'],
+  ['AI 운영 설정 · 로그인 · 회원 · DB 구조', '대상으로 지정할 값 자체가 없습니다'],
   ['승인 없는 반영', '미리보기와 사람 승인을 거쳐야 합니다'],
 ] as const
 
-type Draft = {
-  allowDelete: boolean
-  /** `대상:필드` → 켜짐. 목록은 서버가 주고 여기에는 선택만 담는다. */
-  fields: Record<string, boolean>
-}
+/** 요청이 대상 하나에 묶이기까지. 가운데부터는 요청문으로 바꿀 수 없는 구간이다. */
+const BINDING = ['관리 화면이 대상을 고름', '요청에 좌표로 실림', '서버가 Job 에 고정', '그 관리의 Handler 하나만 사용'] as const
+
+/** `대상:동작` → 켜짐. 목록은 서버가 주고 여기에는 선택만 담는다. */
+type Draft = Record<string, boolean>
 
 function draftOf(view: NaturalCmsGuardrailView): Draft {
-  const fields: Record<string, boolean> = {}
+  const draft: Draft = {}
   for (const resource of view.resources) {
-    for (const field of resource.fields) {
-      fields[`${resource.resourceKey}:${field.name}`] = field.enabled
+    for (const operation of resource.operations) {
+      draft[`${resource.resourceKey}:${operation.name}`] = operation.enabled
     }
   }
-  return { allowDelete: view.allowDelete, fields }
+  return draft
 }
 
-function same(left: Draft, right: Draft): boolean {
-  if (left.allowDelete !== right.allowDelete) return false
-  const keys = new Set([...Object.keys(left.fields), ...Object.keys(right.fields)])
-  for (const key of keys) {
-    if (left.fields[key] !== right.fields[key]) return false
+type Change = { who: string; said: string }
+
+/** 동작 이름에 붙는 조사. 삭제만 받침이 없다. */
+function withParticle(names: string[]): string {
+  const last = names[names.length - 1]
+  return names.join(' · ') + (last === '삭제' ? '를' : '을')
+}
+
+/**
+ * 저장하면 무엇이 바뀌는지.
+ *
+ * 관리 하나가 한 줄이다. 동작마다 한 줄씩 쌓으면 같은 이름이 세 번 나온다.
+ */
+function changesOf(view: NaturalCmsGuardrailView, stored: Draft, draft: Draft): Change[] {
+  const changes: Change[] = []
+  for (const resource of view.resources) {
+    const turnedOn: string[] = []
+    const turnedOff: string[] = []
+    for (const operation of resource.operations) {
+      const key = `${resource.resourceKey}:${operation.name}`
+      if (draft[key] === stored[key]) continue
+      ;(draft[key] ? turnedOn : turnedOff).push(operationLabel(operation.name))
+    }
+    if (turnedOn.length === 0 && turnedOff.length === 0) continue
+    const said = turnedOn.length > 0 && turnedOff.length > 0
+      ? `${withParticle(turnedOn)} 켜고 ${withParticle(turnedOff)} 끕니다`
+      : turnedOn.length > 0
+        ? `${withParticle(turnedOn)} 켭니다`
+        : `${withParticle(turnedOff)} 끕니다`
+    changes.push({ who: RESOURCE_LABELS[resource.resourceKey], said })
   }
-  return true
+  return changes
 }
 
 export default function NaturalCmsGuardrailPanel({ api }: { api: NaturalCmsGuardrailApi }) {
   const [view, setView] = useState<NaturalCmsGuardrailView | null>(null)
-  const [stored, setStored] = useState<Draft | null>(null)
-  const [draft, setDraft] = useState<Draft | null>(null)
+  const [stored, setStored] = useState<Draft>({})
+  const [draft, setDraft] = useState<Draft>({})
+  const [confirming, setConfirming] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [failure, setFailure] = useState<string | null>(null)
@@ -95,32 +119,33 @@ export default function NaturalCmsGuardrailPanel({ api }: { api: NaturalCmsGuard
     return () => { cancelled.current = true }
   }, [load])
 
-  const changed = stored !== null && draft !== null && !same(stored, draft)
+  const changes = view === null ? [] : changesOf(view, stored, draft)
 
-  function toggleField(resourceKey: NaturalCmsGuardrailResourceKey, name: string) {
-    if (!draft) return
+  function toggle(resourceKey: NaturalCmsGuardrailResourceKey, operation: string) {
     setSaved(false)
-    const key = `${resourceKey}:${name}`
-    setDraft({ ...draft, fields: { ...draft.fields, [key]: !draft.fields[key] } })
+    const key = `${resourceKey}:${operation}`
+    setDraft((current) => ({ ...current, [key]: !current[key] }))
   }
 
   async function save() {
-    if (!view || !draft) return
+    if (!view) return
     setSaving(true)
     setFailure(null)
     try {
-      // 목록의 모든 필드를 보낸다. 켠 것만 보내면 나머지가 "선택된 적 없음"인지
+      // 목록의 모든 동작을 보낸다. 켠 것만 보내면 나머지가 "선택된 적 없음"인지
       // "꺼짐"인지 서버가 구분할 수 없다.
-      const fields = view.resources.flatMap((resource) => resource.fields.map((field) => ({
-        resourceKey: resource.resourceKey,
-        fieldName: field.name,
-        enabled: draft.fields[`${resource.resourceKey}:${field.name}`] === true,
-      })))
-      const next = await api.saveGuardrail({ allowDelete: draft.allowDelete, fields })
+      const operations = view.resources.flatMap((resource) =>
+        resource.operations.map((operation) => ({
+          resourceKey: resource.resourceKey,
+          operation: operation.name,
+          enabled: draft[`${resource.resourceKey}:${operation.name}`] === true,
+        })))
+      const next = await api.saveGuardrail({ operations })
       if (cancelled.current) return
       setView(next)
       setStored(draftOf(next))
       setDraft(draftOf(next))
+      setConfirming(false)
       setSaved(true)
     }
     catch (error) {
@@ -131,16 +156,24 @@ export default function NaturalCmsGuardrailPanel({ api }: { api: NaturalCmsGuard
     }
   }
 
-  /** 닫힌 필수 필드. 등록이 막힌다는 사실은 체크박스가 말해주지 않으므로 따로 알린다. */
-  const blocked = view === null || draft === null ? [] : view.resources
-    .map((resource) => ({
-      label: RESOURCE_LABELS[resource.resourceKey],
-      closed: resource.fields
-        .filter((field) => isRequiredField(resource.resourceKey, field.name)
-          && draft.fields[`${resource.resourceKey}:${field.name}`] !== true)
-        .map((field) => fieldLabel(resource.resourceKey, field.name)),
-    }))
-    .filter((entry) => entry.closed.length > 0)
+  const state = view === null ? [] : view.resources.map((resource) => ({
+    label: RESOURCE_LABELS[resource.resourceKey],
+    on: resource.operations
+      .filter((operation) => draft[`${resource.resourceKey}:${operation.name}`] === true)
+      .map((operation) => operation.name),
+  }))
+
+  /** 동작이 하나도 없는 대상. 어시스턴트 버튼은 그대로 떠 있으므로 조용히 멈춘 것을 알린다. */
+  const closed = state.filter((resource) => resource.on.length === 0)
+  /**
+   * 삭제만 남은 대상.
+   *
+   * 만들지도 고치지도 못하면서 지우기만 한다. 「AI 에게 너무 많이 맡기지 말자」며 등록·수정을
+   * 끄다 보면 남는 것이 삭제라 실수로 만들어지기 쉽다. 이 탭에서 경고를 쓸 자격이 있는 것은
+   * 이 하나뿐이다 — 나머지는 관리자가 알고 끈 것이다.
+   */
+  const deleteOnly = state.filter(
+    (resource) => resource.on.length === 1 && resource.on[0] === 'DELETE')
 
   return <>
     {failure && <div className="mb-[0.875rem]">
@@ -148,113 +181,104 @@ export default function NaturalCmsGuardrailPanel({ api }: { api: NaturalCmsGuard
     </div>}
 
     {saved && <div className="mb-[0.875rem]">
-      {/* 화면 이름이 「가드레일 설정」이므로 안내도 같은 말을 쓴다. LLM Ops 탭은 아직
-        * 「울타리」라고 말하는데 그쪽은 다른 담당 영역이라 여기서 고치지 않는다. */}
       <Callout tone="ok" icon="check">저장했습니다. 다음 요청부터 이 가드레일이 적용됩니다.</Callout>
     </div>}
 
-    {blocked.length > 0 && <div className="mb-[0.875rem]">
+    {deleteOnly.length > 0 && <div className="mb-[0.875rem]">
       <Callout tone="warn" icon="triangle-alert">
-        {blocked.map((entry) => `${entry.label} 등록이 막혀 있습니다. 필수 항목 «${entry.closed.join(' · ')}» 이(가) 닫혀 있습니다.`).join(' ')}
-        {' '}수정은 그대로 가능합니다.
+        <b>{deleteOnly.map((resource) => resource.label).join(' · ')} 는 삭제만 켜져 있습니다.</b>
+        {' '}AI 가 만들거나 고치지는 못하고 지우기만 합니다.
       </Callout>
     </div>}
 
+    {/*
+      * 닫힌 관리는 경고가 아니라 안내다. 관리자가 알고 끈 것일 수 있고, 이 탭에는 「뚫려 있다」는
+      * 상태가 없다. Callout 은 경고(노랑)와 성공(초록) 둘뿐이라 초록을 쓰면 잘 됐다는 뜻이 된다.
+      * 공용 primitives 를 건드리지 않고 중립 색으로 그린다.
+      */}
+    {closed.length > 0 && <div className="mb-[0.875rem] flex items-start gap-[0.5625rem] rounded-[0.3125rem] border border-line bg-sub p-[0.6875rem] text-[0.71875rem] leading-[1.6] text-body">
+      <Icon name="lock" size={15} className="mt-[0.0625rem] text-muted-2" />
+      <span>
+        {closed.length === state.length
+          ? <><b className="font-semibold text-ink">자연어 CMS 어시스턴트가 할 수 있는 일이 없습니다.</b>{' '}
+            네 관리의 동작이 모두 꺼져 있어 어떤 요청도 거절됩니다.</>
+          : <><b className="font-semibold text-ink">{closed.map((resource) => resource.label).join(' · ')} 는 자연어 CMS 를 쓸 수 없습니다.</b>
+            {' '}동작이 모두 꺼져 있어 그 화면의 요청은 거절됩니다.</>}
+      </span>
+    </div>}
+
     <section className={panel}>
-      <PanelTitle title="AI 가 닿을 수 없는 곳" sub="구조가 보장합니다 · 설정으로 열 수 없습니다" />
+      <PanelTitle title="요청 하나는 관리 하나에 묶입니다" sub="모든 관리에 공통 · 설정으로 풀 수 없습니다" />
       <div className="px-4 pb-4 pt-[0.375rem]">
-        <p className="mb-[0.375rem] font-mono text-[0.5625rem] uppercase tracking-[0.1em] text-muted-3">다른 영역</p>
+        <div className="flex flex-wrap items-center gap-[0.375rem]">
+          {BINDING.map((step, index) => <span key={step} className="flex items-center gap-[0.375rem]">
+            {index > 0 && <span aria-hidden="true" className="font-mono text-[0.625rem] text-muted-3">→</span>}
+            <span className={`rounded-[0.1875rem] border px-[0.4375rem] py-[0.0625rem] text-[0.6875rem] ${
+              index === 0
+                ? 'border-line bg-panel text-body'
+                : 'border-ok-dot/45 bg-ok-bg text-ok-fg'}`}>{step}</span>
+          </span>)}
+        </div>
+        <p className="mb-[0.5rem] mt-[0.625rem] text-[0.6875rem] leading-5 text-muted-3">
+          AI 가 쓰는 명령서에는 «무엇을»에 해당하는 칸이 없습니다. 대상은 사람이 목록에서 고른 것이고
+          AI 는 «어떻게 바꿀지»만 씁니다. 그래서 한 관리의 요청이 다른 관리에 닿을 경로가 없습니다.
+        </p>
         <ul>
           {OUTSIDE.map(([what, why]) => <li key={what} className="flex gap-2 border-b border-row-line py-[0.375rem] last:border-b-0">
             <span aria-hidden="true" className="font-mono text-[0.6875rem] text-muted-3">✕</span>
             <span className="text-[0.71875rem] leading-5 text-body"><b className="font-semibold text-ink">{what}</b> — {why}</span>
           </li>)}
         </ul>
-        <p className="mb-[0.375rem] mt-[0.625rem] font-mono text-[0.5625rem] uppercase tracking-[0.1em] text-muted-3">CMS 안에서</p>
-        <ul>
-          {INSIDE.map(([what, why]) => <li key={what} className="flex gap-2 border-b border-row-line py-[0.375rem] last:border-b-0">
-            <span aria-hidden="true" className="font-mono text-[0.6875rem] text-muted-3">✕</span>
-            <span className="text-[0.71875rem] leading-5 text-body"><b className="font-semibold text-ink">{what}</b> — {why}</span>
-          </li>)}
-        </ul>
       </div>
     </section>
 
-    {/*
-      * 필드 선택과 부가 규칙을 나란히 둔다. 세로로 쌓으면 부가 규칙을 보려고 필드 목록을
-      * 전부 지나쳐야 하는데, 부가 규칙은 짧고 대부분 읽기 전용이라 그 스크롤이 아깝다.
-      * 좁은 화면에서는 한 칼럼으로 돌아간다.
-      */}
-    <div className="mt-[0.875rem] grid items-start gap-[0.875rem] lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
-    <section className={panel}>
-      <PanelTitle title="대상별 허용 필드" sub="체크한 필드만 AI 가 값을 실을 수 있습니다" />
+    <p className="mt-[0.875rem] font-mono text-[0.625rem] tracking-[0.04em] text-muted-3">
+      관리별 가드레일 — 체크한 동작만 AI 가 실행할 수 있습니다
+    </p>
+
+    {view === null
+      ? <p className={`${panel} mt-[0.375rem] px-4 py-[0.875rem] text-[0.71875rem] text-muted-2`}>불러오는 중입니다…</p>
+      : view.resources.map((resource) => <section key={resource.resourceKey} className={`${panel} mt-[0.375rem]`}>
+        <div className="flex items-baseline gap-2 border-b border-row-line px-4 py-[0.5625rem]">
+          <b className="text-[0.84375rem] font-semibold text-ink">{RESOURCE_LABELS[resource.resourceKey]}</b>
+          {/* 사람이 같은 자료를 직접 관리하는 화면. 그쪽에는 이 설정이 걸리지 않는다. */}
+          <span className="ml-auto font-mono text-[0.625rem] text-muted-3">
+            직접 관리 {RESOURCE_SCREENS[resource.resourceKey]}
+          </span>
+        </div>
+        <div className="px-4 pb-[0.6875rem] pt-[0.5rem]">
+          <p className="mb-[0.4375rem] font-mono text-[0.5625rem] uppercase tracking-[0.1em] text-muted-3">AI 에게 여는 동작</p>
+          <div className="flex flex-wrap gap-x-[0.875rem] gap-y-[0.3125rem]">
+            {[...resource.operations]
+              .sort((left, right) => operationRank(left.name) - operationRank(right.name))
+              .map((operation) => {
+                const key = `${resource.resourceKey}:${operation.name}`
+                return <label key={operation.name} className="inline-flex cursor-pointer items-center gap-[0.3125rem] text-[0.71875rem] text-body" title={operation.name}>
+                  <input
+                    type="checkbox"
+                    checked={draft[key] === true}
+                    onChange={() => toggle(resource.resourceKey, operation.name)}
+                    disabled={saving}
+                  />
+                  {operationLabel(operation.name)}
+                </label>
+              })}
+          </div>
+          {/* 필드는 정하는 단위가 아니라 이 대상이 무엇을 다루는지 알려 주는 표시다. */}
+          <p className="mb-[0.1875rem] mt-[0.625rem] font-mono text-[0.5625rem] uppercase tracking-[0.1em] text-muted-3">다루는 항목</p>
+          <p className="text-[0.6875rem] leading-5 text-muted-2">
+            {resource.fields.map((name) => fieldLabel(resource.resourceKey, name)).join(' · ')}
+          </p>
+        </div>
+      </section>)}
+
+    <section className={`${panel} mt-[0.875rem]`}>
+      <PanelTitle title="부가 규칙" sub="관리와 무관하게 모든 명령에 적용됩니다" />
       <div className="px-4 pb-4 pt-[0.375rem]">
-        {view === null
-          ? <p className="text-[0.71875rem] text-muted-2">불러오는 중입니다…</p>
-          : <>
-            <p className="mb-[0.375rem] text-[0.6875rem] text-muted-3">
-              서버가 현재 여는 대상과 필드를 그대로 읽어 온 목록입니다.
-              «필수» 를 닫으면 그 대상의 등록이 막히고 수정만 남습니다.
-            </p>
-            {view.resources.map((resource) => {
-              // 필수를 앞에 세운다. 서버 순서는 Handler가 필드를 선언한 순서일 뿐이라
-              // 관리자에게 아무 뜻이 없고, 닫으면 등록이 막히는 필드가 먼저 눈에 띄어야 한다.
-              const ordered = [...resource.fields].sort((left, right) =>
-                Number(isRequiredField(resource.resourceKey, right.name))
-                - Number(isRequiredField(resource.resourceKey, left.name)))
-              // 접지 않는다. 이 화면은 지금 무엇이 열려 있는지 보러 오는 곳이라
-              // 접힌 머리글이 갯수만 말하면 정작 확인하러 온 것을 감춘다. 펼쳐 두면
-              // 체크 상태가 그대로 보이므로 갯수를 따로 셀 필요도 없다.
-              return <div key={resource.resourceKey} className="border-b border-row-line py-[0.4375rem] last:border-b-0">
-                <div className="flex items-center gap-2 text-[0.75rem] text-ink">
-                  <span className="font-semibold">{RESOURCE_LABELS[resource.resourceKey]}</span>
-                  <span className="ml-auto font-mono text-[0.625rem] text-muted-3">{RESOURCE_SCREENS[resource.resourceKey]}</span>
-                </div>
-                <div className="flex flex-wrap gap-x-[0.875rem] gap-y-[0.3125rem] pl-[0.875rem] pt-[0.375rem]">
-                  {ordered.map((field) => {
-                    const key = `${resource.resourceKey}:${field.name}`
-                    return <label key={field.name} className="inline-flex cursor-pointer items-center gap-[0.3125rem] text-[0.6875rem] text-body" title={field.name}>
-                      <input
-                        type="checkbox"
-                        checked={draft?.fields[key] === true}
-                        onChange={() => toggleField(resource.resourceKey, field.name)}
-                        disabled={saving}
-                      />
-                      {fieldLabel(resource.resourceKey, field.name)}
-                      {isRequiredField(resource.resourceKey, field.name)
-                        && <span className="rounded-[0.1875rem] border border-[#e9d197] bg-[#fdf6e5] px-[0.25rem] font-mono text-[0.5625rem] text-[#8a6420]">필수</span>}
-                    </label>
-                  })}
-                </div>
-              </div>
-            })}
-          </>}
-      </div>
-    </section>
-
-    <section className={panel}>
-      <PanelTitle title="부가 규칙" sub="대상과 무관하게 모든 명령에 적용됩니다" />
-      <div className="px-4 pb-4 pt-[0.375rem]">
-        <label className="flex cursor-pointer items-center gap-[0.5625rem]">
-          <input
-            type="checkbox"
-            checked={draft?.allowDelete === true}
-            onChange={() => { if (draft) { setSaved(false); setDraft({ ...draft, allowDelete: !draft.allowDelete }) } }}
-            disabled={saving || draft === null}
-          />
-          <span className="text-[0.78125rem] text-body">삭제 허용</span>
-          <span className="text-[0.6875rem] text-muted-2">꺼져 있으면 AI 는 만들고 고치기만 합니다</span>
-        </label>
-
-        <div className="my-[0.5rem] h-px bg-row-line" />
-
         <ul className="flex flex-col gap-[0.3125rem]">
+          {/* 메뉴만의 잠금이지만 관리별 카드에 그 자리를 아직 두지 않았다. 빼면 정보가 사라진다. */}
           <li className="flex items-center gap-2 text-[0.71875rem] text-muted-2">메뉴 삭제 연쇄<span className="ml-auto font-mono text-[0.625rem] text-body">한 번에 10개까지</span></li>
           <li className="flex items-center gap-2 text-[0.71875rem] text-muted-2">AI 가 바꿀 수 없는 필드<span className="ml-auto font-mono text-[0.625rem] text-body">id · updatedAt · active</span></li>
-          {/* 「실행할 수 있는 도구 6종」은 뺐다. 나머지 줄은 AI 가 내 데이터에 무엇을 할 수 있는지에
-            * 답하지만 도구 갯수는 내부 구현 수라 관리자가 판단에 쓸 수 없다. 이름을 펼치면
-            * `resolve_cms_target` 같은 개발자 언어가 관리자 앞에 놓여 더 나쁘다. 정해진 도구만
-            * 쓴다는 사실은 위 「코드 작성 — 파일을 읽거나 쓰는 도구가 없습니다」가 이미 말한다. */}
           {/* Profile 스냅샷의 `discard --retry--> analyze` 간선 한도다. 되돌아가는 횟수를 세므로
             * analyze 를 밟는 횟수(최초 1 + 2)와 다르다. 관리자에게는 다시 만드는 횟수가 맞다. */}
           <li className="flex items-center gap-2 text-[0.71875rem] text-muted-2">반려 후 재시도<span className="ml-auto font-mono text-[0.625rem] text-body">2번까지 다시 만듭니다</span></li>
@@ -266,19 +290,40 @@ export default function NaturalCmsGuardrailPanel({ api }: { api: NaturalCmsGuard
         </p>
       </div>
     </section>
-    </div>
 
     <div className="mt-[0.875rem] flex flex-wrap items-center gap-2">
       <button
         type="button"
         className={primaryButton}
-        disabled={saving || view === null || !changed}
-        onClick={() => void save()}
-      >{saving ? '저장하는 중입니다…' : '저장'}</button>
-      {changed && <span className="text-[0.6875rem] text-muted-2">저장하지 않은 변경이 있습니다.</span>}
+        disabled={view === null || changes.length === 0}
+        onClick={() => setConfirming(true)}
+      >저장</button>
+      {changes.length > 0 && <span className="text-[0.6875rem] text-muted-2">저장하지 않은 변경이 있습니다.</span>}
       {view !== null && !view.configured && <span className="text-[0.6875rem] text-muted-2">
         아직 저장한 적이 없어 지금은 코드 기본값을 따릅니다.
       </span>}
     </div>
+
+    {/*
+      * 저장을 누르면 바뀌는 것을 먼저 보여주고 한 번 더 받는다. 체크를 열둘 만지고 나면
+      * 무엇을 바꿨는지 기억나지 않는데 「저장하지 않은 변경이 있습니다」만으로는 알 수 없다.
+      * 모달이라 뒤 화면이 잠겨, 확인을 띄운 채 체크를 더 만져 목록이 어긋나는 일이 없다.
+      */}
+    {confirming && <AssistantPreviewModal
+      title="이렇게 바뀝니다"
+      subtitle="저장하면 다음 요청부터 적용됩니다"
+      busy={saving}
+      // 페이지에도 「저장」이 있다. 같은 이름이면 어느 쪽이 진짜인지 헷갈린다.
+      approveLabel={saving ? '저장하는 중입니다…' : '확인하고 저장'}
+      onApprove={() => void save()}
+      onClose={() => { if (!saving) setConfirming(false) }}
+    >
+      <ul className="flex flex-col">
+        {changes.map((change) => <li key={change.who} className="flex gap-3 border-b border-row-line py-[0.375rem] text-[0.75rem] text-body last:border-b-0">
+          <span className="w-[4rem] shrink-0 font-semibold text-ink">{change.who}</span>
+          <span>{change.said}</span>
+        </li>)}
+      </ul>
+    </AssistantPreviewModal>}
   </>
 }
