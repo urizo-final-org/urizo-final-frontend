@@ -229,6 +229,27 @@ test('a version shows the evaluation its own build measured', async () => {
   expect(screen.getByTitle(/사용자 질문 기반 시험지가 아닙니다/)).toBeInTheDocument()
 })
 
+// 골든 점수는 같은 세트 버전끼리만 비교가 성립한다. 세트 버전과 동결된 제외가 함께 보여야
+// 관리자가 "몇 문항짜리 시험이었는지"를 오해 없이 읽는다(AI02-020).
+test('a golden evaluation shows its set version and frozen exclusions', async () => {
+  show(<RagAdminPanel api={api({
+    listVersions: vi.fn().mockResolvedValue({
+      items: [version({
+        versionNumber: 4, knowledgeVersionId: 'kv-4', activatedAt: undefined,
+        status: 'APPROVAL_PENDING',
+        evaluation: {
+          method: 'GOLDEN_QUESTION', sampleSize: 47, hit5: 0.787, hit10: 0.872, mrr10: 0.703,
+          setVersion: 1, excluded: [{ id: 'q07', reason: 'DOCUMENT_MISSING' }], modifiedCount: 2,
+        },
+      })],
+    }),
+  })} role="SUPER_ADMIN" />)
+
+  expect(await screen.findByText('골든 질문 78.7%')).toBeInTheDocument()
+  expect(screen.getByText('세트 v1 · 문항 47 · 제외 1')).toBeInTheDocument()
+  expect(screen.getByTitle(/같은 세트 버전끼리만 비교하세요/)).toBeInTheDocument()
+})
+
 // 청크 수만으로는 "왜 달라졌는가"를 답할 수 없다. 버전 비교의 근거는 숫자가 아니라 규칙이다.
 test('a version shows which chunking rule built it', async () => {
   show(<RagAdminPanel api={api({
