@@ -28,6 +28,30 @@ export function isBuildInProgress(status: string): boolean {
   return (IN_PROGRESS_STATUSES as readonly string[]).includes(status)
 }
 
+/**
+ * 빌드가 스스로 잰 검색 평가(AI02-019).
+ *
+ * **시험지가 아니다.** `TITLE_SELF_RETRIEVAL`은 문서 제목으로 검색해 그 문서가 상위에
+ * 돌아오는지 본 것이라, 증명하는 것은 "색인이 검색 가능한가"이지 "사용자 질문에 잘
+ * 답하는가"가 아니다. 화면 문구가 이 구분을 지워서는 안 된다.
+ *
+ * 정답이 질의당 하나라 Recall@K와 Hit@K가 같은 값이고, 그래서 Hit만 싣는다.
+ */
+export type BuildEvaluation = {
+  method: 'TITLE_SELF_RETRIEVAL'
+  sampleSize: number
+  hit5: number
+  hit10: number
+  mrr10: number
+}
+
+/** 빌드가 LLM에게 받아 저장한 청킹 규칙. `reason`은 모델이 적은 근거 한 문장이다. */
+export type ChunkingStrategy = {
+  maxCharacters: number
+  overlapCharacters: number
+  reason: string
+}
+
 export type KnowledgeVersion = {
   knowledgeVersionId: string
   knowledgeBaseId: string
@@ -40,6 +64,13 @@ export type KnowledgeVersion = {
   configDigest?: string
   documentCount: number
   chunkCount: number
+  /**
+   * AI02-018. 이 버전이 쓴 청킹 규칙. **없으면 문서당 1청크로 만든 버전이다** —
+   * 계약상 선택 항목이라 AI02-018 이전에 만들어진 버전은 값이 없다.
+   */
+  chunkingStrategy?: ChunkingStrategy
+  /** AI02-019. 빌드가 잰 검색 평가. 없으면 평가 전에 만들어진 버전이다. */
+  evaluation?: BuildEvaluation
   /** 빌드 시작 시각. 경과 시간의 기준이며 새로고침 후에도 복구된다. */
   createdAt: string
   /**

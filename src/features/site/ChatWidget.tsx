@@ -113,29 +113,29 @@ export function ChatWidget({ domain = TOUR_DOMAIN }: { domain?: PortalDomain } =
   if (!open) {
     return <div className="group fixed bottom-7 right-7 z-40">
       <span className="pointer-events-none absolute bottom-[4.75rem] right-0 w-52 translate-y-1 rounded-xl bg-ink px-[0.875rem] py-[0.6875rem] text-center text-[0.78125rem] font-bold leading-[1.5] text-white opacity-0 shadow-[0_10px_24px_rgba(16,34,47,.28)] transition duration-150 group-hover:-translate-y-1 group-hover:opacity-100 group-focus-within:-translate-y-1 group-focus-within:opacity-100" aria-hidden="true">
-        관광에 대한 모든 것! 무엇이든 물어보세요
+        {domain.chatTagline}
         <span className="absolute -bottom-[5px] right-[1.375rem] h-2.5 w-2.5 rotate-45 bg-ink" />
       </span>
-      <button type="button" onClick={() => setOpen(true)} aria-label="관광 도우미 열기" className="grid h-[3.25rem] w-[3.25rem] place-items-center rounded-full bg-primary text-white shadow-[0_8px_20px_rgba(23,59,91,0.3)] hover:bg-[#12314c]">
+      <button type="button" onClick={() => setOpen(true)} aria-label={`${domain.chatTitle} 열기`} className="grid h-[3.25rem] w-[3.25rem] place-items-center rounded-full bg-primary text-white shadow-[0_8px_20px_rgba(23,59,91,0.3)] hover:bg-[#12314c]">
         <ChatGlyph />
       </button>
     </div>
   }
 
-  return <aside aria-label="관광 도우미" className="portal-chat-pop fixed bottom-7 right-7 z-40 flex h-[32.5rem] max-h-[calc(100vh-3.5rem)] w-[23.75rem] max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-[0.875rem] border border-line bg-panel shadow-[0_16px_48px_rgba(16,34,47,.26)]">
+  return <aside aria-label={domain.chatTitle} className="portal-chat-pop fixed bottom-7 right-7 z-40 flex h-[32.5rem] max-h-[calc(100vh-3.5rem)] w-[23.75rem] max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-[0.875rem] border border-line bg-panel shadow-[0_16px_48px_rgba(16,34,47,.26)]">
     <div className="flex flex-none items-center gap-[0.625rem] bg-primary px-4 py-[0.8125rem] text-white">
       <span className="grid h-[1.625rem] w-[1.625rem] flex-none place-items-center rounded-lg bg-white/[.18]" aria-hidden="true">
         <ChatGlyph size={15} />
       </span>
-      <span className="text-sm font-bold">관광 도우미</span>
-      <span className="text-[0.6875rem] font-medium text-sb-muted">AI 여행 안내</span>
-      <button type="button" onClick={() => setOpen(false)} aria-label="관광 도우미 닫기" className="ml-auto bg-transparent px-1 py-0.5 text-lg leading-none text-sb-muted hover:text-white">×</button>
+      <span className="text-sm font-bold">{domain.chatTitle}</span>
+      <span className="text-[0.6875rem] font-medium text-sb-muted">{domain.chatEyebrow}</span>
+      <button type="button" onClick={() => setOpen(false)} aria-label={`${domain.chatTitle} 닫기`} className="ml-auto bg-transparent px-1 py-0.5 text-lg leading-none text-sb-muted hover:text-white">×</button>
     </div>
 
     <div ref={scroller} className="flex flex-1 flex-col gap-3 overflow-y-auto bg-sub px-[0.875rem] py-4">
       {turns.length === 0 && <>
         <p className="m-0 max-w-[88%] self-start rounded-xl rounded-bl-[3px] border border-line-soft bg-white px-[0.8125rem] py-[0.6875rem] text-[0.8125rem] leading-[1.65] text-body">
-          전주 한옥스테이, 축제 일정처럼 여행지에 대해 물어보세요. 수집된 관광 문서에서 근거를 찾아 답해 드립니다.
+          {domain.chatGreeting}
         </p>
         <div className="flex flex-wrap gap-2">
           {domain.chatSuggestions.map((question) => <button key={question} type="button" onClick={() => send(question)} className="rounded-full border border-field-line bg-white px-[0.8125rem] py-2 text-xs font-semibold text-body">{question}</button>)}
@@ -176,7 +176,7 @@ export function ChatWidget({ domain = TOUR_DOMAIN }: { domain?: PortalDomain } =
         onChange={(event) => setDraft(event.target.value)}
         disabled={sending || locked}
         placeholder="메시지를 입력하세요…"
-        aria-label="관광 도우미 메시지"
+        aria-label={`${domain.chatTitle} 메시지`}
         className="min-w-0 flex-1 rounded-[0.5625rem] border border-field-line bg-white px-3 py-[0.5625rem] text-[0.8125rem] text-ink outline-0 disabled:bg-sub"
       />
       <button type="submit" disabled={sending || locked || draft.trim() === ''} className="flex-none rounded-[0.5625rem] bg-primary px-4 py-[0.5625rem] text-[0.78125rem] font-bold text-white disabled:opacity-50">전송</button>

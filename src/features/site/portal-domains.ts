@@ -17,6 +17,12 @@ export type PortalDomain = {
   searchAria: string
   searchPlaceholder: string
   chatSuggestions: string[]
+  /** 챗봇 버블의 호버 문구·창 제목·부제·인사말. 위젯이 도메인과 무관하게 재사용되므로
+   *  "관광"을 하드코딩하면 /sme에서도 관광 챗봇처럼 보인다 — 9/12 로컬 화면 확인으로 발견. */
+  chatTagline: string
+  chatTitle: string
+  chatEyebrow: string
+  chatGreeting: string
 }
 
 export const TOUR_DOMAIN: PortalDomain = {
@@ -26,6 +32,10 @@ export const TOUR_DOMAIN: PortalDomain = {
   searchAria: '여행지 검색',
   searchPlaceholder: '어디로 떠나볼까요?',
   chatSuggestions: ['지금 하는 축제 알려줘', '전주 한옥스테이 추천'],
+  chatTagline: '관광에 대한 모든 것! 무엇이든 물어보세요',
+  chatTitle: '관광 도우미',
+  chatEyebrow: 'AI 여행 안내',
+  chatGreeting: '전주 한옥스테이, 축제 일정처럼 여행지에 대해 물어보세요. 수집된 관광 문서에서 근거를 찾아 답해 드립니다.',
 }
 
 /**
@@ -49,6 +59,10 @@ export const SME_DOMAIN: PortalDomain = {
   searchAria: '지원사업 검색',
   searchPlaceholder: '예: 청년 창업, 수출 바우처, 기술개발',
   chatSuggestions: ['청년 창업 지원 사업 알려줘', '수출 바우처 신청 방법이 궁금해'],
+  chatTagline: '지원사업에 대한 모든 것! 무엇이든 물어보세요',
+  chatTitle: '지원사업 도우미',
+  chatEyebrow: 'AI 사업 안내',
+  chatGreeting: '청년 창업, 수출 바우처처럼 지원사업에 대해 물어보세요. 수집된 공고 문서에서 근거를 찾아 답해 드립니다.',
 }
 
 /** 경로 첫 세그먼트로 도메인을 고른다. 모르는 경로는 루트(관광)다. */
