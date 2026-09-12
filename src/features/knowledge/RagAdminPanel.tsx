@@ -812,8 +812,10 @@ function VersionTable({ versions, mayWrite, blocked, busy, canRollback, onSwitch
  * 선택 항목이고 AI02-018 이전 빌드에는 값이 없다.
  */
 function ChunkingNote({ strategy }: { strategy?: ChunkingStrategy }) {
-  if (!strategy) {
-    return <span className="text-[0.65625rem] text-muted-3">문서당 1청크</span>
+  // 폴백 전략(max=0)도 "문서 전체를 한 청크"라는 뜻이다. "LLM 0자"로 그리면
+  // 잘라 놓고 0자라는 말이 된다 — 저장된 근거 문장은 툴팁으로만 남긴다.
+  if (!strategy || strategy.maxCharacters <= 0) {
+    return <span className="text-[0.65625rem] text-muted-3" title={strategy?.reason}>문서당 1청크</span>
   }
   return <span
     className="cursor-help text-[0.65625rem] text-muted-2"

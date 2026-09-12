@@ -332,6 +332,22 @@ test('a version shows which chunking rule built it', async () => {
   expect(screen.getByText('문서당 1청크')).toBeInTheDocument()
 })
 
+// 폴백 전략(max=0)이 저장된 버전이 "LLM 0자"로 보이면 잘라 놓고 0자라는 말이 된다.
+test('a stored whole-document fallback strategy reads as one chunk per document', async () => {
+  show(<RagAdminPanel api={api({
+    listVersions: vi.fn().mockResolvedValue({
+      items: [version({
+        versionNumber: 5, knowledgeVersionId: 'kv-5', activatedAt: undefined,
+        status: 'APPROVAL_PENDING',
+        chunkingStrategy: { maxCharacters: 0, overlapCharacters: 0, reason: '문서 전체를 한 청크로 둔다(LLM 전략 없음).' },
+      })],
+    }),
+  })} role="SUPER_ADMIN" />)
+
+  expect(await screen.findByText('문서당 1청크')).toBeInTheDocument()
+  expect(screen.queryByText(/LLM 0자/)).not.toBeInTheDocument()
+})
+
 test('the confirmation shows the document count before a switch — an empty version activates silently otherwise', async () => {
   show(<RagAdminPanel api={api({
     listVersions: vi.fn().mockResolvedValue({
