@@ -69,7 +69,7 @@ async function responseBody<T>(response: Response): Promise<T> {
     throw new ProductApiError({
       status: response.status,
       code: body.code ?? body.error?.code ?? `HTTP_${response.status}`,
-      message: body.message ?? body.error?.message ?? '울타리 설정을 처리하지 못했습니다.',
+      message: body.message ?? body.error?.message ?? '가드레일 설정을 처리하지 못했습니다.',
     })
   }
   return response.json() as Promise<T>
