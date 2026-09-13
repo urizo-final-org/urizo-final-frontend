@@ -27,7 +27,7 @@ function subjectParticle(word: string): string {
  * 없습니다」처럼 기능 한계를 말하는 투라, 관리자가 스스로 켤 수 있는 설정이라는 것이 드러나지
  * 않는다. 범위 밖 요청은 모델 문장이 이미 정확해 그대로 쓴다.
  *
- * 무엇이 막혔는지까지 말한다. 「막혀 있습니다」만으로는 관리자가 같은 요청을 표현만 바꿔
+ * 무엇이 막혔는지까지 말한다. 「금지됩니다」만으로는 관리자가 같은 요청을 표현만 바꿔
  * 되풀이한다. 서버는 동작 키만 싣고 한글은 설정 화면과 같은 라벨로 여기서 붙인다.
  */
 export function refusalMessage(
@@ -42,12 +42,12 @@ export function refusalMessage(
       .sort((left, right) => operationRank(left) - operationRank(right))
       .map(operationLabel)
     if (named.length === 0) {
-      // 서버가 동작을 싣지 못했을 때. 이유는 여전히 맞으므로 문장은 남긴다.
-      return '방금 요청은 가드레일 설정에 의해 막혀 있습니다. 다른 요청을 해 주세요.'
+      // 서버가 동작을 싣지 못했을 때. 「무엇이」만 빠지고 나머지 문장은 같게 둔다.
+      return '방금 요청은 가드레일 설정에 의해 금지됩니다. 다른 요청을 해 주세요.'
     }
     const listed = named.join(', ')
     return `방금 요청은 가드레일 설정에 의해 ${listed}${subjectParticle(listed)}`
-      + ' 금지되어 있습니다. 다른 요청을 해 주세요.'
+      + ' 금지됩니다. 다른 요청을 해 주세요.'
   }
   const reason = refusalReason?.trim()
   return reason ? reason : refusalGuide(requestText, section)
