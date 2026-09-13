@@ -1,10 +1,11 @@
-import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
+import { useEffect, useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react'
 import { describeFailure } from '../../shared/api/error'
 import { ROLE_LABELS, type AdminRole } from '../../shared/api/session'
 import {
   Badge, Callout, PageHead, PanelTitle, dangerButton, fieldLabel, panel, primaryButton,
   secondaryButton, textarea, type Tone,
 } from '../../shared/ui/primitives'
+import { Icon } from '../../shared/ui/icons'
 import type {
   ApprovalDecision, ApprovalStage, CodingConsoleApiClient, CodingJobStatus, CodingNotification,
   CodingRepository, Handover, JobDetail, JobSummary, PendingApproval, RunnerStatus,
@@ -506,10 +507,38 @@ export default function CodingWorkspace({ api, role, monitoringAction }: { api: 
     }
   }
 
+  // The summary row reads only what the tick already fetched. It adds no request of its own.
+  const recent = history.slice(0, 8)
+  const recentDone = recent.filter((job) => job.status === 'COMPLETED' && !job.refused && !job.handedOver).length
+  const recentStopped = recent.filter((job) => job.refused || job.handedOver
+    || job.status === 'FAILED' || job.status === 'CANCELLED' || job.status === 'EXPIRED').length
+  const openSummary = current ? `1건 · ${statusPresentation[current.status].label}` : '없음'
+  const turnSummary = detail?.pendingApproval
+    ? stageTurn[detail.pendingApproval.stage]
+    : current?.status === 'RUNNING' ? 'AI 가 작업하는 중'
+      : current ? '다음 단계 준비 중' : '없음'
+  const recentSummary = recent.length === 0
+    ? '아직 없음'
+    : `최근 ${recent.length}건 · 완료 ${recentDone} · 멈춤 ${recentStopped}`
+
   return <>
     {/* No refresh button: the screen polls every 15 seconds, and a button that repeats what
       * already happens on its own only asks the reader to wonder whether it is needed. */}
-    <PageHead title="LLM DevOps" description="한국어로 개발을 요청하고 단계마다 사람이 승인합니다." wrapActions>{monitoringAction}</PageHead>
+    <PageHead title="LLM CI/CD" description="한국어로 개발을 요청하고 단계마다 사람이 승인합니다." wrapActions>
+      <span className="self-center"><Badge tone="run" dot={false}>단계마다 사람 승인</Badge></span>
+      {monitoringAction}
+    </PageHead>
+
+    {/* The same strip the Agent 설정 screen opens with, drawn from shared tokens only. The loud
+      * runner warning below still carries the instructions; this badge is the at-a-glance state. */}
+    <div className="mb-[0.875rem] flex flex-wrap items-center gap-2 rounded-md border border-line bg-sub px-3 py-2 text-[0.71875rem] text-body">
+      {runner === null
+        ? <Badge tone="idle">실행기 확인 중</Badge>
+        : runner.alive
+          ? <Badge tone="ok">실행기 연결됨</Badge>
+          : <Badge tone="fail">실행기 응답 없음</Badge>}
+      <span>화면은 {POLL_INTERVAL_MS / 1000}초마다 저절로 새로 고쳐집니다. 계획·결과·반영은 사람이 차례로 승인합니다.</span>
+    </div>
 
     {/* E6: 실행기가 죽으면 접수·진행이 조용히 멈춘다. "실패는 조용하지 않게" — 맨 위에 크게. */}
     {runner && !runner.alive && <div className="mb-[0.875rem]">
@@ -528,9 +557,53 @@ export default function CodingWorkspace({ api, role, monitoringAction }: { api: 
     {loading
       ? <section className={panel}><p className="p-4 text-[0.78125rem] text-muted">불러오는 중입니다…</p></section>
       : <>
+        <div className="grid gap-3 sm:grid-cols-3">
+          <SummaryFact label="진행 중인 요청" value={openSummary} />
+          <SummaryFact label="지금 차례" value={turnSummary} />
+          <SummaryFact label="최근 요청" value={recentSummary} />
+        </div>
+
+        {/*
+          * The form is always here. Hiding it while a request was open sounded tidy until an
+          * abandoned Job from a previous day sat in WAITING_APPROVAL forever and no new request
+          * could be typed at all. The server never refused a second Job; only this screen did.
+          */}
+        <section className={`${panel} mt-[0.875rem]`}>
+          <PanelTitle title="새 개발 요청" sub="한국어로 적으면 AI 가 계획부터 세웁니다" />
+          <form className="px-4 pb-4 pt-[0.375rem]" onSubmit={submit}>
+            {/* Full width, with the button beside the box: a sentence needs room to be written. */}
+            <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
+              <label className="block">
+                <span className={fieldLabel}>무엇을 바꿀까요</span>
+                <textarea
+                  className={textarea}
+                  rows={3}
+                  value={requestText}
+                  onChange={(event) => setRequestText(event.target.value)}
+                  placeholder="예) 회원 목록에 가입일도 보이게 해줘"
+                  disabled={submitting}
+                />
+              </label>
+              <button
+                type="submit"
+                className={`${primaryButton} w-full justify-center md:h-[4.625rem] md:w-auto md:px-6`}
+                disabled={submitting || requestText.trim() === ''}
+              >
+                {submitting ? '접수하는 중입니다…' : '요청 보내기'}
+              </button>
+            </div>
+
+            <p className="mt-2 text-[0.6875rem] leading-5 text-muted-2">
+              보내면 AI 가 계획을 세우고, 사람이 승인해야 다음 단계로 갑니다.
+              요청에 여러 가지 일이 필요하면 알아서 나눠 차례로 진행하고, 그럴 때는
+              확인해 달라는 요청이 여러 번 올 수 있습니다.
+            </p>
+          </form>
+        </section>
+
         {/* A stopped request answers here instead of disappearing. The sentence carries the
           * next step, because "실패" alone leaves the writer with nothing to do about it. */}
-        {lastFailed && <section className={`${panel}${current ? ' mb-[0.875rem]' : ''}`}>
+        {lastFailed && <section className={`${panel} mt-[0.875rem]`}>
           <PanelTitle
             title={lastFailed.handedOver
               ? '이 요청은 사람이 이어받아야 합니다'
@@ -561,11 +634,12 @@ export default function CodingWorkspace({ api, role, monitoringAction }: { api: 
           </div>
         </section>}
 
+        {current && lastFailed && <p className="mt-[0.875rem] text-[0.71875rem] leading-5 text-muted-2">
+          아래는 이전에 보낸 요청이며, 아직 승인을 기다리고 있습니다.
+        </p>}
+        <LiveStatus job={current} detail={detail} updatedAt={nowMs} />
+
         {current && <>
-          {lastFailed && <p className="mb-[0.875rem] text-[0.71875rem] leading-5 text-muted-2">
-            아래는 이전에 보낸 요청이며, 아직 승인을 기다리고 있습니다.
-          </p>}
-          <CurrentRequest job={current} />
           {pendingSecond && current?.jobId === pendingSecond.firstJobId
             && <section className={`${panel} mt-[0.875rem]`}>
               <PanelTitle
@@ -610,50 +684,33 @@ export default function CodingWorkspace({ api, role, monitoringAction }: { api: 
           <CancelRequest status={current.status} busy={cancelling} onCancel={cancel} />
         </>}
 
-        {/*
-          * The form is always here. Hiding it while a request was open sounded tidy until an
-          * abandoned Job from a previous day sat in WAITING_APPROVAL forever and no new request
-          * could be typed at all. The server never refused a second Job; only this screen did.
-          */}
-        <section className={current || lastFailed ? `${panel} mt-[0.875rem]` : panel}>
-          <PanelTitle title="새 개발 요청" sub="한국어로 적으면 AI 가 계획부터 세웁니다" />
-          <form className="px-4 pb-4 pt-[0.375rem]" onSubmit={submit}>
-            <label className="block">
-              <span className={fieldLabel}>무엇을 바꿀까요</span>
-              <textarea
-                className={textarea}
-                rows={4}
-                value={requestText}
-                onChange={(event) => setRequestText(event.target.value)}
-                placeholder="예) 회원 목록에 가입일도 보이게 해줘"
-                disabled={submitting}
-              />
-            </label>
-
-            <p className="mt-2 text-[0.6875rem] leading-5 text-muted-2">
-              보내면 AI 가 계획을 세우고, 사람이 승인해야 다음 단계로 갑니다.
-              요청에 여러 가지 일이 필요하면 알아서 나눠 차례로 진행하고, 그럴 때는
-              확인해 달라는 요청이 여러 번 올 수 있습니다.
-            </p>
-
-            <button
-              type="submit"
-              className={`${primaryButton} mt-[0.875rem] w-full justify-center`}
-              disabled={submitting || requestText.trim() === ''}
-            >
-              {submitting ? '접수하는 중입니다…' : '요청 보내기'}
-            </button>
-          </form>
-        </section>
-
-        <RecentNotifications
-          items={unseen(notifications, seenBeforeOpening)}
+        <CodingActivity
+          alerts={unseen(notifications, seenBeforeOpening)}
+          history={history}
           nowMs={nowMs}
         />
-
-        <ExecutionHistory items={history} nowMs={nowMs} />
       </>}
   </>
+}
+
+/**
+ * Whose move it is, per approval stage. Worded apart from the approval panel titles on purpose:
+ * the summary sits on the same screen, and a second "코드 승인" would read as a second gate.
+ */
+const stageTurn: Record<ApprovalStage, string> = {
+  SCOPE: '계획 확인 차례',
+  CANDIDATE: '결과 확인 차례',
+  GITHUB: '코드 승인 차례',
+  CMS: 'CMS 반영 승인 차례',
+  DEPLOY: '배포 승인 차례',
+}
+
+/** One summary card, in the shape of the Agent 설정 screen's fact cards. */
+function SummaryFact({ label, value }: { label: string; value: string }) {
+  return <div className="rounded-md border border-line-soft bg-sub p-3">
+    <small className="block text-[0.6875rem] text-muted-2">{label}</small>
+    <b className="mt-1 block text-[0.78125rem] font-semibold text-body">{value}</b>
+  </div>
 }
 
 /**
@@ -662,30 +719,32 @@ export default function CodingWorkspace({ api, role, monitoringAction }: { api: 
  * The two administrators take turns - one approves the plan, the other the release - and
  * neither could see the other's move without opening every request one by one. Each line
  * names the person, because "누가 승인했나" is what an approval ledger is for.
+ *
+ * <p>Called 승인 알림 rather than 새 소식: every line is an approval somebody decided or an
+ * approval waiting on this reader, and the header bell already calls the same feed 새 알림.
  */
-function RecentNotifications({ items, nowMs }: { items: CodingNotification[]; nowMs: number }) {
-  if (items.length === 0) return <></>
-  return <section className={`${panel} mt-[0.875rem]`}>
-    <PanelTitle title="새 소식" sub="아직 확인하지 않은 결정과 내 승인 차례" />
-    <ul className="px-4 pb-4 pt-[0.375rem]">
-      {items.slice(0, 8).map((item) => <li
-        key={`${item.kind}-${item.jobId}-${item.occurredAt ?? ''}`}
-        className="flex flex-wrap items-baseline justify-between gap-x-5 gap-y-1 border-b border-row-line py-[0.5625rem] last:border-b-0"
-      >
-        <span className="min-w-0 flex-1">
-          <span className="text-[0.78125rem] leading-[1.6] text-body">
-            {notificationSentence(item)}
-          </span>
-          {item.requestText && <small className="mt-[0.125rem] block truncate text-[0.6875rem] text-muted-2">
-            {item.requestText}
-          </small>}
+function ApprovalAlerts({ items, nowMs }: { items: CodingNotification[]; nowMs: number }) {
+  if (items.length === 0) {
+    return <p className="px-4 py-4 text-[0.71875rem] text-muted-2">승인 알림이 없습니다.</p>
+  }
+  return <ul className="px-4 py-[0.375rem]">
+    {items.slice(0, 8).map((item) => <li
+      key={`${item.kind}-${item.jobId}-${item.occurredAt ?? ''}`}
+      className="flex flex-wrap items-baseline justify-between gap-x-5 gap-y-1 border-b border-row-line py-[0.5625rem] last:border-b-0"
+    >
+      <span className="min-w-0 flex-1">
+        <span className="text-[0.78125rem] leading-[1.6] text-body">
+          {notificationSentence(item)}
         </span>
-        <small className="shrink-0 text-[0.6875rem] text-muted-2">
-          {sinceLabel(item.occurredAt, nowMs)}
-        </small>
-      </li>)}
-    </ul>
-  </section>
+        {item.requestText && <small className="mt-[0.125rem] block truncate text-[0.6875rem] text-muted-2">
+          {item.requestText}
+        </small>}
+      </span>
+      <small className="shrink-0 text-[0.6875rem] text-muted-2">
+        {sinceLabel(item.occurredAt, nowMs)}
+      </small>
+    </li>)}
+  </ul>
 }
 
 /**
@@ -694,51 +753,137 @@ function RecentNotifications({ items, nowMs }: { items: CodingNotification[]; no
  * the top of the page, not here, because it concerns every row at once.
  */
 function ExecutionHistory({ items, nowMs }: { items: JobSummary[]; nowMs: number }) {
-  return <section className={`${panel} mt-[0.875rem]`}>
-    <PanelTitle title="실행 이력" sub="최근 요청이 어디까지 갔는지, 얼마나 걸렸는지 보여줍니다" />
-    {items.length === 0
-      ? <p className="px-4 pb-4 pt-[0.375rem] text-[0.71875rem] text-muted-2">아직 보낸 요청이 없습니다.</p>
-      : <ul className="px-4 pb-4 pt-[0.375rem]">
-        {items.slice(0, 8).map((job) => {
-          const presentation = job.refused
-            ? { label: '진행 안 함', tone: 'idle' as const }
-            : statusPresentation[job.status]
-          const elapsed = elapsedLabel(job.createdAt, job.finishedAt, nowMs)
-          return <li
-            key={job.jobId}
-            className="flex flex-wrap items-center justify-between gap-x-5 gap-y-1 border-b border-row-line py-[0.5625rem] last:border-b-0"
-          >
-            <span className="min-w-0 flex-1 truncate text-[0.78125rem] leading-[1.6] text-body">
-              {job.requestText}
-            </span>
-            <span className="flex shrink-0 items-center gap-[0.625rem]">
-              {job.currentStage && <small className="text-[0.6875rem] text-muted-2">{job.currentStage}</small>}
-              {elapsed && <small className="text-[0.6875rem] text-muted-2">
-                {job.finishedAt ? `${elapsed} 걸림` : `${elapsed}째 진행`}
-              </small>}
-              <Badge tone={presentation.tone}>{presentation.label}</Badge>
-            </span>
-          </li>
-        })}
-      </ul>}
+  if (items.length === 0) {
+    return <p className="px-4 py-4 text-[0.71875rem] text-muted-2">아직 보낸 요청이 없습니다.</p>
+  }
+  return <ul className="px-4 py-[0.375rem]">
+    {items.slice(0, 8).map((job) => {
+      const presentation = job.refused
+        ? { label: '진행 안 함', tone: 'idle' as const }
+        : statusPresentation[job.status]
+      const elapsed = elapsedLabel(job.createdAt, job.finishedAt, nowMs)
+      return <li
+        key={job.jobId}
+        className="flex flex-wrap items-center justify-between gap-x-5 gap-y-1 border-b border-row-line py-[0.5625rem] last:border-b-0"
+      >
+        <span className="min-w-0 flex-1 truncate text-[0.78125rem] leading-[1.6] text-body">
+          {job.requestText}
+        </span>
+        <span className="flex shrink-0 items-center gap-[0.625rem]">
+          {job.currentStage && <small className="text-[0.6875rem] text-muted-2">{job.currentStage}</small>}
+          {elapsed && <small className="text-[0.6875rem] text-muted-2">
+            {job.finishedAt ? `${elapsed} 걸림` : `${elapsed}째 진행`}
+          </small>}
+          <Badge tone={presentation.tone}>{presentation.label}</Badge>
+        </span>
+      </li>
+    })}
+  </ul>
+}
+
+type ActivityTab = 'alerts' | 'history'
+
+/**
+ * Approval alerts and the execution history, sharing one panel of a fixed height.
+ *
+ * <p>Each list used to be its own panel sized by its rows, and the alerts panel vanished when it
+ * had nothing to say, so the page changed shape whenever an alert arrived or was read. A fixed
+ * frame that scrolls inside keeps the page still; the counts on the tabs carry the change.
+ */
+function CodingActivity({ alerts, history, nowMs }: {
+  alerts: CodingNotification[]
+  history: JobSummary[]
+  nowMs: number
+}) {
+  const [tab, setTab] = useState<ActivityTab>('alerts')
+  const tabs: { id: ActivityTab; label: string; count: number }[] = [
+    { id: 'alerts', label: '승인 알림', count: Math.min(alerts.length, 8) },
+    { id: 'history', label: '실행 이력', count: Math.min(history.length, 8) },
+  ]
+  const moveFocus = (event: KeyboardEvent<HTMLButtonElement>) => {
+    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
+    event.preventDefault()
+    const next: ActivityTab = tab === 'alerts' ? 'history' : 'alerts'
+    setTab(next)
+    document.getElementById(`coding-activity-tab-${next}`)?.focus()
+  }
+  return <section className={`${panel} mt-[0.875rem] flex h-[24rem] flex-col`}>
+    <div className="flex shrink-0 gap-[1.375rem] border-b border-line-soft px-4" role="tablist" aria-label="승인 알림과 실행 이력">
+      {tabs.map((item) => <button
+        key={item.id}
+        type="button"
+        role="tab"
+        id={`coding-activity-tab-${item.id}`}
+        aria-selected={tab === item.id}
+        aria-controls={`coding-activity-panel-${item.id}`}
+        tabIndex={tab === item.id ? 0 : -1}
+        className={`shrink-0 whitespace-nowrap bg-transparent px-[0.125rem] pb-[0.625rem] pt-3 text-[0.8125rem] ${tab === item.id ? 'font-semibold text-ink shadow-[inset_0_-2px_var(--primary)]' : 'font-medium text-muted'}`}
+        onClick={() => setTab(item.id)}
+        onKeyDown={moveFocus}
+      >
+        {item.label}
+        <span className="ml-[0.375rem] rounded-full bg-idle-bg px-[0.375rem] text-[0.65625rem] font-semibold text-idle-fg">{item.count}</span>
+      </button>)}
+    </div>
+    <div role="tabpanel" id="coding-activity-panel-alerts" aria-labelledby="coding-activity-tab-alerts" hidden={tab !== 'alerts'} className="min-h-0 flex-1 overflow-y-auto">
+      <ApprovalAlerts items={alerts} nowMs={nowMs} />
+    </div>
+    <div role="tabpanel" id="coding-activity-panel-history" aria-labelledby="coding-activity-tab-history" hidden={tab !== 'history'} className="min-h-0 flex-1 overflow-y-auto">
+      <ExecutionHistory items={history} nowMs={nowMs} />
+    </div>
   </section>
 }
 
-function CurrentRequest({ job }: { job: JobSummary }) {
-  const presentation = statusPresentation[job.status]
-  return <section className={panel}>
-    <div className="flex flex-wrap items-start justify-between gap-5 p-4">
-      {/*
-        * The Job id used to lead this card. It is a value no administrator can act on, and it
-        * pushed the sentence they actually wrote into second place.
-        */}
-      <div className="min-w-0">
-        <p className="max-w-[47.5rem] text-[0.875rem] leading-[1.6] text-body">{job.requestText}</p>
-        <small className="mt-2 block text-[0.6875rem] text-muted-2">
-          {repositoryLabel(job.repository)}{job.currentStage ? ` · ${job.currentStage}까지 진행됨` : ''}
-        </small>
+function clockLabel(ms: number): string {
+  const at = new Date(ms)
+  return [at.getHours(), at.getMinutes(), at.getSeconds()].map((part) => String(part).padStart(2, '0')).join(':')
+}
+
+/**
+ * 실시간 상태: the open request, what it is doing, and how fresh that reading is.
+ *
+ * <p>The time is when this screen last heard from the server. The page polls, so a reader deciding
+ * whether to wait needs to know the reading is recent. The attempt count comes from the detail the
+ * tick already loaded and is left out until that detail belongs to this request.
+ */
+function LiveStatus({ job, detail, updatedAt }: { job: JobSummary | null; detail: JobDetail | null; updatedAt: number }) {
+  const updated = `${clockLabel(updatedAt)} 갱신`
+  if (!job) {
+    return <section className={`${panel} mt-[0.875rem]`}>
+      <PanelTitle title="실시간 상태" sub="지금 진행 중인 요청">
+        <small className="text-[0.6875rem] text-muted-2">{updated}</small>
+      </PanelTitle>
+      <div className="flex items-center gap-3 p-4">
+        <span className="grid h-[2.125rem] w-[2.125rem] shrink-0 place-items-center rounded-lg border border-line-soft bg-sub text-muted-3" aria-hidden="true">
+          <Icon name="inbox" size={17} />
+        </span>
+        <span className="text-[0.78125rem] leading-[1.6] text-muted-2">
+          <b className="block text-[0.8125rem] font-semibold text-ink">진행 중인 요청이 없습니다</b>
+          새 개발 요청을 보내면 여기에서 계획과 결과를 확인하고 승인합니다.
+        </span>
       </div>
-      <Badge tone={presentation.tone}>{presentation.label}</Badge>
+    </section>
+  }
+  const presentation = statusPresentation[job.status]
+  const attempt = detail && detail.jobId === job.jobId && detail.maxPipelineAttempts
+    ? ` · 시도 ${detail.pipelineAttempt}/${detail.maxPipelineAttempts}`
+    : ''
+  return <section className={`${panel} mt-[0.875rem]`}>
+    <PanelTitle title="실시간 상태" sub="지금 진행 중인 요청">
+      <span className="flex items-center gap-[0.625rem]">
+        <small className="text-[0.6875rem] text-muted-2">{updated}{attempt}</small>
+        <Badge tone={presentation.tone}>{presentation.label}</Badge>
+      </span>
+    </PanelTitle>
+    {/*
+      * The Job id used to lead this card. It is a value no administrator can act on, and it
+      * pushed the sentence they actually wrote into second place.
+      */}
+    <div className="p-4">
+      <p className="max-w-[47.5rem] text-[0.875rem] leading-[1.6] text-body">{job.requestText}</p>
+      <small className="mt-2 block text-[0.6875rem] text-muted-2">
+        {repositoryLabel(job.repository)}{job.currentStage ? ` · ${job.currentStage}까지 진행됨` : ''}
+      </small>
     </div>
     {nextStep[job.status] && <p className="border-t border-line-soft px-4 py-[0.8125rem] text-[0.71875rem] leading-5 text-body">
       {nextStep[job.status]}
@@ -775,19 +920,24 @@ function CancelRequest({ status, busy, onCancel }: {
     return null
   }
   if (status === 'RUNNING') {
-    return <p className="mt-[0.875rem] px-1 text-[0.71875rem] leading-5 text-muted-2">
-      AI 가 작업하는 동안에는 요청을 취소할 수 없습니다. 작업이 끝나면 취소할 수 있습니다.
-    </p>
+    return <section className={`${panel} mt-[0.875rem]`}>
+      <p className="px-4 py-3 text-[0.71875rem] leading-5 text-muted-2">
+        AI 가 작업하는 동안에는 요청을 취소할 수 없습니다. 작업이 끝나면 취소할 수 있습니다.
+      </p>
+    </section>
   }
   if (!confirming) {
-    return <div className="mt-[0.875rem] px-1">
-      <button
-        type="button"
-        className="text-[0.71875rem] leading-5 text-muted-2 underline underline-offset-2"
-        disabled={busy}
-        onClick={() => setConfirming(true)}
-      >이 요청 그만두기</button>
-    </div>
+    return <section className={`${panel} mt-[0.875rem]`}>
+      <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+        <p className="text-[0.71875rem] leading-5 text-muted-2">더 필요 없는 요청이면 여기서 끝낼 수 있습니다</p>
+        <button
+          type="button"
+          className={secondaryButton}
+          disabled={busy}
+          onClick={() => setConfirming(true)}
+        >이 요청 그만두기</button>
+      </div>
+    </section>
   }
   return <section className={`${panel} mt-[0.875rem]`}>
     <PanelTitle

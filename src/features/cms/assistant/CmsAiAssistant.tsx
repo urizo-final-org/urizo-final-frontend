@@ -3,7 +3,6 @@ import type { CmsRouteId } from '../../../app/routes'
 import { describeFailure } from '../../../shared/api/error'
 import { notifyCmsChanged, notifySiteUpdated } from '../api'
 // 게시물 미리보기는 사용자 화면과 같은 렌더러를 쓴다. `AI05-001`이 이 재사용을 위해 export를 뽑았다.
-import { RichText } from '../../site/PublicSite'
 import { ContentDocument } from '../../site/contentDocument'
 import { contentImageUrl, type ContentImage } from '../api'
 import { Icon } from '../../../shared/ui/icons'
@@ -15,6 +14,7 @@ import { refusalMessage } from './refusal'
 import type { NaturalCmsApi, NaturalCmsJob, NaturalCmsRefusal } from './api'
 import { hasChange, lineDiff } from './diff'
 import { menuPreviewTree, menuRemoval, type AssistantMenu, type MenuCommand } from './menuTree'
+import { templateProposal, TemplateProposalPreview, type TemplateAssistantContext } from './TemplateProposal'
 
 /** 되묻기에 한 번에 보여줄 후보 최대 갯수. 더 많으면 목록에서 직접 고르게 한다. */
 const MAX_CANDIDATES = 5
@@ -49,7 +49,7 @@ function FieldDiff({ before, after }: { before: string; after: string }) {
   </div>
 }
 
-type AssistedRoute = Exclude<CmsRouteId, 'members'>
+type AssistedRoute = Exclude<CmsRouteId, 'members' | 'codes'>
 
 /**
  * 자연어 요청이 바꿀 대상. 화면에서 고른 항목을 그대로 전달한다.
@@ -62,6 +62,7 @@ export type CmsAssistantTarget = {
   id: string
   label: string
   fields: Record<string, string>
+  codeLabels?: Record<string, string>
 }
 
 type AssistantProfile = {
@@ -126,10 +127,10 @@ type Phase =
   | { kind: 'failed'; message: string }
 
 /** 지금 자연어 변경이 가능한 리소스. 나머지 화면은 안내만 한다. */
-const SUPPORTED: ReadonlySet<CmsAssistantTarget['type']> = new Set(['CONTENT', 'MENU', 'BOARD'])
+const SUPPORTED: ReadonlySet<CmsAssistantTarget['type']> = new Set(['CONTENT', 'MENU', 'BOARD', 'TEMPLATE'])
 
 /** 자연어 변경을 받는 화면. 리소스별 작업이 끝난 화면부터 연다. */
-const SUPPORTED_ROUTES: ReadonlySet<AssistedRoute> = new Set<AssistedRoute>(['contents', 'menus', 'boards'])
+const SUPPORTED_ROUTES: ReadonlySet<AssistedRoute> = new Set<AssistedRoute>(['contents', 'menus', 'boards', 'templates'])
 
 /** 등록은 만들기 전이라 가리킬 id가 없다. 대상 자리에 고정 표식을 보낸다. */
 export const NEW_MENU_TARGET: CmsAssistantTarget = {
@@ -160,6 +161,13 @@ const FIELD_LABELS: Record<string, string> = {
   description: '설명',
   title: '제목',
   body: '내용',
+  displayType: '게시판 유형',
+  regionGroupKey: '지역 코드 그룹',
+  categoryGroupKey: '분류 코드 그룹',
+  thumbnailImageId: '대표 이미지',
+  thumbnailAlt: '대표 이미지 설명',
+  regionCodeId: '지역',
+  categoryCodeId: '분류',
 }
 
 function fieldLabel(name: string) {
@@ -193,9 +201,10 @@ function removalSubject(target: CmsAssistantTarget | null) {
 /** 요청 하나에 붙일 수 있는 사진. 더 늘리면 프롬프트에 주소만 길게 실린다. */
 const MAX_ATTACHMENTS = 3
 
-export default function CmsAiAssistant({ route, target, candidates, menus, onTarget, api, onUploadImage, collapsed, onToggle }: {
+export default function CmsAiAssistant({ route, target, templateContext, candidates, menus, onTarget, api, onUploadImage, collapsed, onToggle }: {
   route: AssistedRoute
   target: CmsAssistantTarget | null
+  templateContext?: TemplateAssistantContext | null
   candidates: CmsAssistantTarget[]
   menus: AssistantMenu[]
   onTarget: (target: CmsAssistantTarget) => void
@@ -226,11 +235,29 @@ export default function CmsAiAssistant({ route, target, candidates, menus, onTar
   const attachInput = useRef<HTMLInputElement>(null)
   /** 지금 유효한 대기 세대. 새 요청이나 초기화가 이전 대기를 무효로 만든다. */
   const poll = useRef(0)
+  const decisionBusy = useRef(false)
+  const attachmentBusy = useRef(false)
+  const attachmentGeneration = useRef(0)
+  useEffect(() => {
+    if (route !== 'templates') return
+    attachmentGeneration.current += 1
+    attachmentBusy.current = false
+    setAttaching(false); setAttached([]); setAttachFailure(null)
+  }, [route, target?.id])
   useEffect(() => () => { poll.current += 1 }, [])
   const routeSupported = SUPPORTED_ROUTES.has(route)
   const supported = target !== null && SUPPORTED.has(target.type)
   const canAttach = onUploadImage !== undefined && routeSupported
   const dropping = dragDepth > 0
+  const attachmentLimit = route === 'templates' ? 5 : MAX_ATTACHMENTS
+  const templateBusy = route === 'templates' && ['analyzing', 'waiting', 'deciding'].includes(phase.kind)
+  const templateBlocked = route === 'templates' ? templateContext?.blockedReason ?? (!target ? '템플릿을 선택해 주세요.' : null) : null
+  function approvalBlocked(job: NaturalCmsJob) {
+    if (job.resource.type !== 'TEMPLATE') return null
+    if (!templateProposal(job)) return '승인할 템플릿 미리보기를 확인할 수 없습니다. 다시 요청해 주세요.'
+    if (target?.type !== 'TEMPLATE' || job.resource.id !== target.id) return `이 요청의 대상은 ${job.resource.id}입니다. 해당 템플릿을 다시 선택해 주세요.`
+    return templateBlocked
+  }
 
   /**
    * 올려둔 사진 주소를 요청 끝에 붙인다.
@@ -332,26 +359,31 @@ export default function CmsAiAssistant({ route, target, candidates, menus, onTar
 
   /** 사진을 먼저 올린다. 세 입구(버튼·붙여넣기·드래그)가 이 함수 하나로 모인다. */
   async function attach(files: FileList | null | undefined) {
-    if (!onUploadImage || !files) return
-    const room = MAX_ATTACHMENTS - attached.length
+    if (!onUploadImage || !files || attachmentBusy.current || templateBusy || templateBlocked) return
+    const generation = attachmentGeneration.current
+    const room = attachmentLimit - attached.length
     const chosen = [...files].filter((file) => file.type.startsWith('image/')).slice(0, room)
     if (chosen.length === 0) {
       setAttachFailure(room === 0
-        ? `사진은 요청당 ${MAX_ATTACHMENTS}장까지 붙일 수 있습니다.`
+        ? `사진은 요청당 ${attachmentLimit}장까지 붙일 수 있습니다.`
         : '이미지 파일만 붙일 수 있습니다. 웹 페이지에서 끌어온 사진은 파일이 아니라 주소입니다.')
       return
     }
     setAttachFailure(null)
     setAttaching(true)
+    attachmentBusy.current = true
     try {
       const saved: ContentImage[] = []
-      for (const file of chosen) saved.push(await onUploadImage(file))
-      setAttached((now) => [...now, ...saved])
+      for (const file of chosen) {
+        saved.push(await onUploadImage(file))
+        if (generation !== attachmentGeneration.current) return
+      }
+      setAttached((now) => [...now, ...saved].slice(0, attachmentLimit))
     }
     catch {
-      setAttachFailure('사진을 올리지 못했습니다. JPG, PNG, WebP만 8MB까지 올릴 수 있습니다.')
+      if (generation === attachmentGeneration.current) setAttachFailure('사진을 올리지 못했습니다. JPG, PNG, WebP만 8MB까지 올릴 수 있습니다.')
     }
-    finally { setAttaching(false) }
+    finally { if (generation === attachmentGeneration.current) { attachmentBusy.current = false; setAttaching(false) } }
   }
 
   async function start(requestText: string, chosen: CmsAssistantTarget) {
@@ -379,7 +411,7 @@ export default function CmsAiAssistant({ route, target, candidates, menus, onTar
   async function submit(event: FormEvent) {
     event.preventDefault()
     const requestText = draft.trim()
-    if (!requestText || !routeSupported) return
+    if (!requestText || !routeSupported || attachmentBusy.current || templateBusy || templateBlocked) return
     if (!supported) {
       setPhase({ kind: 'asking', requestText, candidates: narrow(requestText) })
       return
@@ -393,11 +425,13 @@ export default function CmsAiAssistant({ route, target, candidates, menus, onTar
   }
 
   async function decide(job: NaturalCmsJob, decision: 'APPROVED' | 'REJECTED') {
+    if (decisionBusy.current || (decision === 'APPROVED' && approvalBlocked(job))) return
     if (!job.previewId || !job.previewHash) {
       setPhase({ kind: 'failed', message: '미리보기가 없어 승인할 수 없습니다. 다시 요청해 주세요.' })
       return
     }
     if (decision === 'REJECTED' && !feedback.trim()) return
+    decisionBusy.current = true
     setPhase({ kind: 'deciding', job })
     try {
       const decided = await api.decide(job.jobId, {
@@ -419,6 +453,7 @@ export default function CmsAiAssistant({ route, target, candidates, menus, onTar
     catch (failure) {
       setPhase({ kind: 'failed', message: describeFailure(failure) })
     }
+    finally { decisionBusy.current = false }
   }
 
   function reset() {
@@ -440,6 +475,7 @@ export default function CmsAiAssistant({ route, target, candidates, menus, onTar
    * 등록한 게시물은 변경 전이 없어 diff가 같은 글을 두 번 보이게 하므로 렌더만 준다.
    */
   function resourcePreview(job: NaturalCmsJob) {
+    if (job.resource.type === 'TEMPLATE') return <TemplateProposalPreview job={job} context={templateContext} />
     const operation = commandOf(job)?.operation
     if (operation === 'DELETE') {
       return <>
@@ -474,12 +510,14 @@ export default function CmsAiAssistant({ route, target, candidates, menus, onTar
         <small className="block text-[0.65625rem] font-semibold text-muted-2">{fieldLabel(name)}</small>
         {value === null
           ? <p className="m-0 mt-[0.1875rem] text-[0.71875rem] text-muted-3">(비어 있음)</p>
-          : content && name === 'body'
+          : (content || post) && name === 'body'
             // 컨텐츠 본문은 편집기 문서다. 글자를 줄 단위로 견주면 부품 이름만 잔뜩 보인다.
             ? <div className="mt-[0.375rem] rounded-[0.3125rem] border border-line-soft bg-white px-4 py-3">
               <ContentDocument body={value} />
             </div>
-            : <FieldDiff before={target?.fields[name] ?? ''} after={value} />}
+            : name === 'thumbnailImageId'
+              ? <div className="mt-2"><img className="max-h-48 rounded" src={contentImageUrl(Number(value))} alt="변경할 대표 이미지" /></div>
+              : <FieldDiff before={(name === 'regionCodeId' || name === 'categoryCodeId' ? target?.codeLabels?.[target?.fields[name] ?? ''] : undefined) ?? target?.fields[name] ?? ''} after={(name === 'regionCodeId' || name === 'categoryCodeId' ? target?.codeLabels?.[value] : undefined) ?? value} />}
       </section>)}
       {post && postRender(job)}
     </>
@@ -494,13 +532,15 @@ export default function CmsAiAssistant({ route, target, candidates, menus, onTar
    */
   function postRender(job: NaturalCmsJob) {
     const sent = new Map(commandFields(job))
-    const value = (name: string) => sent.get(name) ?? target?.fields[name] ?? ''
+    const value = (name: string) => sent.has(name) ? sent.get(name) ?? '' : target?.fields[name] ?? ''
     return <section>
       <small className="block text-[0.65625rem] font-semibold text-muted-2">실제 화면</small>
       <div className="mt-[0.375rem] rounded-[0.3125rem] border border-line-soft bg-white px-4 py-[1.125rem]">
         <h3 className="m-0 text-[1.125rem] font-medium tracking-[-.03em] text-[#263e48]">{value('title')}</h3>
+        {value('thumbnailImageId') && <figure className="my-4"><img className="max-h-56 rounded" src={contentImageUrl(Number(value('thumbnailImageId')))} alt={value('thumbnailAlt')} /><figcaption className="mt-1 text-xs text-muted-2">목록에 표시될 대표 이미지</figcaption></figure>}
+        <p className="mt-2 text-xs text-muted-2">{['regionCodeId', 'categoryCodeId'].map((key) => value(key) ? target?.codeLabels?.[value(key)] ?? `${fieldLabel(key)} 코드 #${value(key)}` : '').filter(Boolean).join(' · ')}</p>
         <div className="mt-3 border-t border-[#e4ece9] pt-2">
-          <RichText body={value('body')} />
+          <ContentDocument body={value('body')} />
         </div>
       </div>
     </section>
@@ -634,7 +674,7 @@ export default function CmsAiAssistant({ route, target, candidates, menus, onTar
           type="button"
           className="grid h-8 w-8 place-items-center rounded-[0.3125rem] bg-white text-base font-semibold text-muted shadow-[inset_0_0_0_1px_#dfe7e6] hover:bg-sub"
           onClick={() => attachInput.current?.click()}
-          disabled={attaching}
+          disabled={attaching || templateBusy || !!templateBlocked}
           aria-label="사진 첨부"
         >+</button>
         {attached.map((image) => <span
@@ -669,7 +709,7 @@ export default function CmsAiAssistant({ route, target, candidates, menus, onTar
         {profile.suggestions.map((suggestion) => <button
           key={suggestion}
           type="button"
-          className="w-full rounded-[0.3125rem] border border-dashed border-[#d6e2e6] bg-[#f7fbfb] px-[0.625rem] py-[0.5625rem] text-left text-[0.71875rem] leading-[1.5] text-[#3f7f86] hover:bg-[#eef7f8]"
+          className="cms-suggestion-button w-full rounded-[0.3125rem] px-[0.625rem] py-[0.5625rem] text-left text-[0.71875rem] leading-[1.5]"
           onClick={() => setDraft(suggestion)}
         >추천 요청: {suggestion}</button>)}
       </div>
@@ -725,10 +765,11 @@ export default function CmsAiAssistant({ route, target, candidates, menus, onTar
             <button
               type="button"
               className={`${primaryButton} flex-1 justify-center`}
-              disabled={phase.kind === 'deciding'}
+              disabled={phase.kind === 'deciding' || !!approvalBlocked(phase.job)}
               onClick={() => void decide(phase.job, 'APPROVED')}
             >승인하고 반영</button>
           </div>
+          {approvalBlocked(phase.job) && <p role="alert" className="text-xs text-fail-fg">{approvalBlocked(phase.job)}</p>}
         </>}
 
         {phase.kind === 'done' && <>
@@ -761,8 +802,9 @@ export default function CmsAiAssistant({ route, target, candidates, menus, onTar
       <button
         className={`${primaryButton} w-full justify-center`}
         type="submit"
-        disabled={!draft.trim() || !routeSupported || phase.kind === 'analyzing' || phase.kind === 'deciding'}
+        disabled={!draft.trim() || !routeSupported || attaching || !!templateBlocked || templateBusy || phase.kind === 'analyzing' || phase.kind === 'deciding'}
       >요청 분석하기</button>
+      {templateBlocked && <p className="mb-0 mt-2 text-xs text-muted-2">{templateBlocked}</p>}
       {!routeSupported && <p className="mb-0 mt-2 text-center text-[0.625rem] leading-4 text-muted-3">
         {profile.section} 화면은 아직 자연어 변경을 지원하지 않습니다.
       </p>}
@@ -773,7 +815,7 @@ export default function CmsAiAssistant({ route, target, candidates, menus, onTar
       subtitle={removes(phase.job)
         ? `삭제한 ${removalSubject(target)} 되돌릴 수 없습니다.`
         : '승인하면 기존 CMS 저장 경로로 반영됩니다.'}
-      busy={phase.kind === 'deciding'}
+      busy={phase.kind === 'deciding' || !!approvalBlocked(phase.job)}
       approveLabel={removes(phase.job) ? '삭제하고 반영' : undefined}
       danger={removes(phase.job)}
       onApprove={() => { setDetail(false); void decide(phase.job, 'APPROVED') }}
@@ -783,7 +825,7 @@ export default function CmsAiAssistant({ route, target, candidates, menus, onTar
         <small className="block text-[0.65625rem] text-muted-3">요청</small>
         <span className="mt-[0.1875rem] block text-[0.8125rem] text-body">{phase.job.requestText}</span>
       </div>
-      {target?.type === 'MENU'
+      {phase.job.resource.type === 'MENU'
         ? <div className="mt-3">{menuPreview(phase.job)}</div>
         : <div className="mt-3 grid gap-3">{resourcePreview(phase.job)}</div>}
     </AssistantPreviewModal>}

@@ -2,7 +2,7 @@ import type { AdminRole } from '../shared/api/session'
 import type { IconName } from '../shared/ui/icons'
 
 /** Screens backed by the CMS API. */
-export type CmsRouteId = 'members' | 'menus' | 'contents' | 'boards' | 'templates'
+export type CmsRouteId = 'members' | 'codes' | 'menus' | 'contents' | 'boards' | 'templates'
 /** Operations screens; some remain static while Agent/System settings now include Profile API reads and writes. */
 export type OpsRouteId = 'home' | 'agents' | 'models' | 'rag' | 'devops' | 'guardrail' | 'approvals' | 'runs' | 'settings' | 'system-settings' | 'sites'
 export type RouteId = CmsRouteId | OpsRouteId
@@ -24,8 +24,9 @@ const admins: AdminRole[] = ['SUPER_ADMIN', 'GENERAL_ADMIN']
 const superAdmins: AdminRole[] = ['SUPER_ADMIN']
 
 export const routes: RouteDefinition[] = [
-  { id: 'home', path: '/admin/home', group: '개요', label: '홈', glyph: '⬚', icon: 'layout-dashboard', allowedRoles: admins, mock: true },
+  { id: 'home', path: '/admin/home', group: '개요', label: '홈', glyph: '⬚', icon: 'layout-dashboard', allowedRoles: admins },
   { id: 'members', path: '/admin/members', group: '개요', label: '회원 관리', glyph: '◎', icon: 'users', allowedRoles: admins },
+  { id: 'codes', path: '/admin/codes', group: '개요', label: '코드 관리', glyph: '▦', icon: 'database', allowedRoles: admins },
   { id: 'menus', path: '/admin/menus', group: '개요', label: '메뉴 관리', glyph: '☷', icon: 'menu', allowedRoles: admins },
   { id: 'contents', path: '/admin/contents', group: '개요', label: '컨텐츠 관리', glyph: '▤', icon: 'file-text', allowedRoles: admins },
   { id: 'boards', path: '/admin/boards', group: '개요', label: '게시판 관리', glyph: '▦', icon: 'message-square', allowedRoles: admins },
@@ -33,14 +34,14 @@ export const routes: RouteDefinition[] = [
   { id: 'agents', path: '/admin/agents', group: 'AI 운영', label: 'Agent 관리', glyph: '◈', icon: 'bot', allowedRoles: admins, mock: true, hiddenFromNavigation: true },
   { id: 'models', path: '/admin/models', group: 'AI 운영', label: 'Agent 설정', glyph: '◧', icon: 'boxes', allowedRoles: superAdmins },
   { id: 'rag', path: '/admin/rag', group: 'AI 운영', label: 'RAG 관리', glyph: '▩', icon: 'database', allowedRoles: admins },
-  { id: 'devops', path: '/admin/llm-devops', group: 'AI 운영', label: 'LLM DevOps', glyph: '◑', icon: 'code-2', allowedRoles: admins },
+  { id: 'devops', path: '/admin/llm-devops', group: 'AI 운영', label: 'LLM CI/CD', glyph: '◑', icon: 'code-2', allowedRoles: admins },
   // Super administrators only, because the server refuses the guardrail endpoints to anyone
   // else. A general administrator asks for a change; deciding where the AI may write is not
   // the same decision.
   { id: 'guardrail', path: '/admin/llm-devops/guardrail', group: 'AI 운영', label: '가드레일 설정', glyph: '▢', icon: 'shield-check', allowedRoles: superAdmins },
   { id: 'approvals', path: '/admin/approvals', group: '거버넌스', label: '승인 내역', glyph: '◍', icon: 'shield-check', allowedRoles: admins },
   { id: 'runs', path: '/admin/runs', group: '거버넌스', label: '실행 이력', glyph: '◌', icon: 'history', allowedRoles: admins },
-  { id: 'settings', path: '/admin/settings', group: '환경', label: '설정', glyph: '⚙', icon: 'settings', allowedRoles: admins, mock: true },
+  { id: 'settings', path: '/admin/settings', group: '환경', label: '설정', glyph: '⚙', icon: 'settings', allowedRoles: admins, mock: true, hiddenFromNavigation: true },
   { id: 'system-settings', path: '/admin/system-settings', group: '환경', label: '시스템 설정', glyph: '◫', icon: 'sliders-horizontal', allowedRoles: superAdmins },
   { id: 'sites', path: '/admin/sites', group: '환경', label: '사이트 관리', glyph: '◎', icon: 'globe-2', allowedRoles: superAdmins },
 ]
@@ -48,12 +49,16 @@ export const routes: RouteDefinition[] = [
 /** Groups the canvas lets the operator fold away; 개요 always stays open. */
 export const foldableGroups = ['AI 운영', '거버넌스', '환경']
 
-const cmsRouteIds: CmsRouteId[] = ['members', 'menus', 'contents', 'boards', 'templates']
+const cmsRouteIds: CmsRouteId[] = ['members', 'codes', 'menus', 'contents', 'boards', 'templates']
 export function isCmsRouteId(route: RouteId): route is CmsRouteId { return (cmsRouteIds as RouteId[]).includes(route) }
 
 export function routesForRole(role: AdminRole) { return routes.filter((route) => route.allowedRoles.includes(role)) }
 export function navigationRoutesForRole(role: AdminRole) { return routesForRole(role).filter((route) => !route.hiddenFromNavigation) }
-export function defaultRouteForRole(_role: AdminRole): RouteId { return 'members' }
+/**
+ * 로그인 직후 들어가는 화면. 역할과 무관하게 '홈'이다 — 두 관리자가 같은 자리에서
+ * 시작해야 헤더의 종(알림)을 같은 조건에서 보게 된다.
+ */
+export function defaultRouteForRole(_role: AdminRole): RouteId { return 'home' }
 export function pathForRoute(route: RouteId) { return routes.find((item) => item.id === route)?.path ?? '/admin/members' }
 export function routeIdForPath(pathname: string) { return routes.find((item) => item.path === pathname)?.id }
 export function groupForRoute(route: RouteId) { return routes.find((item) => item.id === route)?.group ?? '개요' }

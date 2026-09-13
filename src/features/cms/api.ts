@@ -27,8 +27,14 @@ export type Menu = {
   targetId: number | null
 }
 export type Article = { id: number; authorId: string; authorName: string; title: string; body: string; createdAt: string; updatedAt: string }
-export type Board = { id: number; name: string; description: string; createdAt: string; updatedAt: string }
-export type Post = Article & { boardId: number }
+export type Board = { id: number; name: string; description: string; createdAt: string; updatedAt: string; displayType?: 'LIST' | 'CARD'; regionGroupKey?: string | null; categoryGroupKey?: string | null }
+export type Post = Article & { boardId: number; thumbnailImageId?: number | null; thumbnailAlt?: string; regionCodeId?: number | null; categoryCodeId?: number | null }
+export type BoardInput = Pick<Board, 'name' | 'description' | 'displayType' | 'regionGroupKey' | 'categoryGroupKey'>
+export type PostInput = Pick<Post, 'title' | 'body' | 'thumbnailImageId' | 'thumbnailAlt' | 'regionCodeId' | 'categoryCodeId'>
+export type CodeGroup = { key: string; label: string; displayOrder: number; enabled: boolean }
+export type CmsCode = { id: number; groupKey: string; value: string; label: string; displayOrder: number; enabled: boolean }
+export type CodeInput = Pick<CmsCode, 'value' | 'label' | 'displayOrder' | 'enabled'>
+export type TemplateHeroImage = { url: string; title: string; description: string }
 export type SiteTemplate = {
   key: string
   layout: string
@@ -37,6 +43,8 @@ export type SiteTemplate = {
   headerText: string
   footerText: string
   heroImageUrl: string
+  heroImageUrls?: string[] | null
+  heroImages?: TemplateHeroImage[] | null
   heroTitle: string
   heroSubtitle: string
   heroButtonLabel: string
@@ -104,17 +112,23 @@ export class CmsApi {
     return this.request<ContentImage>('/api/cms/images', { method: 'POST', body: form })
   }
   boards = () => this.request<Board[]>('/api/cms/boards')
-  createBoard = (value: Pick<Board, 'name' | 'description'>) => this.request<Board>('/api/cms/boards', { method: 'POST', body: JSON.stringify(value) })
-  updateBoard = (id: number, value: Pick<Board, 'name' | 'description'>) => this.request<Board>(`/api/cms/boards/${id}`, { method: 'PUT', body: JSON.stringify(value) })
+  createBoard = (value: BoardInput) => this.request<Board>('/api/cms/boards', { method: 'POST', body: JSON.stringify(value) })
+  updateBoard = (id: number, value: BoardInput) => this.request<Board>(`/api/cms/boards/${id}`, { method: 'PUT', body: JSON.stringify(value) })
   deleteBoard = (id: number) => this.request<void>(`/api/cms/boards/${id}`, { method: 'DELETE' })
   posts = (boardId: number) => this.request<Post[]>(`/api/cms/boards/${boardId}/posts`)
-  createPost = (boardId: number, value: Pick<Post, 'title' | 'body'>) => this.request<Post>(`/api/cms/boards/${boardId}/posts`, { method: 'POST', body: JSON.stringify(value) })
-  updatePost = (id: number, value: Pick<Post, 'title' | 'body'>) => this.request<Post>(`/api/cms/posts/${id}`, { method: 'PUT', body: JSON.stringify(value) })
+  createPost = (boardId: number, value: PostInput) => this.request<Post>(`/api/cms/boards/${boardId}/posts`, { method: 'POST', body: JSON.stringify(value) })
+  updatePost = (id: number, value: PostInput) => this.request<Post>(`/api/cms/posts/${id}`, { method: 'PUT', body: JSON.stringify(value) })
   deletePost = (id: number) => this.request<void>(`/api/cms/posts/${id}`, { method: 'DELETE' })
+  codeGroups = () => this.request<CodeGroup[]>('/api/cms/code-groups')
+  codes = () => this.request<CmsCode[]>('/api/cms/codes')
+  createCodeGroup = (value: CodeGroup) => this.request<CodeGroup>('/api/cms/code-groups', { method: 'POST', body: JSON.stringify(value) })
+  updateCodeGroup = (key: string, value: CodeGroup) => this.request<CodeGroup>(`/api/cms/code-groups/${encodeURIComponent(key)}`, { method: 'PUT', body: JSON.stringify(value) })
+  createCode = (key: string, value: CodeInput) => this.request<CmsCode>(`/api/cms/code-groups/${encodeURIComponent(key)}/codes`, { method: 'POST', body: JSON.stringify(value) })
+  updateCode = (id: number, value: CodeInput) => this.request<CmsCode>(`/api/cms/codes/${id}`, { method: 'PUT', body: JSON.stringify(value) })
   templates = () => this.request<SiteTemplate[]>('/api/cms/templates')
-  saveTemplate = ({ key, layout, primaryColor, siteName, headerText, footerText, heroImageUrl, heroTitle, heroSubtitle, heroButtonLabel, heroButtonUrl }: SiteTemplate) => this.request<SiteTemplate>(`/api/cms/templates/${key}`, {
+  saveTemplate = ({ key, layout, primaryColor, siteName, headerText, footerText, heroImageUrl, heroImageUrls, heroImages, heroTitle, heroSubtitle, heroButtonLabel, heroButtonUrl }: SiteTemplate) => this.request<SiteTemplate>(`/api/cms/templates/${key}`, {
     method: 'PUT',
-    body: JSON.stringify({ layout, primaryColor, siteName, headerText, footerText, heroImageUrl, heroTitle, heroSubtitle, heroButtonLabel, heroButtonUrl }),
+    body: JSON.stringify({ layout, primaryColor, siteName, headerText, footerText, heroImageUrl, heroImageUrls, heroImages, heroTitle, heroSubtitle, heroButtonLabel, heroButtonUrl }),
   })
 }
 
@@ -126,6 +140,7 @@ export class SiteApi {
   menus = () => this.request<Menu[]>('/api/site/menus')
   content = (id: number) => this.request<Article>(`/api/site/contents/${id}`)
   boards = () => this.request<Board[]>('/api/site/boards')
+  codes = () => this.request<CmsCode[]>('/api/site/codes')
   posts = (boardId: number) => this.request<Post[]>(`/api/site/boards/${boardId}/posts`)
   post = (id: number) => this.request<Post>(`/api/site/posts/${id}`)
   site = (path = '/') => this.request<PublicSiteContext>(`/api/site/context?path=${encodeURIComponent(path)}`)

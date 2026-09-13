@@ -136,10 +136,74 @@ test('the way out at the bottom opens the screen even when the list is empty', a
 
   fireEvent.click(screen.getByRole('button', { name: '알림 목록 열기' }))
   expect(screen.getByRole('dialog')).toHaveTextContent('새 알림이 없습니다.')
-  fireEvent.click(screen.getByRole('button', { name: 'LLM DevOps 열기' }))
+  fireEvent.click(screen.getByRole('button', { name: 'LLM CI/CD 열기' }))
 
   expect(onOpen).toHaveBeenCalledTimes(1)
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+})
+
+/**
+ * 이 종은 코딩 알림만의 것이 아니다. RAG 쪽 일감도 같은 자리에 실린다 — 읽는 사람이 던지는
+ * 질문("나 볼 거 있나")이 하나이기 때문이다. 코딩 알림이 아직 안 와도 이쪽은 셀 수 있다.
+ */
+test('extra notices count and render alongside the coding feed', async () => {
+  render(<ApprovalBell api={bellApi([waitingItem('a')])} onOpen={() => {}} extra={[{
+    id: 'r-1',
+    text: '일반 관리자님이 자료 갱신을 요청했습니다',
+    detail: '축제가 이미 끝났습니다',
+    at: new Date().toISOString(),
+    onPick: vi.fn(),
+  }]} />)
+
+  fireEvent.click(await screen.findByRole('button', { name: /새 알림 2건/ }))
+  const dialog = screen.getByRole('dialog', { name: '새 알림' })
+  expect(dialog).toHaveTextContent('일반 관리자님이 자료 갱신을 요청했습니다')
+  expect(dialog).toHaveTextContent('축제가 이미 끝났습니다')
+  expect(dialog).toHaveTextContent('계획 단계에서 승인을 기다리고 있습니다')
+})
+
+/*
+ * 고른 줄은 화면에서 치운다 — 확인하러 들어가는 것이 곧 그 알림에 대한 응답이다.
+ *
+ * 그러면서도 코딩 목록은 건드리지 않는다. 읽음을 적는 쪽은 LLM DevOps 화면인데 이 줄은
+ * 거기로 가지 않는다 — `read()`가 돌면 코딩 숫자까지 사라졌다가 다음 폴링에 되살아난다.
+ */
+test('choosing an extra notice clears that line and leaves the coding feed alone', async () => {
+  const pick = vi.fn()
+  const onOpen = vi.fn()
+  render(<ApprovalBell api={bellApi([waitingItem('a')])} onOpen={onOpen} extra={[
+    { id: 'r-1', text: '일반 관리자님이 자료 갱신을 요청했습니다', onPick: pick },
+  ]} />)
+  fireEvent.click(await screen.findByRole('button', { name: /새 알림 2건/ }))
+
+  fireEvent.click(screen.getByRole('button', { name: /자료 갱신을 요청했습니다/ }))
+
+  expect(pick).toHaveBeenCalledTimes(1)
+  expect(onOpen).not.toHaveBeenCalled()
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  // 2 → 1. 고른 줄만 빠지고 코딩 알림 한 건은 남는다. read()가 돌았다면 숫자가 통째로 사라졌다.
+  const bell = await screen.findByRole('button', { name: /새 알림 1건/ })
+  expect(lastSeenAt()).toBeNull()
+
+  // 다시 열어도 그 줄은 없다 — 치운 것이 화면에만 반영되고 마는 것이 아니다.
+  fireEvent.click(bell)
+  expect(screen.getByRole('dialog', { name: '새 알림' }))
+    .not.toHaveTextContent('자료 갱신을 요청했습니다')
+})
+
+/** 코딩 쪽 폴링이 죽어도 RAG 일감은 울려야 한다. 축이 서로를 끄지 않는다. */
+test('extra notices still ring when the coding poll fails', async () => {
+  render(<ApprovalBell
+    api={bellApi([], {
+      notifications: vi.fn().mockRejectedValue(new ProductApiError({
+        status: 503, code: 'CODING_HANDLER_STORE_UNAVAILABLE', message: '저장소를 사용할 수 없습니다.',
+      })),
+    })}
+    onOpen={() => {}}
+    extra={[{ id: 'r-1', text: '일반 관리자님이 자료 갱신을 요청했습니다', onPick: vi.fn() }]}
+  />)
+
+  expect(await screen.findByRole('button', { name: /새 알림 1건/ })).toBeInTheDocument()
 })
 
 test('a list that never arrived is not shown as empty', async () => {

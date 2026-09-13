@@ -8,6 +8,19 @@ export const primaryButton = 'inline-flex h-8 items-center gap-[0.375rem] rounde
 export const secondaryButton = 'inline-flex h-8 items-center gap-[0.375rem] rounded-[0.3125rem] border border-btn-line bg-field px-[0.6875rem] text-xs font-semibold text-strong enabled:hover:bg-sub'
 export const smallButton = 'inline-flex h-7 items-center gap-[0.375rem] rounded-[0.3125rem] border border-btn-line bg-field px-[0.625rem] text-[0.71875rem] font-semibold text-strong enabled:hover:bg-sub'
 export const dangerButton = 'inline-flex h-8 items-center gap-[0.375rem] rounded-[0.3125rem] border border-[#f0d5d1] bg-fail-bg px-[0.6875rem] text-xs font-semibold text-fail-fg enabled:hover:bg-[#f8e0dc]'
+/**
+ * 패널 안에서 「누를 수 있는 것」으로 읽혀야 하는 동작 버튼. 배경·여백·모서리를 줘서
+ * 링크처럼 보이지 않게 한다. hover 색 변화는 두지 않는다 — 시연 화면에서 마우스가 표 위를
+ * 지나갈 때마다 버튼이 깜빡이는 것으로 보였다.
+ *
+ * <p>채움에 `line` 토큰을 쓴다. 이름은 선이지만 값이 라이트 #dfe6ed · 다크 #294156이라
+ * **양쪽 테마에서 패널과 확실히 구분되는 유일한 기존 토큰**이다. `sub`(#f8fafc)는 흰 패널과
+ * 붙어 보여 링크처럼 읽혔다.
+ *
+ * <p>RAG 화면의 `Build 시작`·`전환`·`롤백`·`갱신 요청`이 모두 이것을 쓴다 — 같은 무게의
+ * 동작이 화면마다 다른 모양이면 무엇을 누를 수 있는지 매번 다시 배워야 한다.
+ */
+export const tableButton = 'inline-flex h-8 items-center justify-center gap-1 rounded-md border border-field-line bg-line px-4 text-[0.71875rem] font-semibold text-strong shadow-[0_1px_1px_#10203410] disabled:opacity-45'
 export const fieldLabel = 'block text-[0.71875rem] font-semibold text-body'
 export const control = 'mt-[0.375rem] block h-8 w-full rounded-[0.3125rem] border border-field-line bg-field px-[0.625rem] text-[0.78125rem] font-normal text-ink outline-0'
 export const textarea = 'mt-[0.375rem] block w-full resize-y rounded-[0.3125rem] border border-field-line bg-field px-[0.625rem] py-[0.5625rem] text-[0.78125rem] font-normal text-ink outline-0'
