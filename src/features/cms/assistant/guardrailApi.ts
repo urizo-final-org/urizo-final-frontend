@@ -13,7 +13,7 @@ import { fetchWithSessionRefresh, type AdminSession } from '../../../shared/api/
  */
 
 /** 동작 선택의 저장 단위. 게시물은 계약상 BOARD지만 동작을 따로 연다. */
-export type NaturalCmsGuardrailResourceKey = 'MENU' | 'BOARD' | 'BOARD_POST' | 'CONTENT'
+export type NaturalCmsGuardrailResourceKey = 'MENU' | 'BOARD' | 'BOARD_POST' | 'CONTENT' | 'TEMPLATE'
 
 export interface NaturalCmsGuardrailOperation {
   name: string
@@ -40,8 +40,7 @@ export interface NaturalCmsGuardrailResource {
    * 하나만 쓰이므로 다른 대상의 표에 닿을 코드 경로가 없다. 지시문은 모델이 무시하면
    * 지나가지만 이쪽은 모델과 무관하게 성립해, 화면이 「할 수 없다」고 말해도 과장이 아니다.
    *
-   * 템플릿처럼 설정 대상이 아닌 것도 들어온다. 「메뉴 화면에서 템플릿을 바꿀 수 있나」는
-   * 관리자가 실제로 하는 질문이라 목록에는 있어야 한다.
+   * 각 대상은 다른 관리의 데이터를 변경할 수 없다.
    */
   excludes: string[]
   lock: NaturalCmsGuardrailLock
