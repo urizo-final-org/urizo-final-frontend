@@ -14,7 +14,7 @@ import type {
 function resource(key: NaturalCmsGuardrailResourceKey, on: string[], fields: string[]) {
   return {
     resourceKey: key,
-    operations: ['CREATE', 'DELETE', 'UPDATE'].map((name) => ({
+    operations: (key === 'TEMPLATE' ? ['UPDATE'] : ['CREATE', 'DELETE', 'UPDATE']).map((name) => ({
       name, enabled: on.includes(name),
     })),
     fields,
@@ -180,4 +180,32 @@ test('바꾼 것이 없으면 저장할 수 없다', async () => {
   await menuCard()
 
   expect(screen.getByRole('button', { name: '저장' })).toBeDisabled()
+})
+
+test('템플릿은 수정만 표시하고 해제한 값을 다른 관리 설정과 함께 저장한다', async () => {
+  const current = view(
+    resource('MENU', ALL, ['name']), resource('BOARD', ALL, ['name']),
+    resource('BOARD_POST', ALL, ['title']), resource('CONTENT', ALL, ['title']),
+    resource('TEMPLATE', ['UPDATE'], ['layout', 'primaryColor', 'headerText']))
+  const client = api(current, {
+    ...current,
+    resources: current.resources.map((item) => item.resourceKey === 'TEMPLATE'
+      ? { ...item, operations: [{ name: 'UPDATE', enabled: false }] } : item),
+  })
+  render(<NaturalCmsGuardrailPanel api={client} />)
+  const template = await screen.findByRole('region', { name: '템플릿 가드레일' })
+  expect(within(template).getAllByRole('checkbox')).toHaveLength(1)
+  expect(within(template).getByRole('checkbox', { name: '수정' })).toBeChecked()
+  expect(within(template).getByTitle('primaryColor')).toHaveTextContent('대표 색상')
+  expect(within(template).getByText('/admin/templates')).toBeInTheDocument()
+  fireEvent.click(within(template).getByRole('checkbox', { name: '수정' }))
+  fireEvent.click(screen.getByRole('button', { name: '저장' }))
+  fireEvent.click(await screen.findByRole('button', { name: '확인하고 저장' }))
+  await waitFor(() => expect(client.saveGuardrail).toHaveBeenCalledTimes(1))
+  const sent = vi.mocked(client.saveGuardrail).mock.calls[0][0].operations
+  expect(sent).toHaveLength(13)
+  expect(sent).toContainEqual({ resourceKey: 'TEMPLATE', operation: 'UPDATE', enabled: false })
+  expect(sent.filter((item) => item.resourceKey !== 'TEMPLATE')).toSatisfy(
+    (items: typeof sent) => items.every((item) => item.enabled))
+  await waitFor(() => expect(within(template).getByRole('checkbox', { name: '수정' })).not.toBeChecked())
 })

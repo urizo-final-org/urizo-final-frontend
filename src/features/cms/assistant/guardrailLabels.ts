@@ -15,16 +15,16 @@ export const RESOURCE_LABELS: Record<NaturalCmsGuardrailResourceKey, string> = {
   BOARD: '게시판',
   BOARD_POST: '게시물',
   CONTENT: '컨텐츠',
+  TEMPLATE: '템플릿',
 }
 
 /**
  * 닿을 수 없는 대상의 이름.
  *
- * 설정 대상 넷에 템플릿이 더해진다. 템플릿은 켜고 끌 수 없지만 「여기서 템플릿을 바꿀 수
- * 있나」는 관리자가 실제로 하는 질문이라 목록에는 나와야 한다.
+ * 다른 관리의 데이터를 변경할 수 없다는 경계를 표시한다.
  */
 export function resourceLabel(key: string): string {
-  return (RESOURCE_LABELS as Record<string, string>)[key] ?? (key === 'TEMPLATE' ? '템플릿' : key)
+  return (RESOURCE_LABELS as Record<string, string>)[key] ?? key
 }
 
 /** 이 설정이 적용되는 대상을 사람이 직접 관리하는 화면. 여기는 가드레일이 걸리지 않는다. */
@@ -33,6 +33,7 @@ export const RESOURCE_SCREENS: Record<NaturalCmsGuardrailResourceKey, string> = 
   BOARD: '/admin/boards',
   BOARD_POST: '/admin/boards',
   CONTENT: '/admin/contents',
+  TEMPLATE: '/admin/templates',
 }
 
 const OPERATION_LABELS: Record<string, string> = {
@@ -64,6 +65,15 @@ const FIELD_LABELS: Record<string, string> = {
   'BOARD_POST:body': '본문',
   'CONTENT:title': '제목',
   'CONTENT:body': '본문',
+  'TEMPLATE:layout': '레이아웃',
+  'TEMPLATE:primaryColor': '대표 색상',
+  'TEMPLATE:headerText': '헤더 보조 문구',
+  'TEMPLATE:footerText': '푸터 문구',
+  'TEMPLATE:heroImages': '메인 이미지',
+  'TEMPLATE:heroTitle': '메인 제목',
+  'TEMPLATE:heroSubtitle': '메인 보조 문구',
+  'TEMPLATE:heroButtonLabel': '메인 버튼 문구',
+  'TEMPLATE:heroButtonUrl': '메인 버튼 주소',
 }
 
 export function operationLabel(name: string): string {
@@ -93,6 +103,8 @@ export function fieldLabel(resourceKey: NaturalCmsGuardrailResourceKey, name: st
 export type LockPart = string | { strong: string }
 
 const LOCK_LABELS: Record<string, (value: number | null) => LockPart[]> = {
+  TEMPLATE_UPDATE_ONLY: () => [{ strong: '기존 템플릿 수정만' }, ' 가능. 등록·삭제는 제공하지 않음'],
+  TEMPLATE_SELECTED_TARGET_ONLY: () => ['고른 템플릿의 ', { strong: '허용된 디자인 필드만' }, ' 수정. 적용 템플릿 전환은 불가'],
   MENU_DELETE_CASCADE: (value) => [
     '하위를 포함해 ', { strong: `한 번에 ${value ?? '?'}개까지만` }, ' 삭제'],
   MENU_POSITION_ORDINAL: () => ['자리는 형제 안의 ', { strong: '순서로만' }, ' 말함'],
