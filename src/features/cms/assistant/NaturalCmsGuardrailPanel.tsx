@@ -1,7 +1,6 @@
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
 import { describeFailure } from '../../../shared/api/error'
-import { Icon } from '../../../shared/ui/icons'
-import { Callout, PanelTitle, panel, primaryButton } from '../../../shared/ui/primitives'
+import { Callout, NoticePanel, PanelTitle, panel, primaryButton } from '../../../shared/ui/primitives'
 import AssistantPreviewModal from './AssistantPreviewModal'
 import type {
   NaturalCmsGuardrailApi, NaturalCmsGuardrailResourceKey, NaturalCmsGuardrailView,
@@ -194,18 +193,22 @@ export default function NaturalCmsGuardrailPanel({ api }: { api: NaturalCmsGuard
 
     {/*
       * 닫힌 관리는 경고가 아니라 안내다. 관리자가 알고 끈 것일 수 있고, 이 탭에는 「뚫려 있다」는
-      * 상태가 없다. Callout 은 경고(노랑)와 성공(초록) 둘뿐이라 초록을 쓰면 잘 됐다는 뜻이 된다.
-      * 공용 primitives 를 건드리지 않고 중립 색으로 그린다.
+      * 상태가 없다. 그래서 ⚠(노랑)은 삭제만 남은 관리 하나에만 쓴다.
+      *
+      * 처음에는 중립 색 div 로 그렸는데 배경과 거의 같아 눈에 띄지 않았다. NoticePanel 의
+      * info 톤이 바로 이 자리다 — 경고가 아니면서 배경과는 확실히 갈린다.
       */}
-    {closed.length > 0 && <div className="mb-[0.875rem] flex items-start gap-[0.5625rem] rounded-[0.3125rem] border border-line bg-sub p-[0.6875rem] text-[0.71875rem] leading-[1.6] text-body">
-      <Icon name="lock" size={15} className="mt-[0.0625rem] text-muted-2" />
-      <span>
+    {closed.length > 0 && <div className="mb-[0.875rem]">
+      <NoticePanel
+        tone="info"
+        icon="lock"
+        title={closed.length === state.length
+          ? '자연어 CMS 가 할 수 있는 일이 없습니다.'
+          : `${closed.map((resource) => resource.label).join(' · ')} 는 자연어 CMS 를 쓸 수 없습니다.`}>
         {closed.length === state.length
-          ? <><b className="font-semibold text-ink">자연어 CMS 어시스턴트가 할 수 있는 일이 없습니다.</b>{' '}
-            네 관리의 동작이 모두 꺼져 있어 어떤 요청도 거절됩니다.</>
-          : <><b className="font-semibold text-ink">{closed.map((resource) => resource.label).join(' · ')} 는 자연어 CMS 를 쓸 수 없습니다.</b>
-            {' '}동작이 모두 꺼져 있어 그 화면의 요청은 거절됩니다.</>}
-      </span>
+          ? '네 관리의 동작이 모두 꺼져 있어 어떤 요청도 거절됩니다.'
+          : '동작이 모두 꺼져 있어 그 화면의 요청은 거절됩니다.'}
+      </NoticePanel>
     </div>}
 
     <section className={panel}>
