@@ -43,6 +43,8 @@ export type NaturalCmsJob = {
 export interface NaturalCmsRefusal {
   code: string | null
   reason: string | null
+  /** 막힌 동작 키(`CREATE`·`UPDATE`·`DELETE`). 한글 라벨은 화면이 붙인다. */
+  operations: string[]
 }
 
 type ProfileVersionSummary = { profileVersionId: string; profileKey: string; status: string }

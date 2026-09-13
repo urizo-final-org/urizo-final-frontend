@@ -785,7 +785,8 @@ export default function CmsAiAssistant({ route, target, templateContext, candida
             ? '반영하지 않았습니다. 요청을 고쳐 다시 시도해 주세요.'
             : refusalMessage(
               phase.refusal?.code ?? null, phase.refusal?.reason ?? null,
-              phase.job.requestText, profile.section)}</p>
+              phase.job.requestText, profile.section,
+              phase.refusal?.operations ?? [])}</p>
           <button type="button" className={`${secondaryButton} mt-[0.625rem] w-full justify-center`} onClick={reset}>새 요청</button>
         </>}
 
