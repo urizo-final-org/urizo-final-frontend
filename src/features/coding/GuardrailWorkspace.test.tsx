@@ -2,11 +2,43 @@ import { StrictMode } from 'react'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { expect, test, vi } from 'vitest'
 import GuardrailWorkspace from './GuardrailWorkspace'
+import type { NaturalCmsGuardrailApi, NaturalCmsGuardrailView } from '../cms/assistant/guardrailApi'
 import type {
   CodingConsoleApiClient, GuardrailRepository, GuardrailScanResult, GuardrailSelection,
 } from './api'
 
 const SCAN_ID = '33333333-4444-4555-8666-777777777777'
+
+/**
+ * 아래 대부분의 테스트는 LLM Ops 탭만 본다. 자연어 CMS 쪽은 열지 않으므로 저장 전 상태를
+ * 돌려주는 최소 구현이면 된다. CMS 탭 자체는 별도 테스트가 본다.
+ */
+const OPEN = [
+  { name: 'CREATE', enabled: true },
+  { name: 'UPDATE', enabled: true },
+  { name: 'DELETE', enabled: true },
+]
+
+const CMS_VIEW: NaturalCmsGuardrailView = {
+  configured: false,
+  resources: [
+    {
+      resourceKey: 'MENU', operations: OPEN, fields: ['name', 'path'], excludes: ['CONTENT'],
+      lock: { handler: 'MenuHandler', dataTable: 'app.cms_menu', rules: [] },
+    },
+    {
+      resourceKey: 'CONTENT', operations: OPEN, fields: ['title', 'body'], excludes: ['MENU'],
+      lock: { handler: 'ContentHandler', dataTable: 'app.cms_content', rules: [] },
+    },
+  ],
+}
+
+function cmsGuardrails(view: NaturalCmsGuardrailView = CMS_VIEW): NaturalCmsGuardrailApi {
+  return {
+    guardrail: vi.fn(async () => view),
+    saveGuardrail: vi.fn(async () => view),
+  } as unknown as NaturalCmsGuardrailApi
+}
 
 // The folders the repository actually scans today, not a sample. A folder added without a
 // label is the failure this list exists to catch, and a short sample cannot catch it.
@@ -65,15 +97,19 @@ function guardrailApi(overrides: Partial<CodingConsoleApiClient> = {}): CodingCo
  * The pipeline skips the path check entirely when nothing is allowed, so an unconfigured
  * system is wide open rather than locked. Saying so is the reason this screen exists.
  */
-test('guardrail tabs separate the CMS placeholder and preserve unsaved LLM Ops settings', async () => {
+test('guardrail tabs hold two separate settings and preserve unsaved LLM Ops choices', async () => {
   const api = guardrailApi()
-  render(<GuardrailWorkspace api={api} />)
+  render(<GuardrailWorkspace cmsGuardrailApi={cmsGuardrails()} api={api} />)
   const cmsFolder = await screen.findByRole('checkbox', { name: /CMS 화면/ })
   fireEvent.click(cmsFolder)
   fireEvent.click(screen.getByRole('tab', { name: '자연어 CMS' }))
   expect(screen.getByRole('tabpanel', { name: '자연어 CMS' })).toBeVisible()
-  expect(screen.getByText(/설정 항목과 저장 기능은 아직 연결되지 않았습니다/)).toBeVisible()
-  expect(screen.queryByRole('button', { name: '저장' })).not.toBeInTheDocument()
+  // 한 번에 한쪽만 읽힌다. 두 설정이 같은 화면에 겹쳐 보이면 관리자가 어느 쪽을
+  // 고치고 있는지 잃는다. 열린 탭에 반대편 항목이 남아 있지 않아야 한다.
+  expect(await screen.findByText('요청 하나는 관리 하나에 묶입니다')).toBeVisible()
+  expect(screen.queryByRole('checkbox', { name: /CMS 화면/ })).not.toBeInTheDocument()
+  // 각 탭이 자기 저장 버튼을 갖는다. 아직 바꾼 것이 없으니 눌리지 않는다.
+  expect(screen.getByRole('button', { name: '저장' })).toBeDisabled()
   fireEvent.keyDown(screen.getByRole('tab', { name: '자연어 CMS' }), { key: 'ArrowLeft' })
   expect(screen.getByRole('tab', { name: 'LLM Ops' })).toHaveFocus()
   expect(screen.getByRole('checkbox', { name: /CMS 화면/ })).toBeChecked()
@@ -83,7 +119,7 @@ test('guardrail tabs separate the CMS placeholder and preserve unsaved LLM Ops s
 })
 
 test('an empty fence is reported as the open door it is', async () => {
-  render(<GuardrailWorkspace api={guardrailApi()} />)
+  render(<GuardrailWorkspace cmsGuardrailApi={cmsGuardrails()} api={guardrailApi()} />)
 
   expect(await screen.findByText(/AI 가 저장소의 어느 파일이든 고칠 수 있습니다/))
     .toBeInTheDocument()
@@ -92,7 +128,7 @@ test('an empty fence is reported as the open door it is', async () => {
 /* 7-화면.md draws the two repositories side by side; fencing only one would leave the other
  * to start unfenced when its jobs arrive. */
 test('both repositories are offered, labeled for a person rather than a developer', async () => {
-  render(<GuardrailWorkspace api={guardrailApi()} />)
+  render(<GuardrailWorkspace cmsGuardrailApi={cmsGuardrails()} api={guardrailApi()} />)
 
   expect(await screen.findByText('📁 프론트엔드')).toBeInTheDocument()
   expect(screen.getByText('📁 백엔드')).toBeInTheDocument()
@@ -105,7 +141,7 @@ test('both repositories are offered, labeled for a person rather than a develope
 // areas and never a path. A folder that falls back to its short path therefore surfaces
 // "features/ops" on an administrator's screen through a stage forbidden from doing so.
 test('every scanned folder has a label that is a name, not a path', async () => {
-  render(<GuardrailWorkspace api={guardrailApi()} />)
+  render(<GuardrailWorkspace cmsGuardrailApi={cmsGuardrails()} api={guardrailApi()} />)
 
   await screen.findByRole('checkbox', { name: /CMS 화면/ })
   // A folder row is [checkbox][label][short path]. The label is the first span; the short
@@ -120,7 +156,7 @@ test('every scanned folder has a label that is a name, not a path', async () => 
 })
 
 test('a scan ticks the folders already allowed', async () => {
-  render(<GuardrailWorkspace api={guardrailApi({
+  render(<GuardrailWorkspace cmsGuardrailApi={cmsGuardrails()} api={guardrailApi({
     guardrailSelections: vi.fn().mockImplementation(
       (repository: GuardrailRepository) => Promise.resolve({
         repository,
@@ -139,7 +175,7 @@ test('a scan ticks the folders already allowed', async () => {
  */
 test('saving sends every listed folder of both repositories, with its label', async () => {
   const api = guardrailApi()
-  render(<GuardrailWorkspace api={api} />)
+  render(<GuardrailWorkspace cmsGuardrailApi={cmsGuardrails()} api={api} />)
 
   fireEvent.click(await screen.findByRole('checkbox', { name: /CMS 기능/ }))
   fireEvent.click(screen.getByRole('button', { name: '저장' }))
@@ -157,7 +193,7 @@ test('saving sends every listed folder of both repositories, with its label', as
 
 test('ticking a folder alone never reaches the server', async () => {
   const api = guardrailApi()
-  render(<GuardrailWorkspace api={api} />)
+  render(<GuardrailWorkspace cmsGuardrailApi={cmsGuardrails()} api={api} />)
 
   fireEvent.click(await screen.findByRole('checkbox', { name: /CMS 기능/ }))
 
@@ -168,7 +204,7 @@ test('ticking a folder alone never reaches the server', async () => {
 /* The ⚠ tier of 7-화면.md: a folder every screen depends on opens only past a spelled-out
  * yes, never on a stray click. */
 test('a shared folder asks for confirmation before it is allowed', async () => {
-  render(<GuardrailWorkspace api={guardrailApi()} />)
+  render(<GuardrailWorkspace cmsGuardrailApi={cmsGuardrails()} api={guardrailApi()} />)
 
   fireEvent.click(await screen.findByRole('checkbox', { name: /외부 연동/ }))
 
@@ -185,7 +221,7 @@ test('a shared folder asks for confirmation before it is allowed', async () => {
  * take requests now, so the warning names whichever side is empty rather than only backend.
  */
 test('a side with no folder warns that its requests are refused at intake', async () => {
-  render(<GuardrailWorkspace api={guardrailApi()} />)
+  render(<GuardrailWorkspace cmsGuardrailApi={cmsGuardrails()} api={guardrailApi()} />)
 
   fireEvent.click(await screen.findByRole('checkbox', { name: /CMS 화면/ }))
 
@@ -196,7 +232,7 @@ test('a side with no folder warns that its requests are refused at intake', asyn
 /* 6-울타리.md 6-6: the rules that name no path travel through their own endpoint. */
 test('changing a rule saves it alongside the folders', async () => {
   const api = guardrailApi()
-  render(<GuardrailWorkspace api={api} />)
+  render(<GuardrailWorkspace cmsGuardrailApi={cmsGuardrails()} api={api} />)
 
   fireEvent.click(await screen.findByRole('checkbox', { name: /새 라이브러리 추가 허용/ }))
   fireEvent.click(screen.getByRole('button', { name: '저장' }))
@@ -211,7 +247,7 @@ test('changing a rule saves it alongside the folders', async () => {
  * screen reading "불러오는 중입니다…" forever while the scan had in fact finished in a second.
  */
 test('the screen still loads after the development remount', async () => {
-  render(<StrictMode><GuardrailWorkspace api={guardrailApi()} /></StrictMode>)
+  render(<StrictMode><GuardrailWorkspace cmsGuardrailApi={cmsGuardrails()} api={guardrailApi()} /></StrictMode>)
 
   expect(await screen.findByRole('checkbox', { name: /상태 점검/ })).toBeInTheDocument()
   expect(screen.queryByText('불러오는 중입니다…')).not.toBeInTheDocument()
@@ -224,7 +260,7 @@ test('the screen still loads after the development remount', async () => {
 test('a scan that never leaves the queue names the runner instead of waiting forever', async () => {
   vi.useFakeTimers()
   try {
-    render(<GuardrailWorkspace api={guardrailApi({
+    render(<GuardrailWorkspace cmsGuardrailApi={cmsGuardrails()} api={guardrailApi({
       guardrailScan: vi.fn().mockImplementation(
         (_scanId: string, repository: GuardrailRepository) => Promise.resolve({
           scanId: SCAN_ID, repository, status: 'PENDING', folders: [],
@@ -241,7 +277,7 @@ test('a scan that never leaves the queue names the runner instead of waiting for
 })
 
 test('a failed scan reports the failure rather than an empty folder list', async () => {
-  render(<GuardrailWorkspace api={guardrailApi({
+  render(<GuardrailWorkspace cmsGuardrailApi={cmsGuardrails()} api={guardrailApi({
     guardrailScan: vi.fn().mockImplementation(
       (_scanId: string, repository: GuardrailRepository) => Promise.resolve({
         scanId: SCAN_ID, repository, status: 'FAILED', folders: [], errorCode: 'RUNNER_TASK_FAILED',

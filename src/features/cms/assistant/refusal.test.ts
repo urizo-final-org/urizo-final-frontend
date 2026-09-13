@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { refusalGuide } from './refusal'
+import { GUARDRAIL_REFUSAL, refusalGuide, refusalMessage } from './refusal'
 
 describe('refusalGuide', () => {
   test('메뉴 화면의 게시글 요청은 게시판 관리로 안내한다', () => {
@@ -19,6 +19,72 @@ describe('refusalGuide', () => {
 
   test('짚이는 화면이 없으면 지금 화면으로 되돌린다', () => {
     expect(refusalGuide('그냥 알아서 해줘', '컨텐츠 관리'))
+      .toBe('컨텐츠 관리 화면에서 할 수 있는 요청으로 바꿔 주세요.')
+  })
+})
+
+describe('refusalMessage', () => {
+  /**
+   * 가드레일이 막은 것은 모델 문장을 쓰지 않는다. 「이 화면은 …할 수 없습니다」로 오면
+   * 기능 한계처럼 들려, 관리자가 스스로 켤 수 있는 설정이라는 것이 드러나지 않는다.
+   */
+  test('가드레일이 막았으면 설정 때문이라고 말한다', () => {
+    expect(refusalMessage(
+      GUARDRAIL_REFUSAL,
+      '이 화면은 삭제를 할 수 없습니다.',
+      '이 메뉴 지워줘',
+      '메뉴 관리'))
+      .toBe('방금 요청은 가드레일 설정에 의해 금지됩니다. 다른 요청을 해 주세요.')
+  })
+
+  /**
+   * 무엇이 막혔는지까지 말한다.
+   *
+   * 「금지됩니다」만 보면 관리자가 같은 요청을 표현만 바꿔 되풀이한다. 실제로 수정을 끈
+   * 화면에서 그랬다. 서버는 동작 키만 싣고 한글은 설정 화면과 같은 라벨을 여기서 쓴다.
+   */
+  test('막힌 동작을 설정 화면과 같은 말로 부른다', () => {
+    expect(refusalMessage(
+      GUARDRAIL_REFUSAL, null, '이 메뉴 이름 바꿔줘', '메뉴 관리', ['UPDATE']))
+      .toBe('방금 요청은 가드레일 설정에 의해 수정이 금지됩니다. 다른 요청을 해 주세요.')
+  })
+
+  /** 받침에 따라 「이」와 「가」가 갈린다. 「이(가)」로 적으면 서식 안내문처럼 읽힌다. */
+  test('삭제는 「가」를 붙인다', () => {
+    expect(refusalMessage(
+      GUARDRAIL_REFUSAL, null, '이 메뉴 지워줘', '메뉴 관리', ['DELETE']))
+      .toBe('방금 요청은 가드레일 설정에 의해 삭제가 금지됩니다. 다른 요청을 해 주세요.')
+  })
+
+  /** 설정 화면과 같은 등록 · 수정 · 삭제 순으로 세운다. 서버가 보낸 순서를 믿지 않는다. */
+  test('여러 동작은 설정 화면과 같은 순서로 늘어놓는다', () => {
+    expect(refusalMessage(
+      GUARDRAIL_REFUSAL, null, '아무거나 해줘', '메뉴 관리',
+      ['DELETE', 'UPDATE', 'CREATE']))
+      .toBe('방금 요청은 가드레일 설정에 의해 등록, 수정, 삭제가 금지됩니다.'
+        + ' 다른 요청을 해 주세요.')
+  })
+
+  test('범위 밖 요청은 모델이 쓴 사유를 그대로 쓴다', () => {
+    expect(refusalMessage(
+      null,
+      '이 화면은 게시판 생성만 가능하며, 글 작성은 할 수 없습니다.',
+      '자유게시판에 글 써줘',
+      '게시판 관리'))
+      .toBe('이 화면은 게시판 생성만 가능하며, 글 작성은 할 수 없습니다.')
+  })
+
+  /**
+   * 사유가 없는 Job도 있다. 이 화면이 오래 쓰던 추측이 그때의 되돌아갈 자리다.
+   * 그 추측은 가드레일이 닫은 동작에서 반드시 틀리므로 위 두 갈래가 먼저 잡는다.
+   */
+  test('사유가 없으면 예전 추측으로 되돌아간다', () => {
+    expect(refusalMessage(null, null, '자유게시판에 글 등록해줘', '메뉴 관리'))
+      .toBe('이 요청은 게시판 관리 화면에서 할 수 있어요.')
+  })
+
+  test('빈 문자열은 사유가 아니다', () => {
+    expect(refusalMessage(null, '   ', '그냥 알아서 해줘', '컨텐츠 관리'))
       .toBe('컨텐츠 관리 화면에서 할 수 있는 요청으로 바꿔 주세요.')
   })
 })

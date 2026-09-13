@@ -30,6 +30,23 @@ export type NaturalCmsJob = {
   preview?: unknown
 }
 
+/**
+ * 파이프라인이 막은 이유. Job 응답과 따로 받는다.
+ *
+ * Orchestrator 가 Job 응답을 허용 목록으로 검사해, 거기에 필드를 더하면 Job 전체가
+ * `WORKER_RESPONSE_INVALID` 로 거부돼 파이프라인이 통째로 멎는다. 그래서 화면에만 필요한
+ * 값은 이 경로로 받는다.
+ *
+ * 코드는 「관리자가 껐다」와 「지금 코드로도 안 된다」를 가르고, 사유는 모델이 쓴 한글
+ * 문장이다. 둘 다 없으면 화면은 요청 문장을 보고 추측하던 예전 안내로 되돌아간다.
+ */
+export interface NaturalCmsRefusal {
+  code: string | null
+  reason: string | null
+  /** 막힌 동작 키(`CREATE`·`UPDATE`·`DELETE`). 한글 라벨은 화면이 붙인다. */
+  operations: string[]
+}
+
 type ProfileVersionSummary = { profileVersionId: string; profileKey: string; status: string }
 
 async function responseBody<T>(response: Response): Promise<T> {
@@ -94,6 +111,11 @@ export class NaturalCmsApi {
   /** 진행 상태와 미리보기를 다시 읽는다. Job은 요청 직후 비어 있고 파이프라인이 채운다. */
   job = (jobId: string) =>
     this.request<NaturalCmsJob>(`/api/natural-cms/jobs/${encodeURIComponent(jobId)}`)
+
+  /** 막힌 이유. Job 응답에 실을 수 없어 따로 받는다. 막히지 않았으면 둘 다 비어 온다. */
+  refusal = (jobId: string) =>
+    this.request<NaturalCmsRefusal>(
+      `/api/natural-cms/jobs/${encodeURIComponent(jobId)}/refusal`)
 
   decide = (jobId: string, value: {
     previewId: string

@@ -10,8 +10,8 @@ import { Badge, control, panel, primaryButton, secondaryButton, textarea } from 
 import AssistantPreviewModal from './AssistantPreviewModal'
 import MenuRemovalNotice from './MenuRemovalNotice'
 import MenuTreePreview from './MenuTreePreview'
-import { refusalGuide } from './refusal'
-import type { NaturalCmsApi, NaturalCmsJob } from './api'
+import { refusalMessage } from './refusal'
+import type { NaturalCmsApi, NaturalCmsJob, NaturalCmsRefusal } from './api'
 import { hasChange, lineDiff } from './diff'
 import { menuPreviewTree, menuRemoval, type AssistantMenu, type MenuCommand } from './menuTree'
 import { templateProposal, TemplateProposalPreview, type TemplateAssistantContext } from './TemplateProposal'
@@ -123,7 +123,7 @@ type Phase =
   | { kind: 'waiting'; job: NaturalCmsJob }
   | { kind: 'deciding'; job: NaturalCmsJob }
   | { kind: 'done'; job: NaturalCmsJob }
-  | { kind: 'rejected'; job: NaturalCmsJob }
+  | { kind: 'rejected'; job: NaturalCmsJob; refusal: NaturalCmsRefusal | null }
   | { kind: 'failed'; message: string }
 
 /** 지금 자연어 변경이 가능한 리소스. 나머지 화면은 안내만 한다. */
@@ -279,6 +279,26 @@ export default function CmsAiAssistant({ route, target, templateContext, candida
   }
 
   /**
+   * 막힌 이유를 함께 들고 반려 상태로 넘어간다.
+   *
+   * 사유는 Job 응답에 실을 수 없어 따로 받는다 — Orchestrator 가 Job 응답을 허용 목록으로
+   * 검사해 필드를 더하면 파이프라인이 통째로 멎는다.
+   *
+   * 사람이 반려한 것은 부르지 않는다. 그때 사유는 이미 `approvalFeedback` 이고 화면도
+   * 「반영하지 않았습니다」로 다르게 안내한다. 읽지 못해도 반려 자체는 보여 줘야 하므로
+   * 실패는 삼킨다 — 그때는 요청 문장으로 안내하던 예전 경로로 되돌아간다.
+   */
+  async function rejectedPhase(job: NaturalCmsJob): Promise<Phase> {
+    if (job.approvalDecision === 'REJECTED') return { kind: 'rejected', job, refusal: null }
+    try {
+      return { kind: 'rejected', job, refusal: await api.refusal(job.jobId) }
+    }
+    catch {
+      return { kind: 'rejected', job, refusal: null }
+    }
+  }
+
+  /**
    * 미리보기가 생길 때까지 Job을 다시 읽는다.
    *
    * 생성 응답에는 미리보기가 없다. 파이프라인이 분석과 미리보기를 만든 뒤에야 채워지므로
@@ -299,7 +319,7 @@ export default function CmsAiAssistant({ route, target, templateContext, candida
         return
       }
       if (job.status === 'REJECTED') {
-        setPhase({ kind: 'rejected', job })
+        setPhase(await rejectedPhase(job))
         return
       }
     }
@@ -329,7 +349,7 @@ export default function CmsAiAssistant({ route, target, templateContext, candida
         return
       }
       if (job.status === 'REJECTED') {
-        setPhase({ kind: 'rejected', job })
+        setPhase(await rejectedPhase(job))
         return
       }
     }
@@ -422,7 +442,7 @@ export default function CmsAiAssistant({ route, target, templateContext, candida
       })
       setFeedback('')
       if (decision === 'REJECTED') {
-        setPhase({ kind: 'rejected', job: decided })
+        setPhase(await rejectedPhase(decided))
         return
       }
       // 승인은 Queue에 넣은 것까지다. 반영이 끝난 뒤에 목록을 다시 읽어야 바뀐 값이 온다.
@@ -763,7 +783,10 @@ export default function CmsAiAssistant({ route, target, templateContext, candida
           <Badge tone="wait">{phase.job.approvalDecision === 'REJECTED' ? '반려됨' : '지원하지 않는 요청'}</Badge>
           <p className="mt-[0.625rem] text-[0.71875rem] leading-[1.55] text-muted">{phase.job.approvalDecision === 'REJECTED'
             ? '반영하지 않았습니다. 요청을 고쳐 다시 시도해 주세요.'
-            : refusalGuide(phase.job.requestText, profile.section)}</p>
+            : refusalMessage(
+              phase.refusal?.code ?? null, phase.refusal?.reason ?? null,
+              phase.job.requestText, profile.section,
+              phase.refusal?.operations ?? [])}</p>
           <button type="button" className={`${secondaryButton} mt-[0.625rem] w-full justify-center`} onClick={reset}>새 요청</button>
         </>}
 
