@@ -334,8 +334,9 @@ test('a golden evaluation keeps its set version and frozen exclusions in the too
   expect(cell.title).toMatch(/제외된 문항 1건/)
 })
 
-// 청크 수만으로는 "왜 달라졌는가"를 답할 수 없다. 버전 비교의 근거는 숫자가 아니라 규칙이다.
-test('a version shows which chunking rule built it', async () => {
+// 청킹 규칙은 구현 정보다(AI02-024). 청크 수 칸을 지운 뒤로 "왜 청크 수가 다른가"라는
+// 질문 자체가 화면에서 사라져, 그 답만 남아 있을 이유가 없다.
+test('the chunking rule never reaches the screen', async () => {
   show(<RagAdminPanel api={api({
     listVersions: vi.fn().mockResolvedValue({
       items: [
@@ -344,31 +345,19 @@ test('a version shows which chunking rule built it', async () => {
           status: 'APPROVAL_PENDING',
           chunkingStrategy: { maxCharacters: 900, overlapCharacters: 120, reason: '공고 본문이 짧아 문단 단위로 충분합니다.' },
         }),
-        version(),
+        version({
+          versionNumber: 5, knowledgeVersionId: 'kv-5', activatedAt: undefined, status: 'APPROVAL_PENDING',
+          chunkingStrategy: { maxCharacters: 0, overlapCharacters: 0, reason: '문서 전체를 한 청크로 둔다(LLM 전략 없음).' },
+        }),
       ],
     }),
   })} role="SUPER_ADMIN" />)
+  await screen.findByText('RAG 버전')
 
-  expect(await screen.findByText('LLM 900자 · 겹침 120')).toBeInTheDocument()
-  expect(screen.getByTitle(/공고 본문이 짧아 문단 단위로 충분합니다/)).toBeInTheDocument()
-  // 규칙이 없는 버전은 "오래된 버전"이 아니라 문서당 1청크로 만든 버전이다.
-  expect(screen.getByText('문서당 1청크')).toBeInTheDocument()
-})
-
-// 폴백 전략(max=0)이 저장된 버전이 "LLM 0자"로 보이면 잘라 놓고 0자라는 말이 된다.
-test('a stored whole-document fallback strategy reads as one chunk per document', async () => {
-  show(<RagAdminPanel api={api({
-    listVersions: vi.fn().mockResolvedValue({
-      items: [version({
-        versionNumber: 5, knowledgeVersionId: 'kv-5', activatedAt: undefined,
-        status: 'APPROVAL_PENDING',
-        chunkingStrategy: { maxCharacters: 0, overlapCharacters: 0, reason: '문서 전체를 한 청크로 둔다(LLM 전략 없음).' },
-      })],
-    }),
-  })} role="SUPER_ADMIN" />)
-
-  expect(await screen.findByText('문서당 1청크')).toBeInTheDocument()
-  expect(screen.queryByText(/LLM 0자/)).not.toBeInTheDocument()
+  // 서버는 여전히 규칙을 내려준다 — 화면이 그리지 않을 뿐이다.
+  expect(screen.queryByText(/LLM 900자/)).not.toBeInTheDocument()
+  expect(screen.queryByText('문서당 1청크')).not.toBeInTheDocument()
+  expect(screen.queryByText(/청크/)).not.toBeInTheDocument()
 })
 
 test('the confirmation shows the document count before a switch — an empty version activates silently otherwise', async () => {
