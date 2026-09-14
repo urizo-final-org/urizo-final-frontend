@@ -8,17 +8,29 @@ import { contentImageUrl, type ContentImage } from '../api'
 import { Icon } from '../../../shared/ui/icons'
 import { control, panel, primaryButton, secondaryButton, textarea } from '../../../shared/ui/primitives'
 import AssistantPreviewModal from './AssistantPreviewModal'
+import AssistantRecords from './AssistantRecords'
 import CmsRequestStatus from './CmsRequestStatus'
 import MenuRemovalNotice from './MenuRemovalNotice'
 import MenuTreePreview from './MenuTreePreview'
 import { refusalMessage } from './refusal'
-import type { NaturalCmsApi, NaturalCmsJob, NaturalCmsRefusal } from './api'
+import type { NaturalCmsApi, NaturalCmsJob, NaturalCmsRecord, NaturalCmsRefusal } from './api'
 import { hasChange, lineDiff } from './diff'
 import { menuPreviewTree, menuRemoval, type AssistantMenu, type MenuCommand } from './menuTree'
 import { templateProposal, TemplateProposalPreview, type TemplateAssistantContext } from './TemplateProposal'
 
 /** 되묻기에 한 번에 보여줄 후보 최대 갯수. 더 많으면 목록에서 직접 고르게 한다. */
 const MAX_CANDIDATES = 5
+
+/** 패널에 남길 지난 요청 수. 넘치면 오래된 것부터 밀려나고 거버넌스 실행 이력에서 본다. */
+const MAX_RECORDS = 5
+
+/**
+ * 이만큼 움직이지 않은 `ACTIVE` Job은 멎은 것으로 본다.
+ *
+ * 정상 요청은 20~40초에 끝난다. 더 짧게 잡으면 멀쩡히 도는 요청에 「닫기」가 붙고,
+ * 그것을 누르면 되돌릴 수 없다.
+ */
+const STALLED_AFTER_MS = 5 * 60 * 1_000
 
 /** 미리보기는 파이프라인이 채운다. 첫 조회는 곧바로 하고 그 뒤에만 기다린다. */
 const POLL_INTERVAL_MS = 1_500
@@ -66,53 +78,48 @@ export type CmsAssistantTarget = {
   codeLabels?: Record<string, string>
 }
 
+/**
+ * 화면별 안내.
+ *
+ * 홍보 문구(`description`)와 「…는 바꾸지 않아요」(`excluded`)를 뺐다. 앞의 것은 무엇을
+ * 쓸지 알려주지 않고, 뒤의 것은 `capabilities`와 같은 말을 반대로 한다. 범위 밖 요청은
+ * 가드레일이 사유와 함께 거절하므로 미리 두 번 말할 필요가 없다.
+ *
+ * 추천 문구도 뺐다. 화면마다 고정돼 있어 대상이 정해진 뒤에는 대개 맞지 않았다. 남은
+ * `capabilities`가 무엇을 시킬 수 있는지 알려주는 유일한 자리다.
+ */
 type AssistantProfile = {
   section: string
   title: string
-  description: string
   /** 대상을 고르지 않았을 때의 안내. 화면마다 할 수 있는 것이 다르다. */
   empty: string
   capabilities: string[]
-  excluded: string
-  suggestions: string[]
 }
 
 const profiles: Record<AssistedRoute, AssistantProfile> = {
   menus: {
     section: '메뉴 관리',
     title: '메뉴 AI',
-    description: '메뉴 구조와 연결 상태를 자연어로 정리해 보세요.',
     empty: '목록에서 고르거나, 바로 요청해 새 메뉴를 만들 수 있어요.',
     capabilities: ['메뉴 등록·수정·삭제', '상·하위 구조', '노출 순서', '콘텐츠·게시판 연결'],
-    excluded: '컨텐츠 본문, 게시글, 템플릿은 변경하지 않아요.',
-    suggestions: ['고객지원 아래에 자료실 메뉴를 만들어 줘', '비전을 맨 위로 올려 줘', '소개 메뉴에 회사 소개 컨텐츠를 연결해 줘'],
   },
   contents: {
     section: '컨텐츠 관리',
     title: '컨텐츠 AI',
-    description: '정적 페이지의 제목과 본문 초안을 빠르게 다듬어 보세요.',
     empty: '목록에서 고르거나, 바로 요청해 새 컨텐츠를 만들 수 있어요.',
     capabilities: ['컨텐츠 등록·수정·삭제', '제목·본문 편집', '문단·목록 서식', '삭제 전 확인'],
-    excluded: '메뉴 구조, 게시판·게시글, 템플릿은 변경하지 않아요.',
-    suggestions: ['선택한 컨텐츠를 세 문단으로 정리해 줘', '제목을 더 명확하게 다듬어 줘', '새 안내 페이지 초안을 만들어 줘'],
   },
   boards: {
     section: '게시판 관리',
     title: '게시판 AI',
-    description: '게시판과 게시글 작성 작업을 현재 화면 안에서 도와드려요.',
     empty: '목록에서 고르거나, 바로 요청해 새 게시판·게시글을 만들 수 있어요.',
     capabilities: ['게시판 등록·수정·삭제', '게시글 작성·편집·삭제', '제목·본문 정리', '삭제 전 확인'],
-    excluded: '메뉴 연결, 정적 컨텐츠, 템플릿은 변경하지 않아요.',
-    suggestions: ['공지사항 게시판 설명을 작성해 줘', '선택한 게시글 제목을 다듬어 줘', '게시글 본문을 읽기 쉽게 정리해 줘'],
   },
   templates: {
     section: '템플릿 관리',
     title: '템플릿 AI',
-    description: '사용자 사이트의 공통 디자인 설정을 자연어로 조정해 보세요.',
     empty: '목록에서 항목을 선택하면 그 대상에 적용합니다.',
     capabilities: ['레이아웃 선택', '브랜드 색상', 'Header·Footer', '메인 이미지·문구·버튼'],
-    excluded: '메뉴, 컨텐츠 본문, 게시판·게시글은 변경하지 않아요.',
-    suggestions: ['대표 색상을 차분한 보라색으로 바꿔 줘', '메인 문구를 더 간결하게 다듬어 줘', 'Footer 문구를 전문적으로 정리해 줘'],
   },
 }
 
@@ -132,6 +139,17 @@ const SUPPORTED: ReadonlySet<CmsAssistantTarget['type']> = new Set(['CONTENT', '
 
 /** 자연어 변경을 받는 화면. 리소스별 작업이 끝난 화면부터 연다. */
 const SUPPORTED_ROUTES: ReadonlySet<AssistedRoute> = new Set<AssistedRoute>(['contents', 'menus', 'boards', 'templates'])
+
+/** 화면이 다루는 리소스. 기록을 이 화면 것만으로 거르는 데 쓴다. */
+const ROUTE_RESOURCE: Record<AssistedRoute, CmsAssistantTarget['type']> = {
+  menus: 'MENU',
+  contents: 'CONTENT',
+  boards: 'BOARD',
+  templates: 'TEMPLATE',
+}
+
+/** 멎음 판정과 「N분 전」이 시간이 지나면 바뀌므로 화면도 따라 움직인다. */
+const CLOCK_INTERVAL_MS = 30 * 1_000
 
 /** 등록은 만들기 전이라 가리킬 id가 없다. 대상 자리에 고정 표식을 보낸다. */
 export const NEW_MENU_TARGET: CmsAssistantTarget = {
@@ -233,6 +251,15 @@ export default function CmsAiAssistant({ route, target, templateContext, candida
   const [attachFailure, setAttachFailure] = useState<string | null>(null)
   /** 끌어다 놓는 동안의 표시. 자식 위를 지날 때마다 leave가 나므로 깊이로 센다. */
   const [dragDepth, setDragDepth] = useState(0)
+  /**
+   * 이 화면에서 내가 보낸 지난 요청.
+   *
+   * 거버넌스 실행 이력에서 읽는다. 조회가 막히면 빈 배열로 두어 기록 칸만 사라지고
+   * 나머지 기능은 그대로 돈다 — `spring-core`에는 이력이 함께 읽는 코딩 DB가 없다.
+   */
+  const [records, setRecords] = useState<NaturalCmsRecord[]>([])
+  const [closing, setClosing] = useState<string | null>(null)
+  const [now, setNow] = useState(() => Date.now())
   const attachInput = useRef<HTMLInputElement>(null)
   /** 지금 유효한 대기 세대. 새 요청이나 초기화가 이전 대기를 무효로 만든다. */
   const poll = useRef(0)
@@ -246,12 +273,31 @@ export default function CmsAiAssistant({ route, target, templateContext, candida
     setAttaching(false); setAttached([]); setAttachFailure(null)
   }, [route, target?.id])
   useEffect(() => () => { poll.current += 1 }, [])
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), CLOCK_INTERVAL_MS)
+    return () => { window.clearInterval(timer) }
+  }, [])
+  useEffect(() => {
+    let live = true
+    void api.records(ROUTE_RESOURCE[route], MAX_RECORDS)
+      .then((loaded) => { if (live) { setRecords(loaded); setNow(Date.now()) } })
+      .catch(() => { if (live) setRecords([]) })
+    return () => { live = false }
+    // 결정이 끝날 때마다 다시 읽는다. 방금 보낸 요청이 그 자리에 들어가야 한다.
+  }, [api, route, phase.kind])
   const routeSupported = SUPPORTED_ROUTES.has(route)
   const supported = target !== null && SUPPORTED.has(target.type)
   const canAttach = onUploadImage !== undefined && routeSupported
   const dropping = dragDepth > 0
   const attachmentLimit = route === 'templates' ? 5 : MAX_ATTACHMENTS
-  const templateBusy = route === 'templates' && ['analyzing', 'waiting', 'deciding'].includes(phase.kind)
+  /**
+   * 결정을 기다리는 동안은 문장을 고칠 수 없다.
+   *
+   * 미리보기가 그 문장으로 만들어졌다. 여기서 고치게 두면 화면의 문장과 승인되는 내용이
+   * 달라져, 고친 대로 적용된 줄 알고 승인하는 사고가 난다. 고치려면 반려가 그 길이다.
+   */
+  const locked = ['analyzing', 'waiting', 'deciding'].includes(phase.kind)
+  const templateBusy = route === 'templates' && locked
   const templateBlocked = route === 'templates' ? templateContext?.blockedReason ?? (!target ? '템플릿을 선택해 주세요.' : null) : null
   function approvalBlocked(job: NaturalCmsJob) {
     if (job.resource.type !== 'TEMPLATE') return null
@@ -300,6 +346,18 @@ export default function CmsAiAssistant({ route, target, templateContext, candida
   }
 
   /**
+   * 끝난 요청을 닫는다.
+   *
+   * 승인은 끝난 일이라 문장과 첨부를 비운다. 반려는 「아니 이렇게」라서 문장을 남겨 두고
+   * 바로 고쳐 보낼 수 있게 한다 — 긴 요청을 다시 타이핑하게 만들지 않는다.
+   */
+  function finish(job: NaturalCmsJob) {
+    setDraft('')
+    setAttached([])
+    setPhase({ kind: 'done', job })
+  }
+
+  /**
    * 미리보기가 생길 때까지 Job을 다시 읽는다.
    *
    * 생성 응답에는 미리보기가 없다. 파이프라인이 분석과 미리보기를 만든 뒤에야 채워지므로
@@ -316,7 +374,7 @@ export default function CmsAiAssistant({ route, target, templateContext, candida
         return
       }
       if (job.status === 'COMPLETED') {
-        setPhase({ kind: 'done', job })
+        finish(job)
         return
       }
       if (job.status === 'REJECTED') {
@@ -346,7 +404,7 @@ export default function CmsAiAssistant({ route, target, templateContext, candida
       if (job.status === 'COMPLETED') {
         notifyCmsChanged()
         notifySiteUpdated()
-        setPhase({ kind: 'done', job })
+        finish(job)
         return
       }
       if (job.status === 'REJECTED') {
@@ -398,8 +456,8 @@ export default function CmsAiAssistant({ route, target, templateContext, candida
         requestText: withAttachments(requestText),
         resource: { type: chosen.type, id: chosen.id },
       })
-      setDraft('')
-      setAttached([])
+      // 문장을 지우지 않는다. 미리보기가 이 문장으로 만들어지므로, 결정할 때까지
+      // 무엇을 시켰는지 화면이 들고 있어야 한다. 승인하면 그때 비운다.
       setAttachFailure(null)
       await awaitPreview(job.jobId, generation)
     }
@@ -412,7 +470,7 @@ export default function CmsAiAssistant({ route, target, templateContext, candida
   async function submit(event: FormEvent) {
     event.preventDefault()
     const requestText = draft.trim()
-    if (!requestText || !routeSupported || attachmentBusy.current || templateBusy || templateBlocked) return
+    if (!requestText || !routeSupported || attachmentBusy.current || locked || templateBlocked) return
     if (!supported) {
       setPhase({ kind: 'asking', requestText, candidates: narrow(requestText) })
       return
@@ -462,6 +520,51 @@ export default function CmsAiAssistant({ route, target, templateContext, candida
     setFeedback('')
     setDetail(false)
     setPhase({ kind: 'input' })
+  }
+
+  /**
+   * 기록의 대기 행에서 그 요청으로 돌아간다.
+   *
+   * 미리보기가 아직 유효하면 승인 대기 화면을 그대로 다시 연다. 그 사이에 끝났거나 닫혔으면
+   * 지금 상태를 보여준다. 문장은 실제로 보낸 것을 그대로 띄운다.
+   */
+  async function resume(jobId: string) {
+    const generation = poll.current + 1
+    poll.current = generation
+    setFeedback('')
+    setDetail(false)
+    try {
+      const job = await api.job(jobId)
+      if (poll.current !== generation) return
+      setDraft(job.requestText)
+      if (job.status === 'WAITING_APPROVAL' && job.previewId && job.previewHash) {
+        setPhase({ kind: 'waiting', job })
+        return
+      }
+      if (job.status === 'REJECTED') { setPhase(await rejectedPhase(job)); return }
+      if (job.status === 'COMPLETED') { setPhase({ kind: 'done', job }); return }
+      setPhase({ kind: 'analyzing' })
+      await awaitPreview(jobId, generation)
+    }
+    catch (failure) {
+      if (poll.current !== generation) return
+      setPhase({ kind: 'failed', message: describeFailure(failure) })
+    }
+  }
+
+  /** 멎은 요청을 사유와 함께 닫는다. 미리보기가 없어 승인할 것이 없는 상태다. */
+  async function close(jobId: string) {
+    if (closing) return
+    setClosing(jobId)
+    try {
+      await api.cancel(jobId, '미리보기를 만들지 못하고 멎어 화면에서 닫았습니다.')
+      setRecords(await api.records(ROUTE_RESOURCE[route], MAX_RECORDS))
+      setNow(Date.now())
+    }
+    catch (failure) {
+      setPhase({ kind: 'failed', message: describeFailure(failure) })
+    }
+    finally { setClosing(null) }
   }
 
   function commandFields(job: NaturalCmsJob) {
@@ -615,7 +718,8 @@ export default function CmsAiAssistant({ route, target, templateContext, candida
       <span className="grid h-[1.625rem] w-[1.625rem] shrink-0 place-items-center rounded-md bg-teal-bg text-teal-fg" aria-hidden="true"><Icon name="bot" size={15} /></span>
       <span className="min-w-0 flex-1">
         <h2 className="m-0 text-[0.8125rem] font-semibold">{profile.title}</h2>
-        <small className="block text-[0.65625rem] text-muted-2">현재 화면 범위 전용 AI 패널</small>
+        {/* 경계를 머리글 한 줄로 올렸다. 본문의 안내 상자와 홍보 문구는 뺐다. */}
+        <small className="block truncate text-[0.65625rem] text-muted-2">현재 화면 전용 · {profile.section}</small>
       </span>
       <span className="rounded bg-teal-bg px-[0.4375rem] py-[0.125rem] text-[0.65625rem] font-semibold text-teal-ink">AI</span>
       <button
@@ -628,14 +732,7 @@ export default function CmsAiAssistant({ route, target, templateContext, candida
     </div>
 
     <div className="cms-ai-scrollbar min-h-0 flex-1 overflow-y-auto px-4 pb-4 pt-[0.875rem]">
-      <div className="rounded-[0.3125rem] border border-line-soft bg-sub px-[0.6875rem] py-[0.625rem] text-[0.71875rem] leading-[1.6] text-muted">
-        <b className="font-semibold text-ink">현재 화면 전용</b> · 이 패널은 <b className="font-semibold text-ink">{profile.section}</b> 범위의 CMS 변경만 제안합니다.
-        <span className="mt-[0.3125rem] block text-muted-2">{profile.excluded}</span>
-      </div>
-
-      <p className="mt-[0.875rem] text-[0.71875rem] leading-[1.6] text-muted">{profile.description}</p>
-
-      <div className="mt-[0.875rem] rounded-[0.3125rem] border border-line-soft px-[0.6875rem] py-[0.625rem]" aria-live="polite">
+      <div className="rounded-[0.3125rem] border border-line-soft px-[0.6875rem] py-[0.625rem]" aria-live="polite">
         <small className="block text-[0.65625rem] text-muted-3">변경 대상</small>
         {target
           ? <b className="mt-[0.1875rem] block truncate text-[0.71875rem] font-semibold text-ink" title={target.label}>{target.label}</b>
@@ -653,7 +750,7 @@ export default function CmsAiAssistant({ route, target, templateContext, candida
         onDragOver={(event) => { if (canAttach) event.preventDefault() }}
         onDragLeave={() => { if (canAttach) setDragDepth((depth) => Math.max(0, depth - 1)) }}
         onDrop={(event) => {
-          if (!canAttach) return
+          if (!canAttach || locked) return
           // 막지 않으면 브라우저가 파일을 새 탭에서 열어 화면이 통째로 바뀐다.
           event.preventDefault()
           setDragDepth(0)
@@ -662,11 +759,13 @@ export default function CmsAiAssistant({ route, target, templateContext, candida
       >
         <textarea
           id={inputId}
-          className={`${textarea} min-h-56 leading-relaxed`}
+          className={`${textarea} min-h-56 leading-relaxed ${locked ? 'cursor-default border-dashed bg-sub text-muted-2' : ''}`}
           rows={10}
           value={draft}
-          onChange={(event) => setDraft(event.target.value)}
-          onPaste={(event) => { if (canAttach && event.clipboardData.files.length > 0) void attach(event.clipboardData.files) }}
+          readOnly={locked}
+          // 속성만으로는 부족하다. 자동 완성이나 프로그램이 넣는 값은 readOnly를 지나간다.
+          onChange={(event) => { if (!locked) setDraft(event.target.value) }}
+          onPaste={(event) => { if (canAttach && !locked && event.clipboardData.files.length > 0) void attach(event.clipboardData.files) }}
           placeholder="CMS 변경 요청을 입력하세요"
         />
       </div>
@@ -676,7 +775,7 @@ export default function CmsAiAssistant({ route, target, templateContext, candida
           type="button"
           className="grid h-8 w-8 place-items-center rounded-[0.3125rem] bg-white text-base font-semibold text-muted shadow-[inset_0_0_0_1px_#dfe7e6] hover:bg-sub"
           onClick={() => attachInput.current?.click()}
-          disabled={attaching || templateBusy || !!templateBlocked}
+          disabled={attaching || locked || !!templateBlocked}
           aria-label="사진 첨부"
         >+</button>
         {attached.map((image) => <span
@@ -706,15 +805,6 @@ export default function CmsAiAssistant({ route, target, templateContext, candida
         />
       </div>}
       {attachFailure && <p className="mt-[0.375rem] text-[0.65625rem] leading-[1.5] text-fail-fg" role="alert">{attachFailure}</p>}
-
-      <div className="mt-[0.5625rem] grid gap-[0.375rem]">
-        {profile.suggestions.map((suggestion) => <button
-          key={suggestion}
-          type="button"
-          className="cms-suggestion-button w-full rounded-[0.3125rem] px-[0.625rem] py-[0.5625rem] text-left text-[0.71875rem] leading-[1.5]"
-          onClick={() => setDraft(suggestion)}
-        >추천 요청: {suggestion}</button>)}
-      </div>
 
       <div className="mt-4 border-t border-line-soft pt-[0.875rem]" aria-live="polite">
         {phase.kind === 'analyzing' && <CmsRequestStatus busy tone="run">요청을 분석하고 있습니다…</CmsRequestStatus>}
@@ -800,13 +890,22 @@ export default function CmsAiAssistant({ route, target, templateContext, candida
           <button type="button" className={`${secondaryButton} mt-[0.625rem] w-full justify-center`} onClick={reset}>다시 시도</button>
         </>}
       </div>
+
+      <AssistantRecords
+        records={records}
+        now={now}
+        stalledAfterMs={STALLED_AFTER_MS}
+        busy={closing}
+        onResume={(jobId) => void resume(jobId)}
+        onClose={(jobId) => void close(jobId)}
+      />
     </div>
 
     <form className="border-t border-line-soft p-3" onSubmit={(event) => void submit(event)}>
       <button
         className={`${primaryButton} w-full justify-center`}
         type="submit"
-        disabled={!draft.trim() || !routeSupported || attaching || !!templateBlocked || templateBusy || phase.kind === 'analyzing' || phase.kind === 'deciding'}
+        disabled={!draft.trim() || !routeSupported || attaching || !!templateBlocked || locked}
       >요청 분석하기</button>
       {templateBlocked && <p className="mb-0 mt-2 text-xs text-muted-2">{templateBlocked}</p>}
       {!routeSupported && <p className="mb-0 mt-2 text-center text-[0.625rem] leading-4 text-muted-3">

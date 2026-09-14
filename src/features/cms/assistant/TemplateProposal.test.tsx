@@ -62,7 +62,7 @@ describe('saved template proposal', () => {
   })
   it('creates with the active profile and selected key, then prevents approval after selection changes', async () => {
     const pending = job()
-    const api = { activeProfileVersionId: vi.fn().mockResolvedValue('active-snapshot'), createJob: vi.fn().mockResolvedValue(pending), job: vi.fn().mockResolvedValue(pending), decide: vi.fn().mockResolvedValue({ ...pending, status: 'COMPLETED' }) }
+    const api = { activeProfileVersionId: vi.fn().mockResolvedValue('active-snapshot'), createJob: vi.fn().mockResolvedValue(pending), job: vi.fn().mockResolvedValue(pending), decide: vi.fn().mockResolvedValue({ ...pending, status: 'COMPLETED' }), records: vi.fn().mockResolvedValue([]) }
     const target = { type: 'TEMPLATE' as const, id: 'CLASSIC', label: '템플릿 1', fields: {} }
     const props = { route: 'templates' as const, target, candidates: [], menus: [], onTarget: vi.fn(), api: api as unknown as NaturalCmsApi, collapsed: false, onToggle: vi.fn(), templateContext: { target, blockedReason: null, menus: [] } }
     const view = render(<CmsAiAssistant {...props} />)
@@ -87,7 +87,7 @@ describe('saved template proposal', () => {
     const first = new Promise<{ id: number }>((resolve) => { release = resolve })
     const upload = vi.fn().mockReturnValueOnce(first)
     for (let id = 2; id <= 5; id++) upload.mockResolvedValueOnce({ id })
-    const api = { activeProfileVersionId: vi.fn().mockResolvedValue('active-snapshot'), createJob: vi.fn().mockResolvedValue(job()), job: vi.fn().mockResolvedValue(job()) }
+    const api = { activeProfileVersionId: vi.fn().mockResolvedValue('active-snapshot'), createJob: vi.fn().mockResolvedValue(job()), job: vi.fn().mockResolvedValue(job()), records: vi.fn().mockResolvedValue([]) }
     const target = { type: 'TEMPLATE' as const, id: 'CLASSIC', label: '템플릿 1', fields: {} }
     const view = render(<CmsAiAssistant route="templates" target={target} candidates={[]} menus={[]} onTarget={vi.fn()} api={api as unknown as NaturalCmsApi}
       collapsed={false} onToggle={vi.fn()} onUploadImage={upload} templateContext={{ target, blockedReason: null, menus: [] }} />)

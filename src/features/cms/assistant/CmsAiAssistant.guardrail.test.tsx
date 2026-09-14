@@ -28,6 +28,7 @@ it.each([
       code: 'CMS_OPERATION_NOT_ALLOWED', reason: '모델의 임의 문구', operations: [operation],
     }),
     decide: vi.fn(),
+    records: vi.fn().mockResolvedValue([]),
   }
   render(<CmsAiAssistant route={route} target={target} candidates={[]} menus={[]}
     onTarget={vi.fn()} api={client as unknown as NaturalCmsApi}
