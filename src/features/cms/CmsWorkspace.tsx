@@ -188,6 +188,16 @@ function Menus({ api, onSelect, onCandidates, onMenus, monitoringAction }: {
     setOrder(item?.displayOrder ?? 0); setTargetType(item?.targetType ?? 'NONE'); setTargetId(item?.targetId?.toString() ?? '')
     onSelect(item ? menuTarget(item) : null)
   }
+  /**
+   * `새 메뉴`는 등록하겠다는 선언이다. 대상을 새 메뉴로 옮긴다.
+   *
+   * 저장·삭제 뒤 폼을 비우는 `select(null)`과 한 함수로 묶으면 안 된다 — 저장 직후 대상이
+   * 등록으로 남는다. 컨텐츠가 `clear()`와 `startContent()`를 가른 이유와 같다.
+   */
+  function startMenu() {
+    select(null)
+    onSelect(NEW_MENU_TARGET)
+  }
   async function submit(event: FormEvent) {
     event.preventDefault(); setFailure(null)
     const action = editing ? '수정' : '등록'
@@ -199,7 +209,7 @@ function Menus({ api, onSelect, onCandidates, onMenus, monitoringAction }: {
   return <>
     <Heading title="메뉴 관리" description="메뉴 구조를 만들고 특정 컨텐츠 또는 게시판을 연결합니다.">
       {monitoringAction}
-      {editing && <button type="button" className={secondaryButton} onClick={() => select(null)}><Icon name="plus" />새 메뉴</button>}
+      <button type="button" className={primaryButton} onClick={startMenu}><Icon name="plus" />새 메뉴</button>
     </Heading>
     <Failure value={failure} />
     {/* 목록에서 고르고 폼으로 넘어가는 순서. 컨텐츠·게시판 화면과 같은 배치다. */}
@@ -393,6 +403,14 @@ function Boards({ api, onSelect, onCandidates, onMenus, monitoringAction }: {
    * 사람이 `새 게시물`을 눌러 등록하겠다고 말했을 때만 대상을 새 게시글로 옮긴다.
    */
   const [writingPost, setWritingPost] = useState(false)
+  /**
+   * 게시판 폼이 등록 모드인지. 선택 해제(`null`)와 구분해야 대상이 갈린다.
+   *
+   * 게시판을 고르지 않은 상태는 「아직 아무것도 안 골랐다」와 「새로 만들겠다」 둘인데,
+   * 선택만 풀면 둘이 같아져 대상이 비고 `게시판 만들어줘`가 성립하지 않는다.
+   * `writingPost`와 같은 방식이다.
+   */
+  const [creatingBoard, setCreatingBoard] = useState(false)
   const [boardName, setBoardName] = useState('')
   const [description, setDescription] = useState('')
   const [displayType, setDisplayType] = useState<'LIST' | 'CARD'>('LIST')
@@ -421,7 +439,7 @@ function Boards({ api, onSelect, onCandidates, onMenus, monitoringAction }: {
       if (!selectedBoard) return
       // 선택 상태도 새 값으로 바꾼다. 목록만 갱신하면 폼과 패널 제목이 옛 이름을 계속 보여준다.
       const freshBoard = freshBoards.find((board) => board.id === selectedBoard.id)
-      if (!freshBoard) { newBoard(); return }
+      if (!freshBoard) { clearBoard(); return }
       setSelectedBoard(freshBoard)
       setBoardName(freshBoard.name)
       setDescription(freshBoard.description)
@@ -460,10 +478,10 @@ function Boards({ api, onSelect, onCandidates, onMenus, monitoringAction }: {
    * 게시물 선택을 풀면 다시 게시판으로 돌아간다. 상태에서 끌어내므로 어느 경로로 바뀌든 어긋나지 않는다.
    */
   useEffect(() => {
-    if (!selectedBoard) { onSelect(null); return }
+    if (!selectedBoard) { onSelect(creatingBoard ? NEW_BOARD_TARGET : null); return }
     if (selectedPost) { onSelect(postTarget(selectedBoard.id, selectedPost, codes)); return }
     onSelect(writingPost ? newPostTarget(selectedBoard, codes) : boardTarget(selectedBoard))
-  }, [selectedBoard, selectedPost, writingPost, onSelect, codes])
+  }, [selectedBoard, selectedPost, writingPost, creatingBoard, onSelect, codes])
   /** 되묻기 후보는 화면이 이미 가진 목록에서 나온다. 등록은 고정 표식으로 고른다. */
   useEffect(() => {
     onCandidates([
@@ -479,12 +497,18 @@ function Boards({ api, onSelect, onCandidates, onMenus, monitoringAction }: {
     setDisplayType(board?.displayType ?? 'LIST'); setRegionGroupKey(board?.regionGroupKey ?? ''); setCategoryGroupKey(board?.categoryGroupKey ?? '')
   }
   async function chooseBoard(board: Board) {
-    setPostPage(1); setPostsExpanded(true)
+    setPostPage(1); setPostsExpanded(true); setCreatingBoard(false)
     setSelectedBoard(board); setBoardName(board.name); setDescription(board.description)
     selectBoardOptions(board); choosePost(null); setPosts([])
     try { setPosts(await api.posts(board.id)) } catch (error) { setFailure(describeFailure(error)) }
   }
-  function newBoard() { setSelectedBoard(null); setBoardName(''); setDescription(''); selectBoardOptions(null); setPosts([]); choosePost(null) }
+  /** 저장·삭제 뒤, 그리고 고른 게시판이 사라졌을 때 폼을 비운다. 대상도 함께 비운다. */
+  function clearBoard() {
+    setCreatingBoard(false); setSelectedBoard(null); setBoardName(''); setDescription('')
+    selectBoardOptions(null); setPosts([]); choosePost(null)
+  }
+  /** `새 게시판`은 등록하겠다는 선언이다. 대상을 새 게시판으로 옮긴다. */
+  function newBoard() { clearBoard(); setCreatingBoard(true) }
   async function saveBoard(event: FormEvent) {
     event.preventDefault(); setFailure(null)
     const action = selectedBoard ? '수정' : '등록'
@@ -494,7 +518,7 @@ function Boards({ api, onSelect, onCandidates, onMenus, monitoringAction }: {
       await loadBoards(); await chooseBoard(saved); notifySiteUpdated(); notifyCmsSuccess(`게시판을 ${action}했습니다.`)
     } catch (error) { setFailure(`게시판을 저장하지 못했습니다. ${describeFailure(error)}`) }
   }
-  async function removeBoard() { if (!selectedBoard || !window.confirm('게시판과 게시물을 삭제할까요?')) return; setFailure(null); try { await api.deleteBoard(selectedBoard.id); newBoard(); await loadBoards(); notifySiteUpdated(); notifyCmsSuccess('게시판을 삭제했습니다.') } catch (e) { setFailure(`게시판을 삭제하지 못했습니다. ${describeFailure(e)}`) } }
+  async function removeBoard() { if (!selectedBoard || !window.confirm('게시판과 게시물을 삭제할까요?')) return; setFailure(null); try { await api.deleteBoard(selectedBoard.id); clearBoard(); await loadBoards(); notifySiteUpdated(); notifyCmsSuccess('게시판을 삭제했습니다.') } catch (e) { setFailure(`게시판을 삭제하지 못했습니다. ${describeFailure(e)}`) } }
   function choosePost(post: Post | null) {
     uploadRequest.current += 1; setUploading(false)
     setSelectedPost(post); setWritingPost(false); setTitle(post?.title ?? ''); setBody(post?.body ?? '')
