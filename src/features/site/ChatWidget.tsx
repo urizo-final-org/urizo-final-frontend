@@ -165,8 +165,18 @@ export function ChatWidget({ domain = TOUR_DOMAIN }: { domain?: PortalDomain } =
         </div>}
       </div>)}
 
+      {/*
+        점이 움직여야 "생성 중"과 "멈춤"이 구분된다. 정지한 점 셋은 답이 오다 만 화면과
+        똑같이 생겼다 — 실제로 기다려야 할지 다시 물어야 할지 알 수 없다.
+        `motion-reduce`에서는 멈춘다(접근성). 그때도 aria-busy가 상태를 말한다.
+      */}
       {sending && <div className="flex max-w-[88%] items-center gap-1.5 self-start rounded-xl rounded-bl-[3px] border border-line-soft bg-white px-[0.8125rem] py-[0.8125rem]" aria-label="답변 작성 중" aria-busy="true">
-        {[0, 1, 2].map((dot) => <span key={dot} className="h-1.5 w-1.5 rounded-full bg-muted-3" />)}
+        {[0, 1, 2].map((dot) => <span
+          key={dot}
+          className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-3 motion-reduce:animate-none"
+          // 셋이 같은 박자로 뛰면 한 덩어리로 보인다. 어긋나게 해야 흐르는 것으로 읽힌다.
+          style={{ animationDelay: `${dot * 160}ms` }}
+        />)}
       </div>}
     </div>
 

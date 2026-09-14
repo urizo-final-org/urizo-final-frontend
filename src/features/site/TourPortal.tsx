@@ -538,8 +538,10 @@ export function PortalSearch({ domain = TOUR_DOMAIN }: { domain?: PortalDomain }
       reset()
       return
     }
+    // answerStyle은 BRIEF다. 이 답변 바로 아래에 결과 카드가 펼쳐지므로, 카드마다 길게
+    // 풀면 같은 말이 두 번 나오고 목록을 훑는 일을 방해한다. 챗봇은 반대로 DETAILED다.
     const timer = setTimeout(() => {
-      ask({ query, category: tabToCategory(active, domain.tabs), projectId: projectIdOf(location.pathname, location.search) })
+      ask({ query, category: tabToCategory(active, domain.tabs), projectId: projectIdOf(location.pathname, location.search), answerStyle: 'BRIEF' })
     }, SEARCH_DEBOUNCE_MS)
     return () => clearTimeout(timer)
   }, [query, active, domain, location.pathname, location.search, ask, reset])
@@ -600,7 +602,7 @@ export function PortalSearch({ domain = TOUR_DOMAIN }: { domain?: PortalDomain }
           </h1>
 
           {/* 재시도에도 projectId를 싣는다 — 빠뜨리면 재시도만 기본(관광) 데이터로 떨어진다. */}
-          <SearchResults state={state} onRetry={() => ask({ query, category: tabToCategory(active, domain.tabs), projectId: projectIdOf(location.pathname, location.search) })} hasQuery={query !== ''} />
+          <SearchResults state={state} onRetry={() => ask({ query, category: tabToCategory(active, domain.tabs), projectId: projectIdOf(location.pathname, location.search), answerStyle: 'BRIEF' })} hasQuery={query !== ''} />
         </div>
       </div>
     </div>

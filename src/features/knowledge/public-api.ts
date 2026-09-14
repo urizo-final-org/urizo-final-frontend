@@ -29,6 +29,8 @@ export async function queryPublicChat(
       ...(request.category?.length ? { category: request.category } : {}),
       ...(request.previousQuery ? { previousQuery: request.previousQuery } : {}),
       ...(request.projectId ? { projectId: request.projectId } : {}),
+      // 생략하면 서버가 DETAILED로 읽는다 — 이 필드가 생기기 전 호출과 같은 동작이다.
+      ...(request.answerStyle ? { answerStyle: request.answerStyle } : {}),
     }),
     cache: 'no-store',
     signal,
