@@ -272,7 +272,7 @@ export function buildCreateRequest(form: ConnectorForm): CreateConnectorRequest 
   }
 }
 
-export function ConnectorPanel({ api, projectId, mayWrite, onFirstBuild }: {
+export function ConnectorPanel({ api, projectId, mayWrite, onFirstBuild, onConnectors }: {
   api: KnowledgeAdminApi
   /** 대상 프로젝트가 정해지기 전에는 목록을 읽을 곳이 없다. */
   projectId: string | null
@@ -283,6 +283,11 @@ export function ConnectorPanel({ api, projectId, mayWrite, onFirstBuild }: {
    * 확인창과 실행은 `RagAdminPanel`이 자기 기계로 처리한다.
    */
   onFirstBuild?: (connector: Connector) => void
+  /**
+   * 목록을 읽을 때마다 그대로 올려 보낸다(AI02-027). 빌드 확인창이 "어느 자료를 모을지"를
+   * 물으려면 같은 목록이 필요한데, 두 화면이 각자 불러오면 한쪽이 낡는다.
+   */
+  onConnectors?: (connectors: Connector[]) => void
 }) {
   const [connectors, setConnectors] = useState<Connector[] | null>(null)
   // 실패를 null로 표현하면 "불러오는 중…"과 구분이 안 돼 실패가 로딩으로 위장한다.
@@ -316,12 +321,13 @@ export function ConnectorPanel({ api, projectId, mayWrite, onFirstBuild }: {
     try {
       const list = await api.listConnectors(projectId)
       if (alive.current) { setConnectors(list.items ?? []); setListFailed(false) }
+      onConnectors?.(list.items ?? [])
     }
     catch {
       // 커넥터 목록 하나 때문에 RAG 화면 전체가 오류로 덮이면 안 된다. 패널은 세워 둔다.
       if (alive.current) setListFailed(true)
     }
-  }, [api, projectId])
+  }, [api, projectId, onConnectors])
 
   useEffect(() => { void load() }, [load])
 

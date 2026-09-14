@@ -122,10 +122,25 @@ export class KnowledgeAdminApi {
     `/api/agent-jobs/${encodeURIComponent(jobId)}`,
   )
 
-  startBuild = (knowledgeBaseId: string, connectorVersionId: string, label?: string) =>
+  /**
+   * @param connectorVersionId BASE 원천 — 문서 집합을 만든다. 여기 없는 문서는 어디에도 없다.
+   * @param overlayConnectorVersionIds 덧붙일 원천(최대 4). BASE가 만든 문서에 정보를 더한다.
+   *     축제 행사일처럼 목록 API가 주지 않는 값이 이 경로로 들어온다. 계약상 선택 항목이라
+   *     비었으면 아예 보내지 않는다 — 빈 배열을 보내도 같지만 요청이 전과 똑같아야 안전하다.
+   */
+  startBuild = (
+    knowledgeBaseId: string, connectorVersionId: string, label?: string,
+    overlayConnectorVersionIds: string[] = [],
+  ) =>
     this.request<{ jobId: string; status: string; statusUrl: string }>(
       `/api/knowledge-bases/${encodeURIComponent(knowledgeBaseId)}/versions`,
-      { method: 'POST', body: JSON.stringify({ schemaVersion: ADMIN_SCHEMA_VERSION, connectorVersionId, label }) },
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          schemaVersion: ADMIN_SCHEMA_VERSION, connectorVersionId, label,
+          ...(overlayConnectorVersionIds.length > 0 ? { overlayConnectorVersionIds } : {}),
+        }),
+      },
     )
 
   /**
