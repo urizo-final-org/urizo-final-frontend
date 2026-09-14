@@ -82,7 +82,7 @@ const openStatuses: CodingJobStatus[] = ['PENDING', 'RUNNING', 'WAITING_APPROVAL
  */
 const nextStep: Partial<Record<CodingJobStatus, string>> = {
   PENDING: '차례를 기다리는 중입니다. 진행되면 이 화면이 저절로 바뀝니다.',
-  RUNNING: 'AI 가 작업하는 중입니다. 진행되면 이 화면이 저절로 바뀝니다.',
+  RUNNING: 'AI 가 작업하는 중입니다. 진행되면 이 화면이 자동으로 바뀝니다.',
   WAITING_APPROVAL: '아래에서 내용을 확인하고 승인해 주세요.',
 }
 
