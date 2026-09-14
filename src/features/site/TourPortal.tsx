@@ -8,7 +8,7 @@ import { useRagQuery } from '../knowledge/useRagQuery'
 import { withParticle } from './particle'
 import { addressLine, festivalBadge, highlightTitles, PORTAL_TABS } from './portal-meta'
 import { TOUR_DOMAIN, type PortalDomain } from './portal-domains'
-import { projectIdOf } from './portal-projects'
+import { projectIdOf, withProject } from './portal-projects'
 import { describePortalStatus } from './portal-status'
 import { CardPhoto, Placeholder, PhotoTag } from './portal-primitives'
 import { PortalResultCard } from './PortalResultCard'
@@ -207,6 +207,7 @@ function PortalSearchForm({ onComplete, initialQuery = '', initialCategory = 'al
   onComplete?: () => void; initialQuery?: string; initialCategory?: string; banner?: boolean; children?: ReactNode
 }) {
   const navigate = useNavigate()
+  const location = useLocation()
   const [draft, setDraft] = useState(initialQuery)
   const [tab, setTab] = useState(PORTAL_TABS.some((item) => item.id === initialCategory) ? initialCategory : 'all')
 
@@ -216,7 +217,7 @@ function PortalSearchForm({ onComplete, initialQuery = '', initialCategory = 'al
     const query = draft.trim()
     if (query) params.set('q', query)
     if (tab !== 'all') params.set('category', tab)
-    const qs = params.toString()
+    const qs = withProject(params, location.search).toString()
     onComplete?.()
     navigate(qs ? `/search?${qs}` : '/search')
   }
@@ -553,7 +554,7 @@ export function PortalSearch({ domain = TOUR_DOMAIN }: { domain?: PortalDomain }
     const next = new URLSearchParams()
     if (nextQuery) next.set('q', nextQuery)
     if (category !== 'all') next.set('category', category)
-    const qs = next.toString()
+    const qs = withProject(next, location.search).toString()
     navigate(qs ? `${domain.searchPath}?${qs}` : domain.searchPath)
   }
 

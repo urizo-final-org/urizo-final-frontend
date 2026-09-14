@@ -1,8 +1,9 @@
 import { useState, type FormEvent } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { ChatWidget } from './ChatWidget'
 import { PortalSearch } from './TourPortal'
 import { SME_DOMAIN } from './portal-domains'
+import { withProject } from './portal-projects'
 
 /**
  * 중기부 지원사업 포털(/sme). 관광 포털과 같은 골격의 도메인 스킨이다(AI02-011).
@@ -39,12 +40,22 @@ function SmeHeader() {
 
 function SmeHome() {
   const navigate = useNavigate()
+  const location = useLocation()
   const [draft, setDraft] = useState('')
+
+  // 홈에서 나가는 모든 이동이 현재 고객사를 실어 나른다. 딥링크로 들어온 방문자가
+  // 검색 한 번, 분야 한 번에 다른 고객사로 넘어가던 자리다.
+  function searchPath(params: URLSearchParams) {
+    const qs = withProject(params, location.search).toString()
+    return qs ? `/sme/search?${qs}` : '/sme/search'
+  }
 
   function submit(event: FormEvent) {
     event.preventDefault()
     const query = draft.trim()
-    navigate(query ? `/sme/search?q=${encodeURIComponent(query)}` : '/sme/search')
+    const params = new URLSearchParams()
+    if (query) params.set('q', query)
+    navigate(searchPath(params))
   }
 
   return <main className="flex flex-1 flex-col">
@@ -58,7 +69,7 @@ function SmeHome() {
         </form>
         <nav aria-label="분야별 검색" className="flex flex-wrap justify-center gap-2">
           {SME_DOMAIN.tabs.map((tab) => <Link key={tab.id}
-            to={tab.id === 'all' ? '/sme/search' : `/sme/search?category=${tab.id}`}
+            to={searchPath(new URLSearchParams(tab.id === 'all' ? '' : `category=${tab.id}`))}
             className="rounded-full border border-field-line bg-panel px-4 py-2 text-xs font-semibold text-body no-underline hover:text-ink"
           >{tab.label}</Link>)}
         </nav>
