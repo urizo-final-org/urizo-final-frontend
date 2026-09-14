@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { useLocation } from 'react-router-dom'
 import { useRagQuery } from '../knowledge/useRagQuery'
 import type { PublicCitation } from '../knowledge/types'
-import { homepageLine } from './portal-meta'
+import { categoryBadge, homepageLine } from './portal-meta'
 import { TOUR_DOMAIN, type PortalDomain } from './portal-domains'
 import { projectIdOf } from './portal-projects'
 import { describePortalStatus } from './portal-status'
@@ -192,11 +192,14 @@ export function ChatWidget({ domain = TOUR_DOMAIN }: { domain?: PortalDomain } =
  */
 function EvidenceCard({ citation }: { citation: PublicCitation }) {
   const homepage = homepageLine(citation.excerpt)
+  // 검색 카드와 같은 규칙으로 뱃지를 만든다 — 두 화면이 같은 문서를 다르게 부르면 안 된다.
+  const badge = categoryBadge(citation.categoryLabel)
   return <div className="flex items-center gap-[0.625rem] rounded-[0.5625rem] border border-line-soft bg-white px-[0.625rem] py-2">
     <CardPhoto name={citation.title} img={citation.imageUrl} className="h-9 w-9 flex-none rounded-md" />
     <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-[0.78125rem] font-bold text-ink">{citation.title}</span>
     {homepage && <a href={homepage} target="_blank" rel="noopener noreferrer" className="flex-none text-[0.6875rem] font-bold text-primary underline underline-offset-2">홈페이지 ↗</a>}
-    {citation.categoryLabel != null && <span className="flex-none rounded border border-line px-[0.375rem] py-[0.125rem] text-[0.625rem] font-bold text-primary">{citation.categoryLabel.split('>')[0].trim()}</span>}
-    {citation.eventStatus === 'ENDED' && <span className="flex-none rounded border border-line px-[0.375rem] py-[0.125rem] text-[0.625rem] font-bold text-muted">종료된 행사</span>}
+    {badge != null && <span className="flex-none rounded border border-line px-[0.375rem] py-[0.125rem] text-[0.625rem] font-bold text-primary">{badge.split('>')[0].trim()}</span>}
+    {/* 검색 카드와 같은 채움형이다. 두 화면이 같은 사실을 다른 무게로 보이면 안 된다. */}
+    {citation.eventStatus === 'ENDED' && <span className="flex-none rounded border border-wait-fg/35 bg-wait-bg px-[0.375rem] py-[0.125rem] text-[0.625rem] font-bold text-wait-fg">종료된 행사</span>}
   </div>
 }

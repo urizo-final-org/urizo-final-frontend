@@ -1,5 +1,5 @@
 import { describe, expect, it, test } from 'vitest'
-import { addressLine, festivalBadge, highlightTitles, homepageLine, overviewText, PORTAL_TABS } from './portal-meta'
+import { addressLine, categoryBadge, festivalBadge, highlightTitles, homepageLine, overviewText, PORTAL_TABS } from './portal-meta'
 
 describe('PORTAL_TABS', () => {
   // 코퍼스 접두 10종(AC/C01/EV/EX/FD/HS/LS/NA/SH/VE)이 빠짐없이, 겹침 없이 배정돼야
@@ -57,6 +57,40 @@ describe('homepageLine', () => {
   })
 })
 
+describe('categoryBadge', () => {
+  // 실측값이다. 실수집 코퍼스에서 실제로 내려온 코드만 쓴다.
+  it('turns source classification codes into the tab name', () => {
+    expect(categoryBadge('EV03')).toBe('축제·행사')
+    expect(categoryBadge('AC03')).toBe('숙박')
+    expect(categoryBadge('FD02')).toBe('음식')
+    expect(categoryBadge('NA01')).toBe('관광지')
+    expect(categoryBadge('SH05')).toBe('쇼핑')
+    // 추천코스는 접두가 세 글자다 — C0112도 C01로 걸린다.
+    expect(categoryBadge('C0112')).toBe('추천코스')
+  })
+
+  // 픽스처 코퍼스는 한글 라벨을 보낸다. 그쪽은 아무것도 달라지면 안 된다.
+  it('leaves a human label untouched', () => {
+    expect(categoryBadge('숙박 > 펜션/민박')).toBe('숙박 > 펜션/민박')
+    expect(categoryBadge('축제/공연/행사(유효)')).toBe('축제/공연/행사(유효)')
+    expect(categoryBadge(undefined)).toBeUndefined()
+  })
+
+  // 모르는 코드를 감추면 무엇이 새로 들어왔는지 화면에서 알 길이 없어진다.
+  it('keeps an unknown code visible instead of hiding it', () => {
+    expect(categoryBadge('ZZ99')).toBe('ZZ99')
+  })
+
+  // 탭과 뱃지가 같은 원본을 본다는 것이 이 방식의 근거다. 복사본이 생기면 어긋난다.
+  it('reads the mapping from PORTAL_TABS rather than a copy', () => {
+    for (const tab of PORTAL_TABS) {
+      for (const prefix of tab.prefixes ?? []) {
+        expect(categoryBadge(`${prefix}01`)).toBe(tab.label)
+      }
+    }
+  })
+})
+
 describe('overviewText', () => {
   const document = [
     '[분류] 숙박 > 펜션/민박',
@@ -85,11 +119,51 @@ describe('overviewText', () => {
     expect(overviewText('[이름] 도원\n[개요] 한옥독채스테이다.')).toBe('한옥독채스테이다.')
   })
 
-  // 개요가 없는 문서(대동고택 등)에서 본문을 통째로 비우지 않는다 — 라벨이 섞여도 내용이 낫다.
-  it('falls back to the raw excerpt when there is no overview', () => {
-    const raw = '[분류] 숙박 > 펜션/민박\n[주소] 전북 전주시'
-    expect(overviewText(raw)).toBe(raw)
+  // 실수집 축제 본문은 `제목 + 라벨 줄`뿐이라 개요가 없다. 원문을 그대로 돌려주던 예전 계약은
+  // 이 형태에서 곧 라벨 노출이었다 — 카드에 `[전화] …`가 보이고 제목이 두 번 나왔다.
+  it('drops label lines and the repeated title when there is no overview', () => {
+    const festival = [
+      '가든 나이트 마켓',
+      '[전화] 052-255-1823',
+      '[주소] 울산광역시 남구 대공원로 94 (옥동)',
+      '[행사시작] 20260729',
+      '[행사종료] 20260829',
+    ].join('\n')
+    expect(overviewText(festival, '가든 나이트 마켓')).toBe('')
+    expect(overviewText('[분류] 숙박 > 펜션/민박\n[주소] 전북 전주시')).toBe('')
+  })
+
+  // 비우는 것이 목적이 아니라 라벨을 걷어내는 것이 목적이다. 산문이 있으면 그대로 남는다.
+  it('keeps prose that sits next to the labels', () => {
+    expect(overviewText('대동고택\n[주소] 전주시\n한옥 독채 스테이입니다.', '대동고택'))
+      .toBe('한옥 독채 스테이입니다.')
+  })
+
+  // `[개요]`는 있는데 값이 비는 경우는 근거가 달라지지 않았다 — 원문을 그대로 둔다.
+  it('keeps the raw excerpt when the overview label itself is empty', () => {
     expect(overviewText('[개요]\n[상세정보]')).toBe('[개요]\n[상세정보]')
+  })
+
+  // 「울산 12경」 실측. 개요 본문이 대괄호 소제목으로 시작하면 예전에는 그 줄을 라벨로 오인해
+  // 수집을 멈췄고, 개요가 비어 폴백이 원문을 돌려주는 바람에 카드에 라벨이 그대로 보였다.
+  it('treats a bracketed sub-heading inside the overview as body, not a label', () => {
+    const document = [
+      '울산 12경',
+      '[분류] 자연·관광지',
+      '[주소] 울산광역시 남구 태화동',
+      '[개요]',
+      '[울산 1경 : 태화강 국가정원 십리대숲]',
+      '우리나라 제2호 국가정원으로 십리대숲이 어우러진다.',
+      '[상세정보]',
+      '- 문의: 052-000-0000',
+    ].join('\n')
+    const text = overviewText(document, '울산 12경')
+
+    expect(text).toBe('[울산 1경 : 태화강 국가정원 십리대숲]\n우리나라 제2호 국가정원으로 십리대숲이 어우러진다.')
+    // 진짜 라벨은 여전히 수집을 멈춘다 — [상세정보] 뒤는 본문이 아니다.
+    for (const label of ['[분류]', '[주소]', '[상세정보]', '문의']) {
+      expect(text).not.toContain(label)
+    }
   })
 })
 
