@@ -57,7 +57,7 @@ type ProfileVersionSummary = { profileVersionId: string; profileKey: string; sta
  */
 export interface NaturalCmsRecord {
   jobId: string
-  /** Job 상태 원본. 화면이 대기·멎음·승인·반려로 옮겨 부른다. */
+  /** Job 상태 원본. 화면이 대기·응답 없음·승인·반려로 옮겨 부른다. */
   status: string
   requestText: string
   targetId: string

@@ -552,12 +552,12 @@ export default function CmsAiAssistant({ route, target, templateContext, candida
     }
   }
 
-  /** 멎은 요청을 사유와 함께 닫는다. 미리보기가 없어 승인할 것이 없는 상태다. */
+  /** 응답이 없는 요청을 사유와 함께 닫는다. 미리보기가 없어 승인할 것이 없는 상태다. */
   async function close(jobId: string) {
     if (closing) return
     setClosing(jobId)
     try {
-      await api.cancel(jobId, '미리보기를 만들지 못하고 멎어 화면에서 닫았습니다.')
+      await api.cancel(jobId, '응답이 없어 화면에서 닫았습니다. 미리보기가 만들어지지 않았습니다.')
       setRecords(await api.records(ROUTE_RESOURCE[route], MAX_RECORDS))
       setNow(Date.now())
     }

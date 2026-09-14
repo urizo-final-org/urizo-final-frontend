@@ -19,10 +19,16 @@ export function recordState(
   return now - moved > stalledAfterMs ? 'stalled' : 'running'
 }
 
+/**
+ * 화면에 쓰는 말.
+ *
+ * `stalled`를 「실패」라고 하지 않는다. Job 상태만으로는 실패를 단정할 수 없고, 우리가 아는
+ * 것은 한참째 아무 소식이 없다는 것뿐이다. 「응답 없음」이 그만큼만 말한다.
+ */
 const LABELS: Record<RecordState, string> = {
   running: '도는 중',
   waiting: '대기',
-  stalled: '멎음',
+  stalled: '응답 없음',
   approved: '승인',
   rejected: '반려',
 }
@@ -50,7 +56,7 @@ export function sinceLabel(iso: string, now: number) {
 /**
  * 이 화면에서 내가 보낸 지난 요청.
  *
- * 대기와 멎음에만 단추를 붙인다. 그 둘이 사람이 손대야 끝나는 상태이고, 목록이 곧 돌아가는
+ * 대기와 응답 없음에만 단추를 붙인다. 그 둘이 사람이 손대야 끝나는 상태이고, 목록이 곧 돌아가는
  * 길이라 「승인 대기 1건」 같은 배너를 따로 두지 않는다.
  */
 export default function AssistantRecords({ records, now, stalledAfterMs, busy, onResume, onClose }: {

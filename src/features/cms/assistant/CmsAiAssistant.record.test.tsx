@@ -39,10 +39,10 @@ function mount(api: Record<string, unknown>) {
   />)
 }
 
-describe('멎음 판정', () => {
+describe('응답 없음 판정', () => {
   const now = Date.parse('2026-09-14T09:00:00Z')
 
-  it('5분을 넘겨 움직이지 않은 ACTIVE만 멎음이다', () => {
+  it('5분을 넘겨 움직이지 않은 ACTIVE만 응답 없음이다', () => {
     const running = record({ status: 'ACTIVE', updatedAt: '2026-09-14T08:58:00Z' })
     const stalled = record({ status: 'ACTIVE', updatedAt: '2026-09-14T08:50:00Z' })
     expect(recordState(running, FIVE_MINUTES, now)).toBe('running')
@@ -59,7 +59,7 @@ describe('멎음 판정', () => {
     expect(recordState(record({ status: 'REJECTED' }), FIVE_MINUTES, now)).toBe('rejected')
   })
 
-  it('시각을 읽을 수 없으면 멎었다고 단정하지 않는다', () => {
+  it('시각을 읽을 수 없으면 응답이 없다고 단정하지 않는다', () => {
     expect(recordState(record({ status: 'ACTIVE', updatedAt: '' }), FIVE_MINUTES, now)).toBe('running')
   })
 
@@ -103,7 +103,7 @@ describe('기록', () => {
     expect(screen.getByRole('textbox', { name: '자연어 요청' })).toHaveValue('제목을 다듬어 줘')
   })
 
-  it('멎음 행은 닫기로 사유와 함께 Job을 닫는다', async () => {
+  it('응답 없음 행은 닫기로 사유와 함께 Job을 닫는다', async () => {
     const cancel = vi.fn().mockResolvedValue(job({ status: 'REJECTED' }))
     const records = vi.fn()
       .mockResolvedValueOnce([record({ jobId: 'job-7', status: 'ACTIVE', updatedAt: '2026-01-01T00:00:00Z' })])
