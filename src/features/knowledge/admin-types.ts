@@ -329,3 +329,36 @@ export type ConnectorPreview = {
   truncated: boolean
   checkedAt: string
 }
+
+/**
+ * 관광 품질 진단 에이전트의 결과(AI02-027). 에이전트가 도구를 골라 가며 조사한 기록과
+ * 그 끝의 진단이다.
+ *
+ * <p>`result`는 도구마다 모양이 다르다 — 화면은 이 안을 해석하지 않고 단계 이름과 이유만
+ * 읽는다. 모델이 무엇을 왜 열어 봤는지는 `reason`에 한 줄로 들어 있다.
+ */
+export type DiagnosisStep = {
+  order: number
+  tool: string
+  reason: string
+  failed: boolean
+  result?: unknown
+}
+
+export type DiagnosisVerdict = {
+  verdict: string
+  evidence: string[]
+  reasoning: string
+  recommendation: string
+  confidence: string
+}
+
+export type TourDiagnosis = {
+  knowledgeVersionId: string
+  steps: DiagnosisStep[]
+  verdict: DiagnosisVerdict
+  /** `MODEL_CONCLUDED`면 모델이 스스로 끝냈다. 나머지는 호출·시간 상한에 걸린 것이다. */
+  stopReason: string
+  promptVersion: string
+  checkedAt: string
+}

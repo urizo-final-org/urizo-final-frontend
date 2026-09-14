@@ -144,12 +144,15 @@ function AuthenticatedAdmin({ session, theme, onToggleTheme, onRefresh, onExpire
   // 역할별로 다른 것을 싣는다 — 같은 줄을 반대 역할에게 띄우면 눌러 들어가도 할 수 있는
   // 것이 없어, 알림이 아니라 잡음이 된다.
   // * 최고 관리자: 사람이 남긴 갱신 요청(처리하는 쪽이 SUPER_ADMIN이다)
-  // * 일반 관리자: 스케줄러가 감지한 "원천 변경 — 갱신 필요"(요청을 남기는 쪽이다, AI02-022)
-  const showsRagNews = session.actor.role === 'SUPER_ADMIN'
-    && permitted.some((route) => route.id === 'rag')
+  //
+  // 스케줄러 감지분은 둘 다에게 싣는다(AI02-027). 예전에는 일반 관리자에게만 갔고 최고
+  // 관리자는 사람이 남긴 요청을 통해서만 알았다 — 빌드할 수 있는 사람이 가장 늦게 아는
+  // 구조였다. 이제 감지한 쪽이 곧장 빌드로 간다. 일반 관리자의 요청 경로는 그대로 남는다.
+  const hasRag = permitted.some((route) => route.id === 'rag')
+  const isSuperAdmin = session.actor.role === 'SUPER_ADMIN'
+  const showsRagNews = isSuperAdmin && hasRag
   const pendingApprovals = usePendingApprovals(knowledgeApi, showsRagNews)
-  const showsChangeNews = session.actor.role === 'GENERAL_ADMIN'
-    && permitted.some((route) => route.id === 'rag')
+  const showsChangeNews = (isSuperAdmin || session.actor.role === 'GENERAL_ADMIN') && hasRag
   const sourceChanges = useSourceChanges(knowledgeApi, showsChangeNews)
 
   function go(route: RouteId) { navigate(pathForRoute(route)); setMenuOpen(false) }
@@ -173,7 +176,7 @@ function AuthenticatedAdmin({ session, theme, onToggleTheme, onRefresh, onExpire
     // 스케줄러 감지분(AI02-022). 갱신(새 버전 활성화) 전까지 유지되는 알림이다.
     ...(sourceChanges ?? []).map((change) => ({
       id: `source-change-${change.knowledgeBaseId}`,
-      text: `${change.name}의 원천 데이터가 변경되었습니다 — RAG 갱신이 필요합니다`,
+      text: `${change.name}의 원천 데이터가 변경되었습니다 — ${isSuperAdmin ? '새 자료를 만들어 주세요' : 'RAG 갱신이 필요합니다'}`,
       detail: `신규 ${change.summary.added} · 수정 ${change.summary.modified} · 소멸 ${change.summary.missing}`,
       at: change.summary.checkedAt,
       onPick: () => go('rag'),

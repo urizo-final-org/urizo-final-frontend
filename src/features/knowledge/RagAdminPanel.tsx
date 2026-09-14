@@ -7,6 +7,7 @@ import { Badge, Callout, PageHead, PanelTitle, panel, primaryButton, secondaryBu
 import { Icon } from '../../shared/ui/icons'
 import { ActivationRequests } from './ActivationRequests'
 import { ConnectorPanel } from './ConnectorPanel'
+import { TourDiagnosisPanel } from './TourDiagnosis'
 import { noHover } from './no-hover'
 import { KnowledgeAdminApi } from './admin-api'
 import type { BuildEvaluation, Connector, KnowledgeBase, KnowledgeTarget, KnowledgeVersion, KnowledgeVersionStatus, AgentJob, Project } from './admin-types'
@@ -97,6 +98,8 @@ export function RagAdminPanel({ api, role }: { api: KnowledgeAdminApi; role: Adm
   // 활성화·롤백이 곧 요청 처리다. 서버가 그때 열린 요청을 닫으므로 쓰기 성공 뒤
   // 요청 목록도 다시 읽어 사라지는 것을 보인다 — 버전 목록만 갱신하면 처리된 요청이 남아 보인다.
   const [requestsKey, setRequestsKey] = useState(0)
+  /** 진단 중인 버전(AI02-027). 한 번에 하나만 연다 — 30초짜리 조사를 여럿 띄울 이유가 없다. */
+  const [diagnosing, setDiagnosing] = useState<KnowledgeVersion | null>(null)
   const alive = useRef(true)
   // 선택은 URL에 둔다. 새로고침·링크 공유가 그대로 되고 전역 상태가 필요 없다.
   const [params, setParams] = useSearchParams()
@@ -306,11 +309,29 @@ export function RagAdminPanel({ api, role }: { api: KnowledgeAdminApi; role: Adm
       >새 자료 만들기</button>
     </PageHead>
 
-    {/* 스케줄러 감지분(AI02-022). 활성 버전 기준 괴리라 갱신(새 버전 활성화) 전까지 남는다. */}
+    {/* 스케줄러 감지분(AI02-022). 활성 버전 기준 괴리라 갱신(새 버전 활성화) 전까지 남는다.
+        최고 관리자는 여기서 바로 만들 수 있다 — 알림을 본 사람과 조치할 수 있는 사람이
+        같은데 다른 패널로 보내면, 읽고 나서 할 일을 한 번 더 찾아야 한다(AI02-027). */}
     {changeSummary && <Callout tone="warn" icon="triangle-alert">
-      원천 데이터 변경 감지({new Date(changeSummary.checkedAt).toLocaleString('ko-KR')} 확인 · 활성 v{changeSummary.comparedVersion} 기준)
-      — 신규 {changeSummary.added} · 수정 {changeSummary.modified} · 소멸 {changeSummary.missing}건.
-      RAG 갱신이 필요합니다. 아래 「갱신 요청」에 남겨 주세요.
+      <span className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <span className="font-bold">원천 데이터가 바뀌었습니다</span>
+        <span className="flex items-center gap-2">
+          <ChangeCount label="신규" value={changeSummary.added} />
+          <ChangeCount label="수정" value={changeSummary.modified} />
+          <ChangeCount label="소멸" value={changeSummary.missing} />
+        </span>
+        <span className="text-[0.6875rem] opacity-80">
+          {new Date(changeSummary.checkedAt).toLocaleString('ko-KR')} 확인 · 활성 v{changeSummary.comparedVersion} 기준
+        </span>
+        {mayWrite
+          ? <button
+              className={tableButton}
+              disabled={busy || newest == null || view != null}
+              onClick={askBuild}
+              title={view != null ? '이미 만드는 중입니다.' : '바뀐 원천으로 검색 자료를 새로 만듭니다 (약 8분).'}
+            >지금 새 자료 만들기</button>
+          : <span>갱신은 최고 관리자가 합니다. 아래 「갱신 요청」에 남겨 주세요.</span>}
+      </span>
     </Callout>}
     {/* 이 문장은 원래 아무 데로도 가지 않았다. 이제 아래 요청 패널이 그 경로다. */}
     {!mayWrite && <Callout tone="warn" icon="lock">조회만 가능합니다. {WRITE_DENIED} 아래 「갱신 요청」에 남기면 그대로 전달됩니다.</Callout>}
@@ -355,7 +376,15 @@ export function RagAdminPanel({ api, role }: { api: KnowledgeAdminApi; role: Adm
         canRollback={canWrite && previousActive != null}
         onSwitch={askSwitch}
         onRollback={askRollback}
+        onDiagnose={canWrite ? setDiagnosing : null}
+        diagnosing={diagnosing?.knowledgeVersionId ?? null}
       />
+      {diagnosing && knowledgeBaseId && <TourDiagnosisPanel
+        api={api}
+        knowledgeBaseId={knowledgeBaseId}
+        version={diagnosing}
+        onClose={() => setDiagnosing(null)}
+      />}
     </div>
     {confirmation && <ConfirmDialog
       confirmation={confirmation}
@@ -364,6 +393,16 @@ export function RagAdminPanel({ api, role }: { api: KnowledgeAdminApi; role: Adm
       onConfirm={() => { void runConfirmed() }}
     />}
   </>
+}
+
+/**
+ * 스케줄러가 센 건수 한 칸. 0은 흐리게 둔다 — 셋 중 실제로 바뀐 것만 눈에 남는다.
+ */
+function ChangeCount({ label, value }: { label: string; value: number }) {
+  return <span className={`inline-flex items-baseline gap-1 ${value === 0 ? 'opacity-45' : ''}`}>
+    <b className="text-sm font-bold tabular-nums">{value}</b>
+    <span className="text-[0.6875rem]">{label}</span>
+  </span>
 }
 
 /**
@@ -605,7 +644,7 @@ function previousActiveOf(versions: KnowledgeVersion[] | null): KnowledgeVersion
 }
 
 /** A5 버전 테이블. 쓰기 버튼은 역할로 미리 판별해 disabled로 둔다 — 눌러서 403을 받지 않는다. */
-function VersionTable({ versions, mayWrite, blocked, busy, canRollback, onSwitch, onRollback }: {
+function VersionTable({ versions, mayWrite, blocked, busy, canRollback, onSwitch, onRollback, onDiagnose, diagnosing }: {
   versions: KnowledgeVersion[] | null
   mayWrite: boolean
   blocked: boolean
@@ -613,11 +652,14 @@ function VersionTable({ versions, mayWrite, blocked, busy, canRollback, onSwitch
   canRollback: boolean
   onSwitch: (version: KnowledgeVersion) => void
   onRollback: () => void
+  /** 진단은 로컬 통로(AI02-027)라 쓰기 권한이 없으면 넘어오지 않는다. */
+  onDiagnose: ((version: KnowledgeVersion) => void) | null
+  diagnosing: string | null
 }) {
   const shown = operating(versions)
   const archivedCount = (versions?.length ?? 0) - (shown?.length ?? 0)
   // 전체 100%를 비율로 나눈다 — 지표에 1fr을 주면 남는 폭을 전부 먹어 텅 비어 보인다.
-  const columns = 'grid-cols-[10fr_15fr_15fr_35fr_15fr_10fr]'
+  const columns = 'grid-cols-[8fr_13fr_12fr_28fr_13fr_26fr]'
   return <section className={panel}>
     <PanelTitle
       title="RAG 버전"
@@ -631,7 +673,7 @@ function VersionTable({ versions, mayWrite, blocked, busy, canRollback, onSwitch
       >이전 버전 롤백</button>
     </PanelTitle>
     <div className="overflow-x-auto">
-      <div className="min-w-[44rem]">
+      <div className="min-w-[50rem]">
         <div className={`${headRow} ${columns}`}>
           <span>버전</span><span>상태</span><span>문서</span><span>평가 결과</span><span>활성화</span><span className="text-right">동작</span>
         </div>
@@ -647,7 +689,14 @@ function VersionTable({ versions, mayWrite, blocked, busy, canRollback, onSwitch
           <span className="font-mono">{version.documentCount}건</span>
           <MetricsCell version={version} />
           <span className="font-mono text-[0.6875rem]">{version.activatedAt ? new Date(version.activatedAt).toLocaleDateString('ko-KR') : '—'}</span>
-          <span className="flex justify-end">
+          <span className="flex items-center justify-end gap-1.5 whitespace-nowrap">
+            {/* 점수가 있는 버전에만 붙인다 — 측정 전 버전은 설명할 점수가 없다. */}
+            {onDiagnose && version.evaluation && <button
+              className={tableButton}
+              disabled={diagnosing === version.knowledgeVersionId}
+              onClick={() => onDiagnose(version)}
+              title={`이 점수가 왜 나왔는지 에이전트가 조사합니다 (약 30초).`}
+            ><Icon name="search-check" size={12} />원인 분석</button>}
             {version.status === 'ACTIVE'
               ? <small className="text-[0.6875rem] text-ok-fg">현재 활성</small>
               : <button
