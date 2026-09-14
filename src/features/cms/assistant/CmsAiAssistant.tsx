@@ -260,6 +260,14 @@ export default function CmsAiAssistant({ route, target, templateContext, candida
   const [records, setRecords] = useState<NaturalCmsRecord[]>([])
   const [closing, setClosing] = useState<string | null>(null)
   const [now, setNow] = useState(() => Date.now())
+  /**
+   * 지금 패널이 다루고 있는 Job.
+   *
+   * 기록에서 이것만 뺀다. 위에서 승인을 기다리는 요청이 아래 기록에도 뜨면 같은 것이 둘로
+   * 보이고, 이미 열려 있는 화면을 다시 열라는 「이어서 처리」가 붙는다. 결정이 끝나면
+   * `locked`가 풀리면서 저절로 기록에 합류한다.
+   */
+  const [runningJobId, setRunningJobId] = useState<string | null>(null)
   const attachInput = useRef<HTMLInputElement>(null)
   /** 지금 유효한 대기 세대. 새 요청이나 초기화가 이전 대기를 무효로 만든다. */
   const poll = useRef(0)
@@ -459,6 +467,7 @@ export default function CmsAiAssistant({ route, target, templateContext, candida
       // 문장을 지우지 않는다. 미리보기가 이 문장으로 만들어지므로, 결정할 때까지
       // 무엇을 시켰는지 화면이 들고 있어야 한다. 승인하면 그때 비운다.
       setAttachFailure(null)
+      setRunningJobId(job.jobId)
       await awaitPreview(job.jobId, generation)
     }
     catch (failure) {
@@ -533,6 +542,7 @@ export default function CmsAiAssistant({ route, target, templateContext, candida
     poll.current = generation
     setFeedback('')
     setDetail(false)
+    setRunningJobId(jobId)
     try {
       const job = await api.job(jobId)
       if (poll.current !== generation) return
@@ -892,7 +902,9 @@ export default function CmsAiAssistant({ route, target, templateContext, candida
       </div>
 
       <AssistantRecords
-        records={records}
+        records={locked && runningJobId
+          ? records.filter((entry) => entry.jobId !== runningJobId)
+          : records}
         now={now}
         stalledAfterMs={STALLED_AFTER_MS}
         busy={closing}

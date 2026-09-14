@@ -132,6 +132,49 @@ describe('기록', () => {
   })
 })
 
+describe('지금 다루는 요청', () => {
+  it('승인을 기다리는 동안에는 기록에 겹쳐 보이지 않는다', async () => {
+    const api = {
+      // 승인 대기로 넘어가면 그 Job이 이력에도 들어온다. 화면이 걸러야 한다.
+      records: vi.fn()
+        .mockResolvedValueOnce([])
+        .mockResolvedValue([record({ jobId: 'job-1', status: 'WAITING_APPROVAL' })]),
+      activeProfileVersionId: vi.fn().mockResolvedValue('p'),
+      createJob: vi.fn().mockResolvedValue(job({ previewId: null, previewHash: null, status: 'ACTIVE' })),
+      job: vi.fn().mockResolvedValue(job()),
+    }
+    mount(api)
+    fireEvent.change(screen.getByRole('textbox', { name: '자연어 요청' }), { target: { value: '제목을 다듬어 줘' } })
+    fireEvent.click(screen.getByRole('button', { name: '요청 분석하기' }))
+
+    await screen.findByRole('button', { name: '승인하고 반영' })
+    // 위에서 결정을 기다리는 중이므로, 같은 요청을 다시 열라는 단추가 있으면 안 된다.
+    expect(screen.queryByRole('button', { name: '이어서 처리' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: '기록' })).not.toBeInTheDocument()
+  })
+
+  it('다른 대기 요청은 그대로 보인다', async () => {
+    const api = {
+      records: vi.fn()
+        .mockResolvedValueOnce([])
+        .mockResolvedValue([
+          record({ jobId: 'job-1', status: 'WAITING_APPROVAL' }),
+          record({ jobId: 'job-2', status: 'WAITING_APPROVAL', requestText: '먼저 보낸 요청' }),
+        ]),
+      activeProfileVersionId: vi.fn().mockResolvedValue('p'),
+      createJob: vi.fn().mockResolvedValue(job({ previewId: null, previewHash: null, status: 'ACTIVE' })),
+      job: vi.fn().mockResolvedValue(job()),
+    }
+    mount(api)
+    fireEvent.change(screen.getByRole('textbox', { name: '자연어 요청' }), { target: { value: '제목을 다듬어 줘' } })
+    fireEvent.click(screen.getByRole('button', { name: '요청 분석하기' }))
+
+    await screen.findByRole('button', { name: '승인하고 반영' })
+    expect(screen.getByText('먼저 보낸 요청')).toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: '이어서 처리' })).toHaveLength(1)
+  })
+})
+
 describe('요청 문장', () => {
   it('결정을 기다리는 동안 문장이 남고 고칠 수 없다', async () => {
     const api = {
