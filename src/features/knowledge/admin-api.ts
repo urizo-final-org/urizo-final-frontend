@@ -5,6 +5,10 @@ import {
   type ActivationRequest,
   type ActivationRequestList,
   type AgentJob,
+  type Connector,
+  type ConnectorList,
+  type ConnectorPreview,
+  type CreateConnectorRequest,
   type KnowledgeBase,
   type KnowledgeTarget,
   type KnowledgeVersion,
@@ -57,7 +61,23 @@ export class KnowledgeAdminApi {
     return body as T
   }
 
-  listProjects = () => this.request<{ items: Project[] }>('/api/projects')
+  /**
+   * 화면에서 감출 프로젝트 이름. **데이터는 그대로 두고 목록에서만 뺀다** — 삭제가 아니라
+   * 표시 제외다(AI02-024).
+   *
+   * <p>UUID가 아니라 이름으로 거른다. UUID는 환경마다 다르게 생겨서 박아 두면 다른 환경에서
+   * 엉뚱한 프로젝트가 사라진다. 이름은 없으면 아무것도 안 걸러지므로 화면이 달라지지 않는다.
+   */
+  private static readonly HIDDEN_PROJECT_NAMES: ReadonlySet<string> = new Set(['중기부 지원사업'])
+
+  /**
+   * 감춘 프로젝트는 드롭다운뿐 아니라 **대기 건수 뱃지에서도 빠져야 한다.** 두 화면이 같은
+   * 목록을 봐야 "목록에 없는데 숫자에는 잡히는" 상태가 생기지 않으므로 여기 한 곳에서 거른다.
+   */
+  listProjects = async () => {
+    const list = await this.request<{ items: Project[] }>('/api/projects')
+    return { ...list, items: (list.items ?? []).filter((item) => !KnowledgeAdminApi.HIDDEN_PROJECT_NAMES.has(item.name)) }
+  }
 
   /** `projectId`가 필수 파라미터다 — 전체 목록 엔드포인트가 없다. */
   listKnowledgeBases = (projectId: string) => this.request<{ items: KnowledgeBase[] }>(
@@ -145,6 +165,64 @@ export class KnowledgeAdminApi {
       `/api/knowledge-bases/${encodeURIComponent(knowledgeBaseId)}/rollback`,
       { method: 'POST', body: JSON.stringify({ schemaVersion: ADMIN_SCHEMA_VERSION, targetKnowledgeVersionId }) },
     )
+
+  /** 프로젝트 단위 목록이다 — 전체 커넥터 엔드포인트가 없다. */
+  listConnectors = (projectId: string) => this.request<ConnectorList>(
+    `/api/projects/${encodeURIComponent(projectId)}/connectors`,
+  )
+
+  /**
+   * 등록은 **Draft 커넥터 + 불변 버전**을 한 번에 만든다(201). 같은 이름으로 다시 등록하면
+   * 기존 커넥터에 버전만 쌓이므로, 설정을 고치는 방법은 수정이 아니라 재등록이다.
+   *
+   * <p>실패는 대부분 **422**로 오고 사유가 응답 메시지에 그대로 들어 있다. 화면이 자체
+   * 판정으로 막지 않고 서버 문장을 그대로 보이는 이유다.
+   */
+  createConnector = (projectId: string, request: CreateConnectorRequest) =>
+    this.request<Connector>(
+      `/api/projects/${encodeURIComponent(projectId)}/connectors`,
+      { method: 'POST', body: JSON.stringify({ schemaVersion: ADMIN_SCHEMA_VERSION, ...request }) },
+    )
+
+  /** `maxItems`는 계약상 1~20이다. 넘기면 400이므로 화면이 먼저 자른다. */
+  previewConnector = (connectorId: string, maxItems: number) =>
+    this.request<ConnectorPreview>(
+      `/api/connectors/${encodeURIComponent(connectorId)}/preview`,
+      { method: 'POST', body: JSON.stringify({ schemaVersion: ADMIN_SCHEMA_VERSION, maxItems }) },
+    )
+
+  /**
+   * 커넥터 버전 활성화. **지식 버전 활성화와 다른 엔드포인트다** — 이쪽은 "다음 빌드가 쓸
+   * 자료원"을 정하고, 포털 답변은 지식 버전을 활성화해야 바뀐다.
+   *
+   * <p>`DRAFT`·`ACTIVE`만 받는다(`ConnectorStore:145`). 보관된 버전에 부르면 409
+   * `CONNECTOR_VERSION_NOT_ACTIVATABLE`이다.
+   */
+  activateConnectorVersion = (connectorId: string, connectorVersionId: string) =>
+    this.request<Connector>(
+      `/api/connectors/${encodeURIComponent(connectorId)}/versions/${encodeURIComponent(connectorVersionId)}/activate`,
+      { method: 'POST', body: JSON.stringify({ schemaVersion: ADMIN_SCHEMA_VERSION }) },
+    )
+
+  /* ----- 고객사 온보딩(AI02-017). 셋을 이어 불러 프로젝트·지식베이스·챗봇을 한 흐름으로 만든다. ----- */
+
+  createProject = (name: string, description?: string) =>
+    this.request<Project>('/api/projects', {
+      method: 'POST',
+      body: JSON.stringify({ schemaVersion: ADMIN_SCHEMA_VERSION, name, ...(description ? { description } : {}) }),
+    })
+
+  createKnowledgeBase = (projectId: string, name: string) =>
+    this.request<KnowledgeBase>('/api/knowledge-bases', {
+      method: 'POST',
+      body: JSON.stringify({ schemaVersion: ADMIN_SCHEMA_VERSION, projectId, name }),
+    })
+
+  createChatbot = (projectId: string, name: string, knowledgeBaseId: string) =>
+    this.request<{ chatbotId: string }>(`/api/projects/${encodeURIComponent(projectId)}/chatbots`, {
+      method: 'POST',
+      body: JSON.stringify({ schemaVersion: ADMIN_SCHEMA_VERSION, name, knowledgeBaseId }),
+    })
 }
 
 /** 제품 경로는 `{ traceId, error: { code, message, retryable, retryAfterMs } }` 봉투를 쓴다. */

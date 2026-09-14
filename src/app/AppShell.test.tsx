@@ -455,7 +455,8 @@ test('an administrator reaches all five CMS sections', async () => {
   for (const label of ['회원 관리', '메뉴 관리', '컨텐츠 관리', '게시판 관리', '템플릿 관리']) {
     expect(screen.getByRole('button', { name: new RegExp(label) })).toBeInTheDocument()
   }
-  expect(screen.getByRole('link', { name: /사용자 사이트 열기/ })).toHaveAttribute('href', '/')
+  // 전역 "사용자 사이트 열기"는 관광(/)만 가리켜 제거했다 — 포털 주소는 RAG 관리가 고객사별로 보인다.
+  expect(screen.queryByRole('link', { name: /사용자 사이트 열기/ })).not.toBeInTheDocument()
   expect(screen.queryByRole('complementary', { name: /자연어 도우미/ })).not.toBeInTheDocument()
   const adminRoot = document.querySelector('.admin-app')
   expect(adminRoot).toHaveAttribute('data-admin-theme', 'light')

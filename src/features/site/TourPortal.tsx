@@ -7,6 +7,8 @@ import { tabToCategory } from '../knowledge/category'
 import { useRagQuery } from '../knowledge/useRagQuery'
 import { withParticle } from './particle'
 import { addressLine, festivalBadge, highlightTitles, PORTAL_TABS } from './portal-meta'
+import { TOUR_DOMAIN, type PortalDomain } from './portal-domains'
+import { projectIdOf } from './portal-projects'
 import { describePortalStatus } from './portal-status'
 import { CardPhoto, Placeholder, PhotoTag } from './portal-primitives'
 import { PortalResultCard } from './PortalResultCard'
@@ -516,13 +518,13 @@ export function PortalFooter({ template, menus = [] }: { template: SiteTemplate;
 /** F11(60초/30회)이 검색과 챗봇을 함께 조인다. 탭 연타·타이핑이 예산을 태우지 않게 한다. */
 const SEARCH_DEBOUNCE_MS = 400
 
-export function PortalSearch() {
+export function PortalSearch({ domain = TOUR_DOMAIN }: { domain?: PortalDomain } = {}) {
   const location = useLocation()
   const navigate = useNavigate()
   const params = new URLSearchParams(location.search)
   const query = params.get('q') ?? ''
   const requested = params.get('category')
-  const active = PORTAL_TABS.some((tab) => tab.id === requested) ? (requested as string) : 'all'
+  const active = domain.tabs.some((tab) => tab.id === requested) ? (requested as string) : 'all'
   const [draft, setDraft] = useState(query)
   const { state, ask, reset } = useRagQuery()
 
@@ -536,11 +538,13 @@ export function PortalSearch() {
       reset()
       return
     }
+    // answerStyle은 BRIEF다. 이 답변 바로 아래에 결과 카드가 펼쳐지므로, 카드마다 길게
+    // 풀면 같은 말이 두 번 나오고 목록을 훑는 일을 방해한다. 챗봇은 반대로 DETAILED다.
     const timer = setTimeout(() => {
-      ask({ query, category: tabToCategory(active) })
+      ask({ query, category: tabToCategory(active, domain.tabs), projectId: projectIdOf(location.pathname, location.search), answerStyle: 'BRIEF' })
     }, SEARCH_DEBOUNCE_MS)
     return () => clearTimeout(timer)
-  }, [query, active, ask, reset])
+  }, [query, active, domain, location.pathname, location.search, ask, reset])
 
   // 탭 전환은 프론트 필터링이 아니라 category 파라미터를 바꾼 재검색 URL이다.
   // 프론트에서 상위 N건을 걸러내면 결과가 0건이 되기 쉽다 — SQL 평가 순서상 WHERE가
@@ -550,7 +554,7 @@ export function PortalSearch() {
     if (nextQuery) next.set('q', nextQuery)
     if (category !== 'all') next.set('category', category)
     const qs = next.toString()
-    navigate(qs ? `/search?${qs}` : '/search')
+    navigate(qs ? `${domain.searchPath}?${qs}` : domain.searchPath)
   }
 
   function submit(event: FormEvent) {
@@ -563,7 +567,7 @@ export function PortalSearch() {
       <div className="mx-auto max-w-[75rem] px-7 pb-7 pt-6 max-[560px]:px-4">
         <form onSubmit={submit} className="flex h-[3.25rem] max-w-[45rem] items-center gap-3 rounded-full border border-field-line bg-panel py-0 pl-5 pr-2 text-ink shadow-[0_2px_14px_rgba(22,34,47,0.07)]">
           <SearchGlyph size={17} />
-          <input value={draft} onChange={(event) => setDraft(event.target.value)} aria-label="여행지 검색" placeholder="어디로 떠나볼까요?" className="min-w-0 flex-1 border-0 bg-transparent text-[0.9375rem] text-ink outline-0" />
+          <input value={draft} onChange={(event) => setDraft(event.target.value)} aria-label={domain.searchAria} placeholder={domain.searchPlaceholder} className="min-w-0 flex-1 border-0 bg-transparent text-[0.9375rem] text-ink outline-0" />
           <button type="submit" className="h-10 flex-none rounded-full bg-primary px-[1.625rem] text-sm font-bold text-white">검색</button>
         </form>
       </div>
@@ -574,7 +578,7 @@ export function PortalSearch() {
         <aside aria-label="검색 필터" className="rounded-xl border border-line-soft bg-panel p-[1.375rem]">
           <p className="m-0 mb-4 text-base font-extrabold tracking-[-.03em] text-ink">필터링 결과</p>
           <div className="flex flex-col items-start gap-[2px] max-[900px]:flex-row max-[900px]:flex-wrap max-[900px]:gap-x-4">
-            {PORTAL_TABS.map((tab) => {
+            {domain.tabs.map((tab) => {
               const on = tab.id === active
               return <button
                 key={tab.id}
@@ -597,7 +601,8 @@ export function PortalSearch() {
             {state.phase === 'ready' && <span className="ml-2 text-[0.9375rem] font-bold text-muted">{state.data?.citations.length ?? 0}건</span>}
           </h1>
 
-          <SearchResults state={state} onRetry={() => ask({ query, category: tabToCategory(active) })} hasQuery={query !== ''} />
+          {/* 재시도에도 projectId를 싣는다 — 빠뜨리면 재시도만 기본(관광) 데이터로 떨어진다. */}
+          <SearchResults state={state} onRetry={() => ask({ query, category: tabToCategory(active, domain.tabs), projectId: projectIdOf(location.pathname, location.search), answerStyle: 'BRIEF' })} hasQuery={query !== ''} />
         </div>
       </div>
     </div>

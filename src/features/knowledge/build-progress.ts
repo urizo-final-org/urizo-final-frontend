@@ -31,6 +31,19 @@ export const BUILD_STEPS = [
   'COLLECT', 'CHUNK', 'EMBED', 'INDEX', 'evaluate', '승인 대기', '활성화',
 ] as const
 
+/**
+ * 화면에 그릴 단계 이름. **`BUILD_STEPS` 값 자체는 서버가 보내는 phase와 맞추는 열쇠라
+ * 바꾸지 않는다** — `stepStates()`가 그 값으로 대조하므로 한글로 바꾸면 단계 점등이 통째로
+ * 꺼진다. 보이는 글자만 여기서 갈아 끼운다(AI02-024).
+ */
+export const BUILD_STEP_LABEL: Record<string, string> = {
+  COLLECT: '자료 모으기',
+  CHUNK: '자료 나누기',
+  EMBED: '검색 준비',
+  INDEX: '검색 등록',
+  evaluate: '품질 확인',
+}
+
 export type BuildView = {
   version: KnowledgeVersion
   /** 밀리초. `createdAt` 기준이라 새로고침해도 이어진다. */

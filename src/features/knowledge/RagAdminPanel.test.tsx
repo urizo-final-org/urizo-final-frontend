@@ -31,10 +31,96 @@ function api(overrides: Partial<Record<keyof KnowledgeAdminApi, unknown>> = {}) 
     }),
     listVersions: vi.fn().mockResolvedValue({ items: [version()] }),
     listActivationRequests: vi.fn().mockResolvedValue({ items: [] }),
+    listConnectors: vi.fn().mockResolvedValue({ items: [] }),
     getJob: vi.fn(),
     ...overrides,
   } as unknown as KnowledgeAdminApi
 }
+
+// 스케줄러가 남긴 변경 요약이 있으면 갱신 필요 콜아웃이 뜨고, 요청 패널로 안내한다(AI02-022).
+test('a stored source change summary raises the refresh-needed callout', async () => {
+  const changed = {
+    ...base,
+    sourceChangeSummary: {
+      checkedAt: '2026-09-13T09:00:00.000Z', comparedVersion: 8,
+      added: 3, modified: 5, missing: 1,
+    },
+  }
+  show(<RagAdminPanel api={api({
+    resolveTarget: vi.fn().mockResolvedValue({
+      kind: 'ready', projectId: 'p-1', knowledgeBaseId: 'kb-1', name: '관광 지식 베이스',
+      projects: [project], project, bases: [changed],
+    }),
+  })} role="GENERAL_ADMIN" />)
+
+  expect(await screen.findByText(/원천 데이터 변경 감지/)).toBeInTheDocument()
+  expect(screen.getByText(/신규 3 · 수정 5 · 소멸 1건/)).toBeInTheDocument()
+  expect(screen.getByText(/RAG 갱신이 필요합니다/)).toBeInTheDocument()
+})
+
+// 0건 요약은 "점검했고 이상 없음"이다 — 알림으로 띄우면 늑대 소년이 된다.
+test('an all-zero change summary raises nothing', async () => {
+  const unchanged = {
+    ...base,
+    sourceChangeSummary: {
+      checkedAt: '2026-09-13T09:00:00.000Z', comparedVersion: 8,
+      added: 0, modified: 0, missing: 0,
+    },
+  }
+  show(<RagAdminPanel api={api({
+    resolveTarget: vi.fn().mockResolvedValue({
+      kind: 'ready', projectId: 'p-1', knowledgeBaseId: 'kb-1', name: '관광 지식 베이스',
+      projects: [project], project, bases: [unchanged],
+    }),
+  })} role="GENERAL_ADMIN" />)
+
+  await screen.findByText('관광 지식 베이스')
+  expect(screen.queryByText(/원천 데이터 변경 감지/)).not.toBeInTheDocument()
+})
+
+/**
+ * 새 지식 베이스의 첫 빌드. `Build 시작`은 최신 버전의 커넥터를 재사용하는 구조라 버전이
+ * 0개면 눌리지 않는다 — 갓 만든 고객사에서 첫 빌드를 시작할 길이 화면에 없었다.
+ */
+test('a knowledge base with no versions starts its first build from the connector', async () => {
+  const startBuild = vi.fn().mockResolvedValue({ jobId: 'j-1', status: 'QUEUED', statusUrl: '/x' })
+  const fresh = api({
+    listVersions: vi.fn().mockResolvedValue({ items: [] }),
+    listConnectors: vi.fn().mockResolvedValue({
+      items: [{
+        schemaVersion: '1.0', traceId: 't', projectId: 'p-1', connectorId: 'c-1',
+        connectorVersionId: 'cv-7', name: 'SME_SUPPORT_ANNOUNCEMENT', status: 'ACTIVE',
+        configDigest: `sha256:${'a'.repeat(64)}`, createdAt: '2026-09-12T03:00:00.000Z',
+      }],
+    }),
+    startBuild,
+  })
+  show(<RagAdminPanel api={fresh} role="SUPER_ADMIN" />)
+
+  // 기존 진입점은 여전히 꺼져 있다 — 재사용할 최신 버전이 없다.
+  expect(await screen.findByRole('button', { name: '새 자료 만들기' })).toBeDisabled()
+
+  fireEvent.click(await screen.findByRole('button', { name: /첫 빌드/ }))
+  // 8분짜리 작업이라 확인창을 거친다. 커넥터 패널이 직접 시작하지 않는 이유다.
+  fireEvent.click(await screen.findByRole('button', { name: '만들기 시작' }))
+  await waitFor(() => expect(startBuild).toHaveBeenCalledWith('kb-1', 'cv-7', expect.stringContaining('first build')))
+})
+
+test('a knowledge base that already has versions keeps one build entry point', async () => {
+  const used = api({
+    listConnectors: vi.fn().mockResolvedValue({
+      items: [{
+        schemaVersion: '1.0', traceId: 't', projectId: 'p-1', connectorId: 'c-1',
+        connectorVersionId: 'cv-7', name: 'SME_SUPPORT_ANNOUNCEMENT', status: 'ACTIVE',
+        configDigest: `sha256:${'a'.repeat(64)}`, createdAt: '2026-09-12T03:00:00.000Z',
+      }],
+    }),
+  })
+  show(<RagAdminPanel api={used} role="SUPER_ADMIN" />)
+  await screen.findByText('관광 지식 베이스')
+  // 버전이 있으면 위 「Build 시작」이 그 일을 한다. 같은 동작의 버튼을 둘로 두지 않는다.
+  expect(screen.queryByRole('button', { name: /첫 빌드/ })).not.toBeInTheDocument()
+})
 
 test('a summary reads the active version from the versions call', async () => {
   show(<RagAdminPanel api={api()} role="SUPER_ADMIN" />)
@@ -44,14 +130,15 @@ test('a summary reads the active version from the versions call', async () => {
   expect(summary.getByText('활성 버전')).toBeInTheDocument()
   expect(summary.getByText('v8')).toBeInTheDocument()
   // 문서·청크는 목업이던 고정 문자열이 아니라 응답에서 온다.
-  expect(summary.getAllByText('500')).toHaveLength(2)
+  expect(summary.getByText('500건')).toBeInTheDocument()
+  expect(summary.queryByText('청크')).not.toBeInTheDocument()
 })
 
 test('a general admin sees the screen but every write button is already disabled', async () => {
   show(<RagAdminPanel api={api()} role="GENERAL_ADMIN" />)
   await screen.findByText('관광 지식 베이스')
   // 눌러서 403을 받는 게 아니라 세션 역할로 미리 판별한다. 403은 방어선이지 UI가 아니다.
-  expect(screen.getByRole('button', { name: 'Build 시작' })).toBeDisabled()
+  expect(screen.getByRole('button', { name: '새 자료 만들기' })).toBeDisabled()
   expect(screen.getByRole('button', { name: '이전 버전 롤백' })).toBeDisabled()
   expect(screen.getByText(/SUPER_ADMIN 권한이 필요합니다/)).toBeInTheDocument()
 })
@@ -62,7 +149,7 @@ test('entering the screen starts polling only when a build is already running', 
   await screen.findByText('관광 지식 베이스')
   // 설계 §5 정책 — 빌드가 없으면 폴링하지 않는다. job 조회가 한 번도 일어나면 안 된다.
   expect(idle.getJob).not.toHaveBeenCalled()
-  expect(screen.queryByText(/지식 빌드 진행 중/)).not.toBeInTheDocument()
+  expect(screen.queryByText(/자료를 만들고 있습니다/)).not.toBeInTheDocument()
 })
 
 test('a reload during a build recovers the progress panel from the versions call', async () => {
@@ -75,7 +162,7 @@ test('a reload during a build recovers the progress panel from the versions call
     getJob: vi.fn().mockResolvedValue({ progress: { phase: 'CHUNK', percent: 45 } }),
   })
   show(<RagAdminPanel api={running} role="SUPER_ADMIN" />)
-  expect(await screen.findByText(/지식 빌드 진행 중/)).toBeInTheDocument()
+  expect(await screen.findByText(/자료를 만들고 있습니다/)).toBeInTheDocument()
   await waitFor(() => expect(running.getJob).toHaveBeenCalledWith('job-1'))
 })
 
@@ -87,7 +174,7 @@ test('the progress panel never shows a percent bar or a processed count', async 
     getJob: vi.fn().mockResolvedValue({ progress: { phase: 'CHUNK', percent: 45, targetCount: 500, successCount: 500 } }),
   })
   show(<RagAdminPanel api={running} role="SUPER_ADMIN" />)
-  await screen.findByText(/지식 빌드 진행 중/)
+  await screen.findByText(/자료를 만들고 있습니다/)
   // 9/6 실측: CHUNK 45%에서 8분 36초 정지, successCount는 500/500으로 얼어붙었다.
   // 둘 다 화면에 나오면 사용자가 "멈췄다"로 읽는다.
   await waitFor(() => expect(running.getJob).toHaveBeenCalled())
@@ -130,17 +217,16 @@ test('a cold start says the knowledge base is missing', async () => {
   expect(await screen.findByText(/지식 베이스가 없습니다/)).toBeInTheDocument()
 })
 
-test('the quality panel labels its source and leaves Faithfulness out', async () => {
+/**
+ * 관광 fixture 기반 오프라인 스냅샷은 실수집 버전의 상태가 아니다(AI02-023). 패널째 지웠고,
+ * 되살아나면 실수집 RAG 화면에 옛 측정치가 다시 섞인다.
+ */
+test('the offline quality snapshot panel is gone', async () => {
   show(<RagAdminPanel api={api()} role="SUPER_ADMIN" />)
-  const metrics = within(await screen.findByText('품질 지표').then((node) => node.closest('section') as HTMLElement))
-  // 계약에 지표가 없다. 실시간으로 보이면 안 되고 출처가 붙어야 한다.
-  expect(metrics.getByText(/2026-08-29 측정 · 252 TC/)).toBeInTheDocument()
-  expect(metrics.getByText('0.975')).toBeInTheDocument()
-  // 97/246건에 12개 카테고리가 0건이라 모집단 추정치로 쓸 수 없다 — 값도 이름도 싣지 않는다.
-  expect(metrics.queryByText(/0\.9734/)).not.toBeInTheDocument()
-  expect(metrics.queryByText(/Faithfulness/)).not.toBeInTheDocument()
-  // 용어는 ⓘ 툴팁이 푼다. 값만 있으면 0.897이 좋은 값인지 알 수 없다.
-  expect(metrics.getByLabelText(/여러 곳을 엮어 묻는 어려운 질문/)).toBeInTheDocument()
+  expect(await screen.findByText('RAG 버전')).toBeInTheDocument()
+  expect(screen.queryByText('품질 지표')).not.toBeInTheDocument()
+  expect(screen.queryByText('0.975')).not.toBeInTheDocument()
+  expect(screen.queryByText(/2026-08-29 측정/)).not.toBeInTheDocument()
 })
 
 test('StrictMode double mount still fills the screen', async () => {
@@ -166,10 +252,9 @@ test('a blocked target says so instead of waiting forever', async () => {
  * 상태마다 다른 엔드포인트를 부른다. 이 분기가 없으면 보관 버전에서 409
  * KNOWLEDGE_VERSION_NOT_APPROVABLE이 난다 — 9/7 실호출로 확인한 사고다.
  *
- * <p>보관 버전을 행에 내는 것은 되돌릴 대상을 고르게 하기 위해서다. 목록 위의 전용 버튼은
- * 직전 활성 하나만 가리키므로 그것만으로는 임의의 버전으로 못 돌아간다.
+ * <p>표에 보이는 보관 버전은 직전 활성 하나뿐이고(AI02-023), 그 한 줄에서 되돌릴 수 있다.
  */
-test('an archived version rolls back while an approval-pending one activates', async () => {
+test('the archived rollback target rolls back while an approval-pending one activates', async () => {
   const rollback = vi.fn().mockResolvedValue({})
   const activate = vi.fn().mockResolvedValue({})
   const calls = api({
@@ -204,10 +289,78 @@ test('a failed build cannot be activated — it would make the chatbot see an em
   })
   show(<RagAdminPanel api={calls} role="SUPER_ADMIN" />)
 
-  const denied = await screen.findByTitle('실패한 빌드는 활성화할 수 없습니다.')
+  const denied = await screen.findByTitle('실패한 자료는 활성화할 수 없습니다.')
   expect(denied).toBeDisabled()
   fireEvent.click(denied)
   expect(rollback).not.toHaveBeenCalled()
+})
+
+// 빌드가 잰 값이 있으면 그것을 쓴다. 정적 스냅샷은 관광 한 도메인의 과거 측정치라
+// 다른 고객사 화면에 보이면 잘못된 신뢰를 만든다.
+test('a version shows the evaluation its own build measured', async () => {
+  show(<RagAdminPanel api={api({
+    listVersions: vi.fn().mockResolvedValue({
+      items: [version({
+        versionNumber: 3, knowledgeVersionId: 'kv-3', activatedAt: undefined,
+        status: 'APPROVAL_PENDING',
+        evaluation: { method: 'TITLE_SELF_RETRIEVAL', sampleSize: 50, hit5: 0.94, hit10: 0.98, mrr10: 0.882 },
+      })],
+    }),
+  })} role="SUPER_ADMIN" />)
+
+  // 표에는 값 하나만 둔다. 세부 수치는 셀 툴팁으로 미룬다(AI02-023).
+  expect(await screen.findByText('색인 검색 94%')).toBeInTheDocument()
+  // 무엇을 잰 것인지가 화면에 남아야 한다 — 시험지로 읽히면 안 된다.
+  const cell = screen.getByTitle(/사용자 질문 기반 시험지가 아닙니다/)
+  expect(cell.title).toMatch(/Hit@5 0\.940 · Hit@10 0\.980 · MRR 0\.882/)
+})
+
+// 골든 점수는 같은 세트 버전끼리만 비교가 성립한다. 표는 값 하나만 보이고, 세트 버전과
+// 동결된 제외는 툴팁이 든다 — 없어지면 "몇 문항짜리 시험이었는지"를 알 길이 사라진다.
+test('a golden evaluation keeps its set version and frozen exclusions in the tooltip', async () => {
+  show(<RagAdminPanel api={api({
+    listVersions: vi.fn().mockResolvedValue({
+      items: [version({
+        versionNumber: 4, knowledgeVersionId: 'kv-4', activatedAt: undefined,
+        status: 'APPROVAL_PENDING',
+        evaluation: {
+          method: 'GOLDEN_QUESTION', sampleSize: 47, hit5: 0.787, hit10: 0.872, mrr10: 0.703,
+          setVersion: 1, excluded: [{ id: 'q07', reason: 'DOCUMENT_MISSING' }], modifiedCount: 2,
+        },
+      })],
+    }),
+  })} role="SUPER_ADMIN" />)
+
+  expect(await screen.findByText('품질 평가 79%')).toBeInTheDocument()
+  const cell = screen.getByTitle(/같은 세트 버전끼리만 비교하세요/)
+  expect(cell.title).toMatch(/세트 v1 · 문항 47/)
+  expect(cell.title).toMatch(/제외된 문항 1건/)
+})
+
+// 청킹 규칙은 구현 정보다(AI02-024). 청크 수 칸을 지운 뒤로 "왜 청크 수가 다른가"라는
+// 질문 자체가 화면에서 사라져, 그 답만 남아 있을 이유가 없다.
+test('the chunking rule never reaches the screen', async () => {
+  show(<RagAdminPanel api={api({
+    listVersions: vi.fn().mockResolvedValue({
+      items: [
+        version({
+          versionNumber: 3, knowledgeVersionId: 'kv-3', chunkCount: 1247, activatedAt: undefined,
+          status: 'APPROVAL_PENDING',
+          chunkingStrategy: { maxCharacters: 900, overlapCharacters: 120, reason: '공고 본문이 짧아 문단 단위로 충분합니다.' },
+        }),
+        version({
+          versionNumber: 5, knowledgeVersionId: 'kv-5', activatedAt: undefined, status: 'APPROVAL_PENDING',
+          chunkingStrategy: { maxCharacters: 0, overlapCharacters: 0, reason: '문서 전체를 한 청크로 둔다(LLM 전략 없음).' },
+        }),
+      ],
+    }),
+  })} role="SUPER_ADMIN" />)
+  await screen.findByText('RAG 버전')
+
+  // 서버는 여전히 규칙을 내려준다 — 화면이 그리지 않을 뿐이다.
+  expect(screen.queryByText(/LLM 900자/)).not.toBeInTheDocument()
+  expect(screen.queryByText('문서당 1청크')).not.toBeInTheDocument()
+  expect(screen.queryByText(/청크/)).not.toBeInTheDocument()
 })
 
 test('the confirmation shows the document count before a switch — an empty version activates silently otherwise', async () => {
@@ -220,7 +373,7 @@ test('the confirmation shows the document count before a switch — an empty ver
 
   fireEvent.click(await screen.findByTitle('포털이 v11 기준으로 답하게 합니다.'))
   const dialog = screen.getByRole('dialog')
-  expect(within(dialog).getByText('문서 500 · 청크 500')).toBeInTheDocument()
+  expect(within(dialog).getByText('문서 500건')).toBeInTheDocument()
   expect(within(dialog).getByText(/포털 검색·챗봇이 즉시 v11 기준으로 답합니다/)).toBeInTheDocument()
 })
 
@@ -265,9 +418,9 @@ test('a build reuses the newest version connector and warns it will not auto-act
     startBuild,
   })} role="SUPER_ADMIN" />)
 
-  fireEvent.click(await screen.findByRole('button', { name: 'Build 시작' }))
+  fireEvent.click(await screen.findByRole('button', { name: '새 자료 만들기' }))
   expect(screen.getByText(/자동 활성화되지 않고 승인 대기 상태로 멈춥니다/)).toBeInTheDocument()
-  fireEvent.click(screen.getByRole('button', { name: '빌드 시작' }))
+  fireEvent.click(screen.getByRole('button', { name: '만들기 시작' }))
   await waitFor(() => expect(startBuild).toHaveBeenCalledWith('kb-1', 'cv-9', expect.any(String)))
 })
 
@@ -284,7 +437,7 @@ test('a general admin sees every write disabled and can open no dialog', async (
   const denied = await screen.findAllByTitle('SUPER_ADMIN 권한이 필요합니다. 최고 관리자에게 요청하세요.')
   expect(denied.length).toBeGreaterThan(1)
   denied.forEach((button) => expect(button).toBeDisabled())
-  expect(screen.getByRole('button', { name: 'Build 시작' })).toBeDisabled()
+  expect(screen.getByRole('button', { name: '새 자료 만들기' })).toBeDisabled()
   fireEvent.click(denied[0])
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   expect(rollback).not.toHaveBeenCalled()
@@ -306,21 +459,26 @@ test('a failing switch surfaces the error and leaves the table refreshed', async
   expect(listVersions.mock.calls.length).toBeGreaterThan(1)
 })
 
-test('does not attach offline measurements to environment-local version numbers', async () => {
+/**
+ * 관광 fixture 오프라인 스냅샷은 통째로 사라졌다(AI02-023). 서버가 잰 값이 없는 버전은
+ * 하드코딩된 과거 수치가 아니라 "측정 전"이다 — 되살아나면 다른 고객사 화면에 관광 수치가
+ * 다시 붙는다.
+ */
+test('a version without a server measurement says so instead of borrowing old numbers', async () => {
   show(<RagAdminPanel api={api({
     listVersions: vi.fn().mockResolvedValue({
       items: [
         version({ versionNumber: 18, status: 'APPROVAL_PENDING', knowledgeVersionId: 'another-db-v18', activatedAt: undefined }),
-        version({ versionNumber: 17, status: 'APPROVAL_PENDING', knowledgeVersionId: 'another-db-v17', activatedAt: undefined }),
         version({ versionNumber: 12, knowledgeVersionId: 'another-db-v12' }),
       ],
     }),
   })} role="SUPER_ADMIN" />)
   const table = within((await screen.findByText('RAG 버전')).closest('section') as HTMLElement)
 
-  expect(table.queryByText('지표')).not.toBeInTheDocument()
+  expect(table.getAllByText('측정 전')).toHaveLength(2)
   expect(table.queryByText(/검색 정확도/)).not.toBeInTheDocument()
   expect(table.queryByText(/오프라인 측정 · 9\/9/)).not.toBeInTheDocument()
+  expect(table.queryByText(/기준선/)).not.toBeInTheDocument()
 })
 
 test('the switch button label is just 전환 while the endpoint split stays elsewhere', async () => {
@@ -333,18 +491,18 @@ test('the switch button label is just 전환 while the endpoint split stays else
       ],
     }),
   })} role="SUPER_ADMIN" />)
-  // 상태가 달라도 표의 라벨은 하나다. 엔드포인트 분기는 switchPath가 그대로 든다
-  // (아래 'an archived version rolls back…' 테스트가 계속 지킨다).
+  // 전환 가능한 행은 둘이다 — 승인 대기 v10과 되돌릴 대상인 보관 v11.
   expect(await screen.findAllByRole('button', { name: '전환' })).toHaveLength(2)
   expect(screen.queryByRole('button', { name: /활성화\(승인\)/ })).not.toBeInTheDocument()
 })
 
 function ladder() {
   // 실제 로컬 상태와 같은 모양 — 활성이 중간에 있고(롤백 흔적) 실패 버전이 섞여 있다.
+  // 보관 둘의 활성화 시각을 갈라 둔다: v11이 더 최근에 서비스됐으므로 되돌릴 대상이다.
   return [
-    version({ versionNumber: 11, status: 'ARCHIVED', knowledgeVersionId: 'kv-11' }),
+    version({ versionNumber: 11, status: 'ARCHIVED', knowledgeVersionId: 'kv-11', activatedAt: '2026-09-07T02:00:00.000Z' }),
     version({ versionNumber: 10, status: 'APPROVAL_PENDING', knowledgeVersionId: 'kv-10', activatedAt: undefined }),
-    version({ versionNumber: 9, status: 'ARCHIVED', knowledgeVersionId: 'kv-9' }),
+    version({ versionNumber: 9, status: 'ARCHIVED', knowledgeVersionId: 'kv-9', activatedAt: '2026-09-01T02:00:00.000Z' }),
     version({ versionNumber: 8, status: 'ACTIVE', knowledgeVersionId: 'kv-8' }),
     version({ versionNumber: 4, status: 'FAILED', knowledgeVersionId: 'kv-4', documentCount: 0, chunkCount: 0, activatedAt: undefined }),
     version({ versionNumber: 3, status: 'FAILED', knowledgeVersionId: 'kv-3', documentCount: 0, chunkCount: 0, activatedAt: undefined }),
@@ -352,19 +510,25 @@ function ladder() {
 }
 
 /**
- * 버전 표는 접지 않는다. 접힘은 이 화면이 답해야 할 질문("버전끼리 무엇이 다른가")을
- * 오히려 가렸다 — v3을 만들면 v1이 보관으로 밀려 접힘 안으로 들어가, 비교 대상이 화면에서
- * 사라졌다. 실패한 빌드까지 남아 있는 것이 "버전은 고치지 않고 새로 만든다"의 증거다.
+ * 표는 지금 운영에 관계된 버전만 낸다(AI02-023) — 활성 · 승인 대기 · 실패 · 만드는 중,
+ * 그리고 <b>되돌릴 대상인 직전 보관 하나</b>. 더 오래된 보관은 뺀다.
+ *
+ * <p>보관을 전부 감췄더니 새 버전을 활성화하는 순간 직전 버전이 화면에서 증발했다
+ * (2026-09-14 실측). 잘못 활성화했음을 알아챈 순간 돌아갈 곳이 안 보이는 상태다.
  */
-test('the table shows every version without folding', async () => {
+test('the table keeps the rollback target but drops older archives', async () => {
   show(<RagAdminPanel api={api({ listVersions: vi.fn().mockResolvedValue({ items: ladder() }) })} role="SUPER_ADMIN" />)
 
   // v8은 요약 카드에도 나오므로 버전 표 안으로 좁혀 단언한다.
   const table = within((await screen.findByText('RAG 버전')).closest('section') as HTMLElement)
-  for (const label of ['v11', 'v10', 'v9', 'v8', 'v4', 'v3']) {
-    expect(table.getByText(label)).toBeInTheDocument()
+  // 활성·승인 대기·실패는 물론, 마지막으로 서비스됐던 v11이 남는다.
+  for (const shown of ['v11', 'v10', 'v8', 'v4', 'v3']) {
+    expect(table.getByText(shown)).toBeInTheDocument()
   }
-  expect(table.getByText('6건')).toBeInTheDocument()
+  // v9는 v11보다 먼저 서비스된 보관이라 목록에서 빠진다.
+  expect(table.queryByText('v9')).not.toBeInTheDocument()
+  // 사라진 것이 아니라 보관된 것이다 — 건수로 남는다.
+  expect(table.getByText('운영 5건 · 보관 1건')).toBeInTheDocument()
   expect(table.queryByRole('button', { name: /더 보기|접기/ })).not.toBeInTheDocument()
 })
 
@@ -410,7 +574,7 @@ test('the clock keeps moving even when every call fails', async () => {
 test('returning to the tab catches up at once instead of waiting for the next poll', async () => {
   const running = building()
   show(<RagAdminPanel api={running} role="SUPER_ADMIN" />)
-  await screen.findByText(/지식 빌드 진행 중/)
+  await screen.findByText(/자료를 만들고 있습니다/)
   await waitFor(() => expect(running.getJob).toHaveBeenCalled())
   const before = (running.getJob as ReturnType<typeof vi.fn>).mock.calls.length
 
@@ -424,7 +588,7 @@ test('returning to the tab catches up at once instead of waiting for the next po
 test('a hidden tab does not trigger the catch-up', async () => {
   const running = building()
   show(<RagAdminPanel api={running} role="SUPER_ADMIN" />)
-  await screen.findByText(/지식 빌드 진행 중/)
+  await screen.findByText(/자료를 만들고 있습니다/)
   await waitFor(() => expect(running.getJob).toHaveBeenCalled())
   const before = (running.getJob as ReturnType<typeof vi.fn>).mock.calls.length
 
@@ -475,125 +639,3 @@ test('a general admin gets a request path instead of a dead-ended tooltip', asyn
   expect(await screen.findByRole('button', { name: '갱신 요청' })).toBeEnabled()
   expect(screen.getByText(/아래 「갱신 요청」에 남기면/)).toBeInTheDocument()
 })
-
-/**
- * 이 환경(데모 DB)의 UUID를 아는 버전에만 지표가 붙는다. 위 회귀 테스트와 짝이다 —
- * 저쪽은 "모르는 UUID면 열 자체가 없다", 이쪽은 "아는 UUID면 갈라 보인다".
- */
-const DEMO = {
-  v12: '27c887bc-b528-4099-af77-e8da92751e2a',
-  v17: 'e6da49bf-26f2-4f80-ba6d-b4995311e53e',
-  v18: '2d239788-9cef-4bcf-ab30-f8e3d5b0f449',
-}
-
-function demoVersions() {
-  return {
-    listVersions: vi.fn().mockResolvedValue({
-      items: [
-        version({ versionNumber: 18, status: 'APPROVAL_PENDING', knowledgeVersionId: DEMO.v18, activatedAt: undefined }),
-        version({ versionNumber: 17, status: 'APPROVAL_PENDING', knowledgeVersionId: DEMO.v17, activatedAt: undefined }),
-        version({ versionNumber: 12, knowledgeVersionId: DEMO.v12 }),
-      ],
-    }),
-  }
-}
-
-test('known versions are told apart by the metric column, not by anything else on the row', async () => {
-  show(<RagAdminPanel api={api(demoVersions())} role="SUPER_ADMIN" />)
-  const table = within((await screen.findByText('RAG 버전')).closest('section') as HTMLElement)
-
-  // 활성 v12는 비교 기준이라 델타 대신 "기준".
-  expect(table.getByText('검색 정확도 기준')).toBeInTheDocument()
-  // hit@5는 표에서 자리를 차지하지 않고 셀 hover 툴팁으로 미룬다 — 한눈에 읽을 것은 델타와 판정뿐이다.
-  expect(table.queryByText(/정답을 찾은 문항/)).not.toBeInTheDocument()
-  const tips = table.getAllByTitle(/정답을 찾은 문항/).map((node) => node.getAttribute('title'))
-  expect(tips.filter((tip) => tip === '정답을 찾은 문항 250 / 252')).toHaveLength(2)
-  expect(tips).toContain('정답을 찾은 문항 249 / 252')
-  // v17은 R@5 기준 하락이고 배지는 판정만 말한다 — 사유(C유형 0.7990)는 접힌 원값에 있다.
-  expect(table.getByText('검색 정확도 ▼ -2.01%p')).toBeInTheDocument()
-  expect(table.getByText('기준선 미달')).toBeInTheDocument()
-  // v18은 활성과 동률이고 통과 — v17과 나란히 갈리는 것이 시연 컷 3의 핵심이다.
-  expect(table.getByText('검색 정확도 ±0.00%p')).toBeInTheDocument()
-  expect(table.getAllByText('기준선 통과')).toHaveLength(2)
-})
-
-test('the source label never collapses even though the raw numbers do', async () => {
-  show(<RagAdminPanel api={api(demoVersions())} role="SUPER_ADMIN" />)
-  const table = within((await screen.findByText('RAG 버전')).closest('section') as HTMLElement)
-
-  // evaluate가 스텁(score=100 고정)이라, 출처가 접히면 시스템이 방금 잰 값처럼 보이는 거짓말이 된다.
-  const summaries = table.getAllByText('오프라인 측정 · 9/9 ▾')
-  expect(summaries).toHaveLength(3)
-  summaries.forEach((summary) => expect(summary).toBeVisible())
-
-  // 원값은 DOM에는 있으나 기본으로 보이지 않는다. <details> 네이티브 동작이라 JS가 없다.
-  const raw = table.getByText('R@5 0.9546 · C유형 0.7990 · MRR 0.9697')
-  expect(raw).not.toBeVisible()
-  ;(raw.closest('details') as HTMLDetailsElement).open = true
-  expect(raw).toBeVisible()
-})
-
-test('a freshly built version inherits the measurement of an identical index configuration', async () => {
-  // 빌드마다 UUID가 새로 생긴다. 그래서 방금 만든 버전은 UUID 표에 없다 — 그런데 같은
-  // 커넥터로 같은 문서·청크 수가 나왔으면 색인이 같고, 검색 정확도도 같다. 최고 관리자가
-  // 활성화를 판단하려면 이 칸이 비어 있으면 안 된다.
-  show(<RagAdminPanel api={api({
-    listVersions: vi.fn().mockResolvedValue({
-      items: [
-        version({
-          versionNumber: 19, status: 'APPROVAL_PENDING', knowledgeVersionId: 'kv-fresh-build',
-          connectorVersionId: 'd52ab2fa-7b84-4132-8dec-f688144f9287',
-          documentCount: 500, chunkCount: 500, activatedAt: undefined,
-        }),
-        version({ versionNumber: 12, knowledgeVersionId: DEMO.v12, connectorVersionId: 'd52ab2fa-7b84-4132-8dec-f688144f9287' }),
-      ],
-    }),
-  })} role="SUPER_ADMIN" />)
-  const table = within((await screen.findByText('RAG 버전')).closest('section') as HTMLElement)
-
-  expect(table.queryByText('측정 전')).not.toBeInTheDocument()
-  // 활성본과 같은 색인이므로 델타가 0이고 기준선을 통과한다.
-  expect(table.getByText('검색 정확도 ±0.00%p')).toBeInTheDocument()
-  expect(table.getAllByText('기준선 통과')).toHaveLength(2)
-  // 방금 잰 값이 아니라는 사실을 라벨이 밝힌다 — 이 구분이 없으면 화면이 거짓말을 한다.
-  expect(table.getByText('오프라인 측정 · 9/9 · 같은 구성 재사용 ▾')).toBeInTheDocument()
-})
-
-test('a version measured differently keeps its own numbers even if the index size matches', async () => {
-  // v17은 색인 전략만 바꿔 문서·청크 수가 그대로다. 지문만 보면 물려받아야 할 것처럼 보이지만
-  // UUID 고정이 먼저다 — 여기서 밀리면 미달 버전이 통과로 뒤집힌다.
-  show(<RagAdminPanel api={api({
-    listVersions: vi.fn().mockResolvedValue({
-      items: [
-        version({
-          versionNumber: 17, status: 'APPROVAL_PENDING', knowledgeVersionId: DEMO.v17,
-          connectorVersionId: 'd52ab2fa-7b84-4132-8dec-f688144f9287',
-          documentCount: 500, chunkCount: 500, activatedAt: undefined,
-        }),
-        version({ versionNumber: 12, knowledgeVersionId: DEMO.v12, connectorVersionId: 'd52ab2fa-7b84-4132-8dec-f688144f9287' }),
-      ],
-    }),
-  })} role="SUPER_ADMIN" />)
-  const table = within((await screen.findByText('RAG 버전')).closest('section') as HTMLElement)
-
-  expect(table.getByText('기준선 미달')).toBeInTheDocument()
-  expect(table.getByText('검색 정확도 ▼ -2.01%p')).toBeInTheDocument()
-  expect(table.queryByText(/같은 구성 재사용/)).not.toBeInTheDocument()
-})
-
-test('a failed build gets no measurement even when its id is in the table', async () => {
-  show(<RagAdminPanel api={api({
-    listVersions: vi.fn().mockResolvedValue({
-      items: [
-        // 같은 UUID라도 FAILED는 문서 0건이라 잴 색인이 없다. 숫자가 뜨면 거짓이다.
-        version({ versionNumber: 17, status: 'FAILED', knowledgeVersionId: DEMO.v17, documentCount: 0, chunkCount: 0, activatedAt: undefined }),
-        version({ versionNumber: 12, knowledgeVersionId: DEMO.v12 }),
-      ],
-    }),
-  })} role="SUPER_ADMIN" />)
-  const table = within((await screen.findByText('RAG 버전')).closest('section') as HTMLElement)
-  expect(table.getByText('측정 전')).toBeInTheDocument()
-  // 미측정 셀에는 출처 라벨도 붙지 않는다 — 붙일 숫자가 없다.
-  expect(table.getAllByText('오프라인 측정 · 9/9 ▾')).toHaveLength(1)
-})
-
