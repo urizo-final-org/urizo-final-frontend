@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { qualityMeasured } from './quality-metrics'
 import { portalPathOf } from '../site/portal-projects'
 import { describeFailure } from '../../shared/api/error'
 import type { AdminRole } from '../../shared/api/session'
@@ -11,7 +10,7 @@ import { ConnectorPanel } from './ConnectorPanel'
 import { noHover } from './no-hover'
 import { KnowledgeAdminApi } from './admin-api'
 import type { BuildEvaluation, ChunkingStrategy, Connector, KnowledgeBase, KnowledgeTarget, KnowledgeVersion, KnowledgeVersionStatus, AgentJob, Project } from './admin-types'
-import { buildView, findInProgress, formatElapsed, BUILD_STEPS, stepStates, type BuildView } from './build-progress'
+import { buildView, findInProgress, formatElapsed, BUILD_STEPS, BUILD_STEP_LABEL, stepStates, type BuildView } from './build-progress'
 
 /**
  * `/admin/rag` 실배선(C). 목업이던 `OpsWorkspace.Rag()`를 대체한다.
@@ -49,7 +48,7 @@ const STATUS_TONE: Record<KnowledgeVersionStatus, Tone> = {
 }
 
 const STATUS_LABEL: Record<KnowledgeVersionStatus, string> = {
-  BUILD_REQUESTED: '빌드 요청됨', BUILDING: '빌드 중', APPROVAL_PENDING: '승인 대기',
+  BUILD_REQUESTED: '만들기 대기', BUILDING: '만드는 중', APPROVAL_PENDING: '승인 대기',
   ACTIVE: '활성', ARCHIVED: '보관', FAILED: '실패',
 }
 
@@ -70,9 +69,9 @@ function switchPath(status: KnowledgeVersionStatus): 'activate' | 'rollback' | n
 }
 
 const NOT_SWITCHABLE: Partial<Record<KnowledgeVersionStatus, string>> = {
-  FAILED: '실패한 빌드는 활성화할 수 없습니다.',
-  BUILDING: '빌드가 끝나야 활성화할 수 있습니다.',
-  BUILD_REQUESTED: '빌드가 끝나야 활성화할 수 있습니다.',
+  FAILED: '실패한 자료는 활성화할 수 없습니다.',
+  BUILDING: '자료 만들기가 끝나야 활성화할 수 있습니다.',
+  BUILD_REQUESTED: '자료 만들기가 끝나야 활성화할 수 있습니다.',
 }
 
 /*
@@ -234,7 +233,7 @@ export function RagAdminPanel({ api, role }: { api: KnowledgeAdminApi; role: Adm
       lines: [
         `활성화하면 포털 검색·챗봇이 즉시 v${version.versionNumber} 기준으로 답합니다.`,
         // 함정 2 — 빈 버전도 조용히 ACTIVE가 된다. 누르기 전에 건수를 눈으로 확인시킨다.
-        `문서 ${version.documentCount} · 청크 ${version.chunkCount}`,
+        `문서 ${version.documentCount}건`,
         '현재 활성 버전은 보관됨으로 남고 다시 되돌릴 수 있습니다.',
       ],
       label: path === 'activate' ? '활성화 (승인)' : '되돌리기',
@@ -250,7 +249,7 @@ export function RagAdminPanel({ api, role }: { api: KnowledgeAdminApi; role: Adm
       title: `이전 활성 버전(v${previousActive.versionNumber})으로 롤백`,
       lines: [
         `현재 활성 ${active ? `v${active.versionNumber}` : '버전'} → v${previousActive.versionNumber}로 되돌립니다.`,
-        `문서 ${previousActive.documentCount} · 청크 ${previousActive.chunkCount}`,
+        `문서 ${previousActive.documentCount}건`,
         '포털 답변이 즉시 바뀝니다. 되돌린 버전은 보관됨으로 남습니다.',
       ],
       label: '롤백',
@@ -262,13 +261,13 @@ export function RagAdminPanel({ api, role }: { api: KnowledgeAdminApi; role: Adm
     // 커넥터를 따로 고르지 않는다 — 최신 버전이 쓴 것을 그대로 재사용한다(같은 자료원 재수집).
     if (!knowledgeBaseId || !newest) return
     setConfirmation({
-      title: '새 지식 버전 빌드',
+      title: '새 자료 만들기',
       lines: [
-        '수집 → 청크 → 임베딩까지 도는 작업입니다. 실측 8분대가 걸립니다.',
+        '자료를 모아 검색할 수 있게 만드는 작업입니다. 약 8분 걸립니다.',
         '완료돼도 자동 활성화되지 않고 승인 대기 상태로 멈춥니다.',
         '진행 중에는 이 화면에서 경과 시간을 볼 수 있습니다.',
       ],
-      label: '빌드 시작',
+      label: '만들기 시작',
       run: () => api.startBuild(knowledgeBaseId, newest.connectorVersionId, `admin build ${new Date().toISOString().slice(0, 10)}`),
     })
   }, [api, knowledgeBaseId, newest])
@@ -286,13 +285,13 @@ export function RagAdminPanel({ api, role }: { api: KnowledgeAdminApi; role: Adm
   const askFirstBuild = useCallback((connector: Connector) => {
     if (!knowledgeBaseId) return
     setConfirmation({
-      title: `${connector.name}으로 첫 빌드`,
+      title: `${connector.name}으로 첫 자료 만들기`,
       lines: [
-        '수집 → 청크 → 임베딩까지 도는 작업입니다. 실측 8분대가 걸립니다.',
+        '자료를 모아 검색할 수 있게 만드는 작업입니다. 약 8분 걸립니다.',
         '완료돼도 자동 활성화되지 않고 승인 대기 상태로 멈춥니다.',
         '이 지식 베이스의 첫 버전이 만들어집니다.',
       ],
-      label: '빌드 시작',
+      label: '만들기 시작',
       run: () => api.startBuild(knowledgeBaseId, connector.connectorVersionId, `first build ${new Date().toISOString().slice(0, 10)}`),
     })
   }, [api, knowledgeBaseId])
@@ -305,8 +304,8 @@ export function RagAdminPanel({ api, role }: { api: KnowledgeAdminApi; role: Adm
         className={tableButton}
         disabled={!canWrite || busy || newest == null || view != null}
         onClick={askBuild}
-        title={!mayWrite ? WRITE_DENIED : view != null ? '이미 빌드가 진행 중입니다.' : '새 지식 버전을 만듭니다 (8분대).'}
-      >Build 시작</button>
+        title={!mayWrite ? WRITE_DENIED : view != null ? '이미 만드는 중입니다.' : '검색에 쓸 자료를 새로 만듭니다 (약 8분).'}
+      >새 자료 만들기</button>
     </PageHead>
 
     {/* 스케줄러 감지분(AI02-022). 활성 버전 기준 괴리라 갱신(새 버전 활성화) 전까지 남는다. */}
@@ -350,7 +349,6 @@ export function RagAdminPanel({ api, role }: { api: KnowledgeAdminApi; role: Adm
         versions={versions}
         refreshKey={requestsKey}
       />
-      <QualityMetrics projectId={target?.kind === 'ready' ? target.projectId : undefined} />
       <VersionTable
         versions={versions}
         mayWrite={mayWrite}
@@ -481,13 +479,12 @@ function Summary({ active, name, loading, blocked, portalPath }: {
   const placeholder = blocked ? '—' : loading ? '조회 중…' : '없음'
   const cells = [
     { label: '활성 버전', value: active ? `v${active.versionNumber}` : placeholder },
-    { label: '문서', value: active ? String(active.documentCount) : '—' },
-    { label: '청크', value: active ? String(active.chunkCount) : '—' },
+    { label: '문서', value: active ? `${active.documentCount}건` : '—' },
     { label: '활성화', value: active?.activatedAt ? new Date(active.activatedAt).toLocaleString('ko-KR') : '—' },
   ]
   return <section className={panel}>
     <PanelTitle title={name ?? '지식 베이스'} sub={active?.label ?? undefined} />
-    <div className={`grid sm:grid-cols-2 ${portalPath ? 'xl:grid-cols-5' : 'xl:grid-cols-4'}`}>
+    <div className={`grid sm:grid-cols-2 ${portalPath ? 'xl:grid-cols-4' : 'xl:grid-cols-3'}`}>
       {cells.map((cell) => <div key={cell.label} className="border-r border-row-line px-4 py-[0.875rem]">
         <small className="block text-[0.65625rem] text-muted-3">{cell.label}</small>
         <b className="mt-[0.3125rem] block text-[0.78125rem] font-semibold">{cell.value}</b>
@@ -511,12 +508,12 @@ function Summary({ active, name, loading, blocked, portalPath }: {
 function BuildProgress({ view }: { view: BuildView }) {
   const states = stepStates(view.phase)
   return <section className={panel}>
-    <PanelTitle title="RAG Build 진행" sub={`v${view.version.versionNumber}`}>
+    <PanelTitle title="자료 만드는 중" sub={`v${view.version.versionNumber}`}>
       <Badge tone={view.stalled ? 'fail' : 'run'}>{view.stalled ? '정체' : '진행 중'}</Badge>
     </PanelTitle>
     <div className="px-4 pb-4 pt-[0.875rem]">
       <p className="m-0 text-[0.8125rem] font-semibold text-ink">
-        지식 빌드 진행 중 · {formatElapsed(view.elapsedMs)} 경과 <span className="font-normal text-muted-2">(통상 8분대)</span>
+        자료를 만들고 있습니다 · {formatElapsed(view.elapsedMs)} 경과 <span className="font-normal text-muted-2">(보통 8분쯤)</span>
       </p>
 
       {view.stalled && <Callout tone="warn" icon="triangle-alert">
@@ -537,7 +534,7 @@ function BuildProgress({ view }: { view: BuildView }) {
             states[index] === 'done' ? 'border-ok-fg/30 bg-ok-bg text-ok-fg'
               : states[index] === 'active' ? 'border-run-fg/30 bg-run-bg font-semibold text-run-fg'
                 : 'border-line-soft text-muted-3'}`}
-        >{step}</span>)}
+        >{BUILD_STEP_LABEL[step] ?? step}</span>)}
       </div>
       {view.phase == null && <p className="m-0 mt-2 text-[0.6875rem] text-muted-3">
         단계 정보를 읽을 수 없어 진행 여부만 표시합니다.
@@ -547,211 +544,51 @@ function BuildProgress({ view }: { view: BuildView }) {
 }
 
 /**
- * A4 품질 지표. **계약에 지표가 없다** — `knowledge_version.score`는 EVALUATE가 무조건
- * 100으로 세우는 값이라 품질이 아니다. 오프라인 실측 스냅샷을 출처와 함께 정적으로 싣는다.
+ * 버전이 받은 평가 결과 한 줄(AI02-019·020·023). 방식에 따라 이름을 가른다 — 제목
+ * 자가검색은 "색인이 검색되는가"일 뿐이고 골든 질문은 확정 시험지 기반 품질이다.
+ * 한 이름으로 묶으면 관리자가 제목 검색 결과를 품질 검증으로 읽는다.
  *
- * <p>**Faithfulness는 싣지 않는다.** 97/246건이고 21개 카테고리 중 12종이 0건이라
- * 모집단 추정치로 쓸 수 없다. 게이지 한 줄이 그 조건을 담지 못한다.
- */
-/**
- * 값만 늘어놓으면 `0.897`이 좋은 값인지 나쁜 값인지 알 수 없다. 기준선을 함께 들고
- * 상태 점·미니 바로 통과 여부를 먼저 보이고, 용어는 ⓘ 툴팁으로 푼다.
- *
- * <p>바는 **0~1 전 구간**을 그린다. 0.8~1.0으로 잘라 그리면 차이가 커 보이지만 눈금을
- * 속이는 것이다. 대신 기준선 위치에 눈금을 세워 "넘었는가"를 읽게 한다.
- */
-const OFFLINE_METRICS = [
-  { label: 'Recall@5 전체', value: 0.975, baseline: 0.95,
-    hint: '질문 100개 중 정답 문서가 상위 5개 안에 들어온 비율입니다. 높을수록 좋습니다.' },
-  { label: 'Recall@10 전체', value: 0.990, baseline: 0.95,
-    hint: '상위 10개까지 넓혔을 때의 같은 비율입니다.' },
-  { label: 'MRR@10', value: 0.970, baseline: 0.94,
-    hint: '정답이 몇 번째로 나왔는지를 점수로 바꾼 값입니다. 1에 가까울수록 정답이 앞쪽에 있습니다.' },
-  { label: 'Recall@5 · C 유형', value: 0.897, baseline: 0.85,
-    hint: '여러 곳을 엮어 묻는 어려운 질문만 따로 잰 값입니다. 구조적으로 어려워 기준선이 낮습니다.' },
-]
-
-/** 용어 옆 ⓘ. 네이티브 title이라 클리핑·라이브러리 없이 어디에나 붙는다. */
-function InfoTip({ hint }: { hint: string }) {
-  return <span className="cursor-help text-muted-3 hover:text-muted" title={hint} aria-label={hint}>
-    <Icon name="circle-help" size={11} />
-  </span>
-}
-
-function QualityMetrics({ projectId }: { projectId?: string }) {
-  // 스냅샷은 관광(1호) 측정치다. 다른 고객사에서 이 수치를 그대로 보이면 잘못된 신뢰를 만든다.
-  // 미측정 안내판은 그리지 않는다(AI02-021) — 버전 표의 빌드 평가가 고객사별 지표 자리다.
-  if (!qualityMeasured(projectId)) {
-    return null
-  }
-  return <section className={panel}>
-    <PanelTitle title="품질 지표" sub="2026-08-29 측정 · 252 TC 전건 · 오프라인 실측 스냅샷" />
-    <div className="grid gap-x-6 gap-y-[0.875rem] px-4 pb-4 pt-[0.875rem] sm:grid-cols-2">
-      {OFFLINE_METRICS.map((metric) => {
-        const passes = metric.value >= metric.baseline
-        return <div key={metric.label} className="flex flex-col gap-[0.3125rem]">
-          <div className="flex items-center justify-between gap-2 text-[0.71875rem] text-muted">
-            <span className="flex items-center gap-1">{metric.label}<InfoTip hint={metric.hint} /></span>
-            <span className="flex items-center gap-[0.375rem]">
-              <span
-                className={`h-[0.4375rem] w-[0.4375rem] rounded-full ${passes ? 'bg-ok-fg' : 'bg-fail-fg'}`}
-                title={passes ? `기준선 ${metric.baseline} 통과` : `기준선 ${metric.baseline} 미달`}
-              />
-              <b className="font-mono text-[0.78125rem] font-semibold text-ink">{metric.value.toFixed(3)}</b>
-            </span>
-          </div>
-          {/* 0~1 전 구간. 눈금은 기준선 위치다 — 넘었는지를 눈으로 읽는 유일한 표식이다. */}
-          <div className="relative h-[0.25rem] w-full overflow-hidden rounded-full bg-sub" title={`기준선 ${metric.baseline}`}>
-            <div
-              className={`h-full rounded-full ${passes ? 'bg-ok-fg' : 'bg-fail-fg'}`}
-              style={{ width: `${metric.value * 100}%` }}
-            />
-            <span className="absolute inset-y-0 w-px bg-muted-2" style={{ left: `${metric.baseline * 100}%` }} />
-          </div>
-        </div>
-      })}
-    </div>
-  </section>
-}
-
-/**
- * A5 지표 셀의 값. 최고 관리자가 `R@5 0.9747` 같은 원값을 해석할 거라고 가정하지 않는다 —
- * 활성 대비 R@5 델타·hit@5 건수·기준선 배지로 먼저 말하고 원값은 접어 둔다.
- *
- * <p>`hit5`는 **정답이 상위 5에 하나라도 포함된 문항 수**다(부분점수 합이 아니다). 델타 %p는
- * R@5 기준이라 hit@5 건수와는 서로 다른 양이다 — 건수로 델타를 다시 계산하지 않는다.
- *
- * <p>⚠️ **키는 `knowledgeVersionId`(UUID)다.** 이전 판은 `versionNumber`로 묶어서, 다른 환경
- * DB가 같은 번호를 재사용하면 **엉뚱한 버전에 이 측정치가 붙었다**(`7514ee0`에서 제거된 이유).
- * UUID는 환경 간에 겹치지 않으므로 오표시가 구조적으로 불가능하다 — 모르는 버전에는 아무것도
- * 그리지 않고, 그릴 것이 하나도 없으면 지표 열 자체가 사라진다.
- *
- * <p>⚠️ **측정 후 교체 지점은 이 상수 묶음뿐이다.** 빌드의 evaluate 단계가 스텁이라
- * `knowledge_version.score`는 무조건 100이고 서버 값을 지표로 쓸 수 없다. 출처
- * 라벨(`METRICS_SOURCE`)은 접힘 토글의 손잡이로 항상 보이게 둔다 — 라벨 없이 숫자만 있으면
- * 시스템이 방금 잰 것처럼 보이는 거짓말이 된다. evaluate가 실제로 재게 되면 통째로 사라질 자리다.
- */
-type OfflineMetrics = { r5: number; cType: number; mrr: number; hit5: number }
-
-const VERSION_METRICS: Record<string, OfflineMetrics> = {
-  // 데모 DB 2026-09-09 오프라인 실측. 순서대로 v12(활성) · v17(색인 전략 변경 · 기준선 미달) · v18(만료 라벨만).
-  '27c887bc-b528-4099-af77-e8da92751e2a': { r5: 0.9747, cType: 0.8968, mrr: 0.9704, hit5: 250 },
-  'e6da49bf-26f2-4f80-ba6d-b4995311e53e': { r5: 0.9546, cType: 0.7990, mrr: 0.9697, hit5: 249 },
-  '2d239788-9cef-4bcf-ab30-f8e3d5b0f449': { r5: 0.9747, cType: 0.8968, mrr: 0.9704, hit5: 250 },
-}
-/**
- * 같은 구성으로 다시 빌드된 버전이 물려받는 측정치. 키는 `커넥터:문서수:청크수`다.
- *
- * <p>UUID는 빌드마다 새로 생기므로 방금 만든 버전은 `VERSION_METRICS`에 걸리지 않는다.
- * 그런데 지표가 붙는 대상은 사실 버전 행이 아니라 **색인 구성**이다 — 같은 커넥터로 같은
- * 문서·청크 수가 나왔다면 그 색인은 이미 잰 것과 같고, 검색 정확도도 같다. 그래서 그때만
- * 이전 측정치를 물려주고, 출처 라벨을 `METRICS_REUSED_SOURCE`로 바꿔 **방금 잰 값이 아님을
- * 화면에 밝힌다.**
- *
- * <p>⚠️ 구성이 다른데 문서·청크 수만 우연히 같은 버전은 이 지문으로 가려낼 수 없다(v2가 그런
- * 경우다 — 색인 전략만 바꿔 500/500이 그대로다). 그런 버전은 반드시 `VERSION_METRICS`에
- * UUID로 고정해 둔다. UUID 항목이 먼저 이기므로 v2는 자기 미달 수치를 그대로 쓴다.
- */
-const CONFIG_METRICS: Record<string, OfflineMetrics> = {
-  // 픽스처 커넥터 500문서/500청크 = v12·v18과 같은 색인. 9/9 실측을 그대로 쓴다.
-  'd52ab2fa-7b84-4132-8dec-f688144f9287:500:500': { r5: 0.9747, cType: 0.8968, mrr: 0.9704, hit5: 250 },
-}
-
-/** 오프라인 TC 전건. hit@5 건수의 분모다. */
-const METRICS_TOTAL = 252
-const BASELINE_R5 = 0.95
-const BASELINE_C_TYPE = 0.85
-const METRICS_SOURCE = '오프라인 측정 · 9/9'
-const METRICS_REUSED_SOURCE = '오프라인 측정 · 9/9 · 같은 구성 재사용'
-
-type MetricsHit = { metrics: OfflineMetrics; reused: boolean }
-
-function configKey(version: KnowledgeVersion): string {
-  return `${version.connectorVersionId}:${version.documentCount}:${version.chunkCount}`
-}
-
-/** 실패(문서 0건)·빌드 중 버전은 잴 색인이 없다 — 키가 있어도 그리지 않는다. */
-function offlineMetrics(version: KnowledgeVersion): MetricsHit | undefined {
-  const measurable = version.status === 'ACTIVE' || version.status === 'ARCHIVED' || version.status === 'APPROVAL_PENDING'
-  if (!measurable) return undefined
-  // UUID 고정이 먼저다. 구성이 같아 보여도 다르게 잰 버전(v2)이 여기서 갈린다.
-  const pinned = VERSION_METRICS[version.knowledgeVersionId]
-  if (pinned) return { metrics: pinned, reused: false }
-  const inherited = CONFIG_METRICS[configKey(version)]
-  return inherited ? { metrics: inherited, reused: true } : undefined
-}
-
-function formatDeltaPp(r5: number, activeR5: number): string {
-  // 화면에 보이는 4자리에서 계산한다 — 토글을 열고 직접 빼봤을 때 맞아야 한다.
-  const diff = Math.round((r5 - activeR5) * 10000) / 100
-  return diff > 0 ? `▲ +${diff.toFixed(2)}%p` : diff < 0 ? `▼ ${diff.toFixed(2)}%p` : '±0.00%p'
-}
-
-/**
- * 기준선을 넘었는가. **어느 지표가 왜 걸렸는지는 배지에 쓰지 않는다** —
- * `C유형 0.7990 < 0.85`는 이 프로젝트 밖의 사람에게 읽히지 않는 표기이고,
- * 원값은 바로 아래 접힘(`METRICS_SOURCE` 토글)에 그대로 있다.
- */
-function meetsBaseline(metrics: OfflineMetrics): boolean {
-  return metrics.r5 >= BASELINE_R5 && metrics.cType >= BASELINE_C_TYPE
-}
-
-/**
- * 빌드가 잰 검색 평가(AI02-019·020). 방식에 따라 라벨을 가른다 — 제목 자가검색은
- * "색인이 검색되는가"이고, 골든 질문은 확정 시험지 기반 품질이다. 한 이름으로 묶으면
- * 관리자가 제목 검색 결과를 품질 검증으로 읽는다. 골든 점수는 같은 세트 버전끼리만
- * 비교가 성립하므로 세트 버전을 항상 함께 보인다.
+ * <p>수치는 <b>하나만</b> 보인다. 표에서 읽어야 하는 것은 "이 버전이 몇 점인가"뿐이고,
+ * Hit@10·MRR·세트 버전·제외 건수는 판단을 돕지 않으면서 표를 빽빽하게 만든다 —
+ * 그 값들은 툴팁에 그대로 남겨 두므로 필요한 사람은 셀에 올려 보면 된다.
  */
 function BuildEvaluationCell({ evaluation }: { evaluation: BuildEvaluation }) {
   const golden = evaluation.method === 'GOLDEN_QUESTION'
   const excludedCount = evaluation.excluded?.length ?? 0
+  const numbers = `Hit@5 ${evaluation.hit5.toFixed(3)} · Hit@10 ${evaluation.hit10.toFixed(3)}`
+    + ` · MRR ${evaluation.mrr10.toFixed(3)}`
   const detail = golden
-    ? `확정·동결된 골든 질문 세트 v${evaluation.setVersion ?? 1}로 잰 값입니다. 같은 세트 버전끼리만 비교하세요.`
+    ? `확정·동결된 골든 질문 세트 v${evaluation.setVersion ?? 1} · 문항 ${evaluation.sampleSize}로 잰 값입니다.`
+      + ` 같은 세트 버전끼리만 비교하세요. ${numbers}.`
       + (excludedCount > 0 ? ` 정답 문서 부재로 채점 전에 제외된 문항 ${excludedCount}건.` : '')
-    : `제목으로 검색해 그 문서가 상위에 오는지 잰 값입니다. 표본 ${evaluation.sampleSize}건 · 사용자 질문 기반 시험지가 아닙니다.`
-  return <span className="flex flex-col items-start gap-[0.1875rem]" title={detail}>
-    <b className="text-[0.71875rem] font-semibold text-ink">
-      {golden ? '골든 질문' : '색인 검색'} {(evaluation.hit5 * 100).toFixed(1)}%
-    </b>
-    <span className="font-mono text-[0.625rem] text-muted-2">
-      {`Hit@5 ${evaluation.hit5.toFixed(3)} · Hit@10 ${evaluation.hit10.toFixed(3)} · MRR ${evaluation.mrr10.toFixed(3)}`}
-    </span>
-    <span className="text-[0.625rem] text-muted-3">
-      {golden
-        ? `세트 v${evaluation.setVersion ?? 1} · 문항 ${evaluation.sampleSize}${excludedCount > 0 ? ` · 제외 ${excludedCount}` : ''}`
-        : `빌드 측정 · 표본 ${evaluation.sampleSize}`}
-    </span>
-  </span>
+    : `제목으로 검색해 그 문서가 상위에 오는지 잰 값입니다. 표본 ${evaluation.sampleSize}건 ·`
+      + ` 사용자 질문 기반 시험지가 아닙니다. ${numbers}.`
+  return <b className="text-[0.71875rem] font-semibold text-ink" title={detail}>
+    {golden ? 'Golden' : '색인 검색'} {Math.round(evaluation.hit5 * 100)}%
+  </b>
 }
 
-function MetricsCell({ version, activeR5 }: { version: KnowledgeVersion; activeR5: number | null }) {
-  // 서버가 잰 값이 있으면 그것을 쓴다. 정적 스냅샷은 관광 한 도메인의 과거 측정치다.
-  if (version.evaluation) {
-    return <BuildEvaluationCell evaluation={version.evaluation} />
-  }
-  const hit = offlineMetrics(version)
-  if (!hit) return <span className="text-[0.6875rem] text-muted-3">측정 전</span>
-  const { metrics, reused } = hit
-  const isActive = version.status === 'ACTIVE'
-  // 활성 행은 비교 기준 자체라 델타가 없고, 활성 버전이 미측정이면 비교할 대상이 없다.
-  const compare = !isActive && activeR5 != null
-  const headline = isActive ? '검색 정확도 기준' : compare ? `검색 정확도 ${formatDeltaPp(metrics.r5, activeR5)}` : '검색 정확도'
-  const passes = meetsBaseline(metrics)
-  // 세부 수치는 셀 hover로 미룬다. 표에서 한눈에 읽어야 하는 것은 델타와 통과 여부뿐이다.
-  const detail = `정답을 찾은 문항 ${metrics.hit5} / ${METRICS_TOTAL}`
-  return <span className="flex flex-col items-start gap-[0.1875rem]" title={detail}>
-    <b className="text-[0.71875rem] font-semibold text-ink">{headline}</b>
-    <Badge tone={passes ? 'ok' : 'fail'}>{passes ? '기준선 통과' : '기준선 미달'}</Badge>
-    {/* 출처 라벨이 토글 손잡이다. 접히는 것은 원값뿐 — 라벨 자체는 절대 접히지 않는다. */}
-    <details>
-      <summary className="cursor-pointer list-none text-[0.625rem] text-muted-3 [&::-webkit-details-marker]:hidden">
-        {`${reused ? METRICS_REUSED_SOURCE : METRICS_SOURCE} ▾`}
-      </summary>
-      <span className="block font-mono text-[0.625rem] text-muted-2">
-        {`R@5 ${metrics.r5.toFixed(4)} · C유형 ${metrics.cType.toFixed(4)} · MRR ${metrics.mrr.toFixed(4)}`}
-      </span>
-    </details>
-  </span>
+/** 평가를 받지 못한 버전은 빈칸이 아니라 "측정 전"이다 — 0점과 구분돼야 한다. */
+function MetricsCell({ version }: { version: KnowledgeVersion }) {
+  return version.evaluation
+    ? <BuildEvaluationCell evaluation={version.evaluation} />
+    : <span className="text-[0.6875rem] text-muted-3">측정 전</span>
+}
+
+/**
+ * 지금 운영에 관계된 버전만 보인다 — <b>보관(ARCHIVED)만 뺀다</b>(AI02-023).
+ *
+ * <p>보관된 과거 버전은 DB에 그대로 남아 있고 롤백 대상으로도 유효하다. 목록에서만 뺀다.
+ * 여덟 줄을 늘어놓으면 관리자가 "지금 서비스되는 것이 무엇인가"를 한눈에 읽지 못하고,
+ * 평가 방식이 서로 다른 옛 줄이 나란히 놓여 성립하지 않는 대조를 만든다. 되돌리기는
+ * 「이전 버전 롤백」 버튼이 맡으며, 그 버튼은 이 필터와 무관하게 전체 목록에서 마지막 활성
+ * 버전을 찾는다.
+ *
+ * <p><b>실패·빌드 중 버전은 남긴다.</b> 지금 처리해야 할 상태이기 때문이다 — 숨기면 방금
+ * 실패한 빌드가 화면에서 조용히 사라져, 관리자가 왜 새 버전이 안 생겼는지 알 길이 없어진다.
+ */
+function operating(versions: KnowledgeVersion[] | null): KnowledgeVersion[] | null {
+  return versions?.filter((v) => v.status !== 'ARCHIVED') ?? null
 }
 
 /** A5 버전 테이블. 쓰기 버튼은 역할로 미리 판별해 disabled로 둔다 — 눌러서 403을 받지 않는다. */
@@ -764,19 +601,15 @@ function VersionTable({ versions, mayWrite, blocked, busy, canRollback, onSwitch
   onSwitch: (version: KnowledgeVersion) => void
   onRollback: () => void
 }) {
-  const shown = versions
-  const activeVersion = versions?.find((v) => v.status === 'ACTIVE') ?? null
-  const activeR5 = activeVersion ? offlineMetrics(activeVersion)?.metrics.r5 ?? null : null
-  // 보이는 버전 중 하나라도 측정치가 있을 때만 열을 만든다. 이 환경의 버전을 하나도 모르면
-  // "측정 전"만 늘어놓는 빈 열이 되므로 아예 없는 편이 낫다.
-  const hasMetrics = (shown ?? []).some(
-    (version) => version.evaluation != null || offlineMetrics(version) != null)
+  const shown = operating(versions)
+  const archivedCount = (versions?.length ?? 0) - (shown?.length ?? 0)
   // 전체 100%를 비율로 나눈다 — 지표에 1fr을 주면 남는 폭을 전부 먹어 텅 비어 보인다.
-  const columns = hasMetrics
-    ? 'grid-cols-[10fr_15fr_15fr_35fr_15fr_10fr]'
-    : 'grid-cols-[12fr_18fr_18fr_40fr_12fr]'
+  const columns = 'grid-cols-[10fr_15fr_15fr_35fr_15fr_10fr]'
   return <section className={panel}>
-    <PanelTitle title="RAG 버전" sub={versions ? `${versions.length}건` : undefined}>
+    <PanelTitle
+      title="RAG 버전"
+      sub={shown ? `운영 ${shown.length}건${archivedCount > 0 ? ` · 보관 ${archivedCount}건` : ''}` : undefined}
+    >
       <button
         className={tableButton}
         disabled={busy || !canRollback}
@@ -787,20 +620,22 @@ function VersionTable({ versions, mayWrite, blocked, busy, canRollback, onSwitch
     <div className="overflow-x-auto">
       <div className="min-w-[44rem]">
         <div className={`${headRow} ${columns}`}>
-          <span>버전</span><span>상태</span><span>문서/청크</span>{hasMetrics && <span>지표</span>}<span>활성화</span><span className="text-right">동작</span>
+          <span>버전</span><span>상태</span><span>문서</span><span>평가 결과</span><span>활성화</span><span className="text-right">동작</span>
         </div>
         {versions == null && <div className="px-4 py-6 text-xs text-muted-3">
           {blocked ? '위 안내를 해결해야 버전을 불러올 수 있습니다.' : '버전을 불러오는 중…'}
         </div>}
-        {shown?.length === 0 && <div className="px-4 py-6 text-xs text-muted-3">버전이 없습니다.</div>}
+        {shown?.length === 0 && <div className="px-4 py-6 text-xs text-muted-3">
+          {archivedCount > 0 ? '운영 중인 버전이 없습니다. 보관된 버전은 롤백으로 되돌릴 수 있습니다.' : '버전이 없습니다.'}
+        </div>}
         {shown?.map((version) => <div key={version.knowledgeVersionId} className={`${bodyRow} ${columns}`}>
           <span><b className="text-[0.78125rem] font-semibold text-ink">v{version.versionNumber}</b></span>
           <span><Badge tone={STATUS_TONE[version.status]}>{STATUS_LABEL[version.status]}</Badge></span>
           <span className="flex flex-col gap-[0.125rem]">
-            <span className="font-mono">{version.documentCount}/{version.chunkCount}</span>
+            <span className="font-mono">{version.documentCount}건</span>
             <ChunkingNote strategy={version.chunkingStrategy} />
           </span>
-          {hasMetrics && <MetricsCell version={version} activeR5={activeR5} />}
+          <MetricsCell version={version} />
           <span className="font-mono text-[0.6875rem]">{version.activatedAt ? new Date(version.activatedAt).toLocaleDateString('ko-KR') : '—'}</span>
           <span className="flex justify-end">
             {version.status === 'ACTIVE'
