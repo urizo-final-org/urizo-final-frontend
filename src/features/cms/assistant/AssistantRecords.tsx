@@ -104,10 +104,12 @@ export default function AssistantRecords({ records, now, stalledAfterMs, busy, o
         </li>
       })}
     </ul>
-    {/* 여기서 밀려난 요청은 사라진 것이 아니다. 어디에 있는지 한 줄로 알려준다. */}
-    <p className="m-0 mt-[0.4375rem] text-[0.625rem] leading-[1.5] text-muted-3">
-      최근 {records.length}건만 남습니다.{' '}
-      <a className="font-semibold text-teal-fg underline underline-offset-2" href={ALL_RUNS_PATH}>
+    {/*
+      개수는 말하지 않는다. 몇 건을 남기는지는 화면이 이미 보여주고 있고, 보이는 수를
+      적으면 「이 화면은 한 건만 남나」로 읽힌다. 링크 하나면 더 있다는 뜻이 전해진다.
+    */}
+    <p className="m-0 mt-[0.4375rem] text-right">
+      <a className="text-[0.625rem] font-semibold text-teal-fg underline underline-offset-2" href={ALL_RUNS_PATH}>
         전체 보기 ↗
       </a>
     </p>
