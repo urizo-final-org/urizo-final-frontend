@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
+import { editorEdgeRoutes, EDITOR_NODE_WIDTH, EDITOR_NODE_HEIGHT, type EditorRoutePlan } from './editorEdgeRoutes'
 import { describeFailure, ProductApiError } from '../../shared/api/error'
 import { Icon, type IconName } from '../../shared/ui/icons'
 import {
@@ -164,9 +165,8 @@ const defaultToolBindingsByHandler: Record<ProfileKey, Record<string, Record<str
 
 const TOOL_LAYOUT_KEY = 'axms-workflow-tool-layout'
 const TOOL_POSITIONS_KEY = 'axms-workflow-tool-positions'
-const NODE_WIDTH = 160
-const NODE_HEIGHT = 88
-const NODE_PORT_Y = 42
+const NODE_WIDTH = EDITOR_NODE_WIDTH
+const NODE_HEIGHT = EDITOR_NODE_HEIGHT
 const CANVAS_PADDING = 48
 const LAYER_GAP_X = 244
 const LANE_GAP_Y = 160
@@ -647,6 +647,10 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient & 
   const ignoreClick = useRef<string | null>(null)
   const ignoreToolClick = useRef<string | null>(null)
   const [panning, setPanning] = useState(false)
+  const [dragRoutes, setDragRoutes] = useState<EditorRoutePlan[] | null>(null)
+  const edgeRouting = useMemo(() => editorEdgeRoutes(nodes, edges.map(edge => ({
+    edge, ...resolveEdgePorts(edge, nodes, edges), detour: isDetourEdge(edge, nodes),
+  })), dragRoutes), [nodes, edges, dragRoutes])
 
   const selected = nodes.find((node) => node.id === selectedId) ?? null
   const selectedDefinition = selected ? definitionFor(profileKey, selected.handlerKey) : null
@@ -662,7 +666,10 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient & 
     : []
   const saveViolations = profileToolPolicyViolations(profileKey, nodes, edges, toolBindings, allowedTools)
   const canvas = canvasDimensions(nodes, edges, capabilityLaneBindings.length)
+  canvas.width = Math.max(canvas.width, edgeRouting.maxX)
+  canvas.height = Math.max(canvas.height, edgeRouting.maxY)
   const catalogModels = modelCatalog?.models ?? []
+  const selectableModels = catalogModels.filter(isModelSelectable)
   const normalizedModelBindings = normalizeModelBindings(nodes, modelBindings, catalogModels)
   const supported = nodes.every((node) => matchesDefinition(profileKey, node))
     && allowedTools.every((tool) => toolCatalog[profileKey].includes(tool))
@@ -854,7 +861,7 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient & 
         setNotice(`v${created.profileVersion} DRAFT를 저장하고 다시 조회했습니다.`)
       }
     } catch (error) {
-      setFailure(describeFailure(error))
+      setFailure(`DRAFT를 저장하지 못했습니다. ${describeFailure(error)}`)
     } finally {
       setSaving(false)
     }
@@ -912,7 +919,7 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient & 
 
   function addNode(definition: HandlerDefinition) {
     if (!supported || loading || saving) return
-    if (definition.type === 'agent' && catalogModels.length === 0) {
+    if (definition.type === 'agent' && selectableModels.length === 0) {
       setStatus('Agent Node를 추가하려면 검증 Credential의 Model Catalog가 필요합니다.')
       return
     }
@@ -935,8 +942,8 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient & 
     }
     setNodes((current) => [...current, node])
     if (node.type === 'agent') {
-      const initialModel = catalogModels.find((model) => model.selectionId === defaultModel.selectionId)
-        ?? catalogModels[0]
+      const initialModel = selectableModels.find((model) => model.selectionId === defaultModel.selectionId)
+        ?? selectableModels[0]
       setModelBindings((current) => ({
         ...current,
         [node.id]: withSelection({ primary: initialModel.selectionId, fallback: [] }, initialModel),
@@ -997,7 +1004,7 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient & 
   }
 
   function updatePrimaryBinding(model: ModelCatalogModel) {
-    if (!selected || selected.type !== 'agent') return
+    if (!selected || selected.type !== 'agent' || !isModelSelectable(model)) return
     setModelBindings((current) => {
       const binding = current[selected.id] ?? { primary: model.selectionId, fallback: [] }
       if (binding.fallback.some((item) => sameTarget(targetFor(binding, item), model))) {
@@ -1017,6 +1024,7 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient & 
       const binding = current[selected.id]
       if (!binding || binding.primary === model.selectionId) return current
       const enabled = binding.fallback.includes(model.selectionId)
+      if (!enabled && !isModelSelectable(model)) return current
       if (!enabled && (sameTarget(targetFor(binding, binding.primary), model)
         || binding.fallback.some((item) => sameTarget(targetFor(binding, item), model)))) {
         setStatus('동일한 Provider·Model은 Primary 또는 Fallback에 중복할 수 없습니다.')
@@ -1031,6 +1039,18 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient & 
             : [...binding.fallback, model.selectionId],
           ...(enabled ? {} : { selections: withSelection(binding, model).selections }),
         },
+      }
+    })
+  }
+
+  function removeFallback(selectionId: string) {
+    if (!selected || selected.type !== 'agent' || saving) return
+    setModelBindings((current) => {
+      const binding = current[selected.id]
+      if (!binding) return current
+      return {
+        ...current,
+        [selected.id]: { ...binding, fallback: binding.fallback.filter((item) => item !== selectionId) },
       }
     })
   }
@@ -1102,6 +1122,7 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient & 
     event.stopPropagation()
     event.currentTarget.setPointerCapture?.(event.pointerId)
     drag.current = { id: node.id, pointerX: event.clientX, pointerY: event.clientY, x: node.x, y: node.y, moved: false }
+    setDragRoutes(edgeRouting.routes.map(route => route.plan))
     setSelectedId(node.id)
     setSelectedTool(null)
     setConnectPort(node.resultPorts[0] ?? '')
@@ -1125,6 +1146,7 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient & 
     if (!active) return
     if (event.currentTarget.hasPointerCapture?.(event.pointerId)) event.currentTarget.releasePointerCapture?.(event.pointerId)
     drag.current = null
+    setDragRoutes(null)
     if (active.moved) {
       ignoreClick.current = node.id
       setNodes((current) => [...current].sort((left, right) => left.y - right.y || left.x - right.x))
@@ -1308,7 +1330,7 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient & 
           {loading ? '조회 중' : selectedVersion?.status ?? '기본 템플릿'}
         </Badge>
       </div>
-      {failure && <NoticePanel className="mt-3" tone="danger" icon="triangle-alert" title="Workflow를 불러오지 못했습니다" role="alert">{failure}</NoticePanel>}
+      {failure && <NoticePanel className="mt-3" tone="danger" icon="triangle-alert" title="Workflow 작업을 완료하지 못했습니다" role="alert">{failure}</NoticePanel>}
       {!supported && nodes.length > 0 && <NoticePanel className="mt-3" tone="danger" icon="triangle-alert" title="편집할 수 없는 구성이 포함되어 있습니다" role="alert">현재 UI 허용 목록에 없는 Handler·Model Binding·Tool이 포함되어 편집과 저장을 중단했습니다.</NoticePanel>}
       <div className="mt-4 flex flex-wrap items-end gap-x-5 gap-y-3 border-t border-line-soft pt-3" role="group" aria-label="Workflow 작업">
         <div className="flex flex-col gap-1.5" role="group" aria-label="템플릿 배치">
@@ -1361,9 +1383,9 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient & 
           <div style={{ width: canvas.width * canvasZoom, height: canvas.height * canvasZoom }}>
             <div className="relative bg-[#20262e] bg-[radial-gradient(circle,#596472_1px,transparent_1px)] [background-size:20px_20px]" data-canvas-content style={{ width: canvas.width, height: canvas.height, transform: `scale(${canvasZoom})`, transformOrigin: 'top left' }} onPointerDown={startCanvasPan} onPointerMove={moveCanvasPan} onPointerUp={endCanvasPan} onPointerCancel={endCanvasPan}>
             <div className="pointer-events-none absolute right-3 top-3 z-20 flex items-center gap-3 rounded-md border border-white/10 bg-[#151a20]/90 px-3 py-2 text-[0.625rem] text-[#cbd5df] shadow-lg">
-              <span>Edge별 좌·우 Port 자동 배치</span>
+              <span>직교 연결 · 선택 Node 연결 강조</span>
               <span className="h-3 border-l border-white/15" aria-hidden="true" />
-              <span>Retry·Reject 하단 Routing</span>
+              <span>{dragRoutes ? '이동 중 연결 경로 유지' : '역방향·Retry·Reject 점선'}</span>
               <span className="h-3 border-l border-white/15" aria-hidden="true" />
               <span aria-label="Canvas 확대 비율">{Math.round(canvasZoom * 100)}%</span>
             </div>
@@ -1373,48 +1395,30 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient & 
                   <path d="M 0 0 L 7 3.5 L 0 7 z" fill="#8f9aa8" />
                 </marker>
                 <marker id="workflow-edge-arrow-active" viewBox="0 0 7 7" refX="6" refY="3.5" markerWidth="7" markerHeight="7" orient="auto">
-                  <path d="M 0 0 L 7 3.5 L 0 7 z" fill="#60a5fa" />
+                  <path d="M 0 0 L 7 3.5 L 0 7 z" fill="#7dd3fc" />
                 </marker>
               </defs>
-              {edges.map((edge, edgeIndex) => {
-                const from = nodes.find((node) => node.id === edge.from)
-                const to = nodes.find((node) => node.id === edge.to)
-                if (!from || !to) return null
-                const { reverse, sourcePort, targetPort } = resolveEdgePorts(edge, nodes, edges)
-                const direction = sourcePort === 'right' ? 1 : -1
-                const x1 = sourcePort === 'right' ? from.x + NODE_WIDTH : from.x
-                const y1 = from.y + NODE_PORT_Y
-                const x2 = targetPort === 'right' ? to.x + NODE_WIDTH : to.x
-                const y2 = to.y + NODE_PORT_Y
-                const bend = Math.max(42, Math.abs(x2 - x1) * 0.45)
-                const arrivalTilt = Math.max(-96, Math.min(96, (y1 - y2) * 0.24))
-                const detour = isDetourEdge(edge, nodes)
-                const detourIndex = edges.slice(0, edgeIndex).filter((item) => isDetourEdge(item, nodes)).length
-                const detourY = Math.min(canvas.height - CANVAS_PADDING / 2, Math.max(from.y + NODE_HEIGHT, to.y + NODE_HEIGHT) + CANVAS_PADDING + detourIndex * DETOUR_LANE_GAP)
-                const detourRight = Math.min(canvas.width - CANVAS_PADDING / 2, x1 + 68)
-                const detourLeft = Math.max(CANVAS_PADDING / 2, x2 - 68)
-                const path = reverse
-                  ? `M ${x1} ${y1} C ${x1 + direction * bend} ${y1}, ${x2 + direction * bend} ${y2 + arrivalTilt}, ${x2} ${y2}`
-                  : detour
-                  ? `M ${x1} ${y1} C ${x1 + 34} ${y1}, ${x1 + 34} ${detourY}, ${detourRight} ${detourY} L ${detourLeft} ${detourY} C ${x2 - 34} ${detourY}, ${x2 - 34} ${y2}, ${x2} ${y2}`
-                  : `M ${x1} ${y1} C ${x1 + bend} ${y1}, ${x2 - bend} ${y2}, ${x2} ${y2}`
+              {edgeRouting.routes.map(({ edge, path, detour, lane, sourcePort, targetPort, constrained, corridor }) => {
                 const active = selectedId === edge.from || selectedId === edge.to
                 return <path
                   key={`${edge.from}-${edge.resultPort}-${edge.to}`}
                   d={path}
                   data-edge-route={detour ? 'detour' : 'direct'}
-                  data-edge-lane={detour ? detourIndex : undefined}
+                  data-edge-lane={detour ? lane : undefined}
+                  data-edge-corridor={JSON.stringify(corridor)}
+                  data-edge-constrained={constrained ? 'true' : 'false'}
                   data-edge-from={edge.from}
                   data-edge-to={edge.to}
                   data-edge-source-port={sourcePort}
                   data-edge-target-port={targetPort}
                   data-edge-active={active ? 'true' : 'false'}
                   fill="none"
-                  stroke={active ? '#60a5fa' : '#8f9aa8'}
-                  strokeWidth={active ? 2.5 : 1.75}
+                  stroke={active ? '#7dd3fc' : '#8f9aa8'}
+                  strokeWidth={active ? 2.5 : 1.5}
+                  strokeDasharray={detour ? '6 4' : undefined}
                   strokeLinecap="round"
                   strokeLinejoin="round"
-                  opacity={active ? 1 : 0.82}
+                  opacity={active ? 1 : 0.42}
                   markerEnd={active ? 'url(#workflow-edge-arrow-active)' : 'url(#workflow-edge-arrow)'}
                 />
               })}
@@ -1490,6 +1494,7 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient & 
                   onPointerMove={moveDrag}
                   onPointerUp={(event) => endDrag(event, node)}
                   onPointerCancel={(event) => endDrag(event, node)}
+                  onLostPointerCapture={(event) => endDrag(event, node)}
                 >
                   <span className={`grid h-[2.125rem] w-[2.125rem] shrink-0 place-items-center rounded-[0.625rem] ${info.skin}`}><Icon name={info.icon} size={18} /></span>
                   <span className="min-w-0 flex-1 pr-4"><span className="block truncate text-[0.75rem] font-semibold">{nodeDisplayName(profileKey, node)}</span><span className="mt-0.5 block truncate text-[0.5625rem] font-normal text-muted-2">{role.detail}</span></span>
@@ -1634,9 +1639,9 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient & 
                 if (model) updatePrimaryBinding(model)
               }}>
                 {!catalogModels.some((model) => model.selectionId === selectedBinding.primary) && <option value={selectedBinding.primary}>{modelBindingLabel(selectedBinding.primary, catalogModels, selectedBinding.selections)}</option>}
-                {catalogModels.map((model) => <option key={model.selectionId} value={model.selectionId} disabled={selectedBinding.fallback.some((fallback) => sameTarget(targetFor(selectedBinding, fallback), model))}>{modelBindingLabel(model.selectionId, catalogModels, selectedBinding.selections)}</option>)}
+                {catalogModels.map((model) => <option key={model.selectionId} value={model.selectionId} disabled={!isModelSelectable(model) || selectedBinding.fallback.some((fallback) => sameTarget(targetFor(selectedBinding, fallback), model))}>{modelBindingLabel(model.selectionId, catalogModels, selectedBinding.selections)}</option>)}
               </select>
-              <small className="mt-1 block text-[0.625rem] font-normal leading-4 text-muted-2">등록·검증된 Credential Provider의 Model만 선택할 수 있습니다. 기존 binding은 실제 Provider·Model을 확인할 수 있을 때 표시하며 새 저장값은 catalog selectionId로 정규화합니다.</small>
+              <small className="mt-1 block text-[0.625rem] font-normal leading-4 text-muted-2">등록된 모델은 Key 상태와 함께 표시합니다. 연결 확인된 모델만 새로 선택할 수 있으며, 사용 불가인 기존 대체 모델은 선택 해제할 수 있습니다.</small>
             </label>
             {catalogModels.find((model) => model.selectionId === selectedBinding.primary) && <InferenceSettingsControls
               selectionId={selectedBinding.primary}
@@ -1648,20 +1653,26 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient & 
               <legend className="text-[0.71875rem] font-semibold text-body">대체 모델 (Fallback Model)</legend>
               <p className="mt-1 text-[0.625rem] leading-4 text-muted-2">주 모델의 미설정·사용량 제한·시간 초과·Provider 장애 등 일시적 오류에 사용할 후보입니다.</p>
               <div className="mt-2 space-y-2">
-                {selectedBinding.fallback.filter((binding) => !catalogModels.some((model) => model.selectionId === binding)).map((binding) => <p key={binding} className="text-[0.65625rem] text-muted-2">{modelBindingLabel(binding, catalogModels, selectedBinding.selections)}</p>)}
+                {selectedBinding.fallback.filter((binding) => !catalogModels.some((model) => model.selectionId === binding)).map((binding) => <div key={binding} className="flex items-start justify-between gap-2 rounded border border-line-soft p-2">
+                  <div className="min-w-0 text-[0.65625rem] text-muted-2">
+                    <p className="break-all">{modelBindingLabel(binding, catalogModels, selectedBinding.selections)}</p>
+                    <p className="mt-1">현재 선택 불가 · 대체 모델에 포함되어 있습니다.</p>
+                  </div>
+                  <button type="button" className={`${secondaryButton} shrink-0`} aria-label={`대체 모델 ${binding} 제거`} disabled={saving} onClick={() => removeFallback(binding)}>제거</button>
+                </div>)}
                 {catalogModels.filter((model) => model.selectionId !== selectedBinding.primary).map((model) => {
                   const checked = selectedBinding.fallback.includes(model.selectionId)
                   const duplicate = !checked && (sameTarget(targetFor(selectedBinding, selectedBinding.primary), model)
                     || selectedBinding.fallback.some((binding) => sameTarget(targetFor(selectedBinding, binding), model)))
                   return <div key={model.selectionId}>
                     <label className="flex items-start gap-2 text-[0.65625rem] text-body">
-                      <input type="checkbox" aria-label={`Fallback ${model.selectionId}`} checked={checked} disabled={saving || duplicate} onChange={() => toggleFallback(model)} />
+                      <input type="checkbox" aria-label={`Fallback ${model.selectionId}`} checked={checked} disabled={saving || duplicate || (!checked && !isModelSelectable(model))} onChange={() => toggleFallback(model)} />
                       <span className="break-all">{modelBindingLabel(model.selectionId, catalogModels, selectedBinding.selections)}</span>
                     </label>
                     {checked && <InferenceSettingsControls selectionId={model.selectionId} model={model} selection={selectedBinding.selections?.[model.selectionId]} onChange={(patch) => updateInference(model.selectionId, model, patch)} />}
                   </div>
                 })}
-                {catalogModels.length === 0 && <p className="text-[0.65625rem] text-muted-2">선택 가능한 검증 Credential Model이 없습니다.</p>}
+                {selectableModels.length === 0 && <p className="text-[0.65625rem] text-muted-2">현재 연결 확인된 모델이 없습니다. Provider·Model 탭에서 Key 상태를 확인해 주세요.</p>}
               </div>
             </fieldset>
           </div>}
@@ -1979,7 +1990,19 @@ function sameTarget(left: { provider: string; model: string } | undefined, right
 function modelBindingLabel(bindingKey: string, catalog: ModelCatalogModel[], selections?: Record<string, ProfileModelSelection>) {
   const detail = catalog.find((model) => model.selectionId === bindingKey)
   const selection = detail ?? selections?.[bindingKey] ?? legacyModelSelections[bindingKey]
-  return selection ? `${selection.provider} · ${selection.model} (${bindingKey})` : bindingKey
+  const state = detail?.credentialState
+  const stateLabels: Record<NonNullable<ModelCatalogModel['credentialState']>, string> = {
+    NOT_CONFIGURED: 'Key 미등록', STORED: '연결 확인 필요', VERIFIED: '연결 확인',
+    BILLING_BLOCKED: '결제·크레딧 확인 필요', INVALID_CREDENTIAL: 'Key 인증 실패',
+    PROVIDER_UNAVAILABLE: 'Provider 응답 없음·호출 제한 가능',
+  }
+  const label = selection ? `${selection.provider} · ${selection.model} (${bindingKey})` : bindingKey
+  return state ? `${label} · ${stateLabels[state] ?? '연결 확인 필요'}` : label
+}
+
+function isModelSelectable(model: ModelCatalogModel) {
+  // Older catalog responses contained verified models only.
+  return model.credentialState === undefined || model.credentialState === 'VERIFIED'
 }
 
 function InferenceSettingsControls({ selectionId, model, selection, onChange }: {

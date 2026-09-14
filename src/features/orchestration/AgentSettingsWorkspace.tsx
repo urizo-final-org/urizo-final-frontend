@@ -10,6 +10,7 @@ import type {
   ProviderCredentialState, ProviderCredentialStatus,
 } from './api'
 import ActiveJobMonitoringPanel from './ActiveJobMonitoringPanel'
+import IntegratedObservabilityDashboard from './IntegratedObservabilityDashboard'
 import WorkflowPanel, {
   hydrateToolBindings, normalizeModelBindings, profileToolRequirement, starterSnapshots,
   toolCatalog, toolDetails, toolRequirementLabel,
@@ -519,7 +520,7 @@ function PolicyPanel() {
   </section>
 }
 
-type ObservabilityTab = 'node' | 'provider' | 'quality'
+type ObservabilityTab = 'node' | 'provider' | 'dashboard'
 
 function defaultObservabilityRange() {
   const to = new Date()
@@ -565,6 +566,7 @@ function UsagePanel({ api }: { api: AgentSettingsApiClient }) {
       const from = utcInstant(fromInput)
       const to = utcInstant(toInput)
       if (from >= to) throw new Error('UTC 조회 종료 시각은 시작 시각보다 뒤여야 합니다.')
+      if (Date.parse(to) - Date.parse(from) > 31 * 86400000) throw new Error('조회 기간은 최대 31일입니다.')
       const jobId = jobInput.trim().toLowerCase()
       if (jobId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(jobId)) {
         throw new Error('Job ID는 전체 UUID를 입력해 주세요.')
@@ -581,6 +583,11 @@ function UsagePanel({ api }: { api: AgentSettingsApiClient }) {
     setFailure(null)
     setMetrics(null)
     setObservations(null)
+    setLoadedAt(null)
+    if (activeTab === 'dashboard') {
+      setLoading(false)
+      return () => controller.abort()
+    }
     const fetchPage = async () => {
       try {
         const [nextMetrics, nextObservations] = await Promise.all([
@@ -605,13 +612,13 @@ function UsagePanel({ api }: { api: AgentSettingsApiClient }) {
     }
     void fetchPage()
     return () => controller.abort()
-  }, [api, query])
+  }, [api, query, activeTab])
 
   function selectTab(tab: ObservabilityTab) {
     setActiveTab(tab)
-    if (tab !== 'quality') {
+    if (tab !== 'dashboard') {
       const kind = tab === 'provider' ? 'PROVIDER' : 'NODE'
-      if (kind !== query.kind) setQuery((current) => ({ ...current, kind, cursors: [undefined], page: 0 }))
+      if (kind !== query.kind || activeTab === 'dashboard') setQuery((current) => ({ ...current, kind, cursors: [undefined], page: 0 }))
     }
   }
 
@@ -623,7 +630,7 @@ function UsagePanel({ api }: { api: AgentSettingsApiClient }) {
   const tabs: { id: ObservabilityTab; label: string }[] = [
     { id: 'node', label: 'Node 계측' },
     { id: 'provider', label: 'Provider 계측' },
-    { id: 'quality', label: '품질 평가' },
+    { id: 'dashboard', label: '통합 계측 대시보드' },
   ]
 
   return <section id="agent-settings-panel-usage" role="tabpanel" aria-labelledby="agent-settings-tab-usage">
@@ -652,7 +659,9 @@ function UsagePanel({ api }: { api: AgentSettingsApiClient }) {
         <button type="submit" className={secondaryButton} disabled={loading}>검색</button>
       </form>
       <div className="border-t border-line-soft px-4 py-3 text-[0.6875rem] leading-5 text-muted-2">
-        {metrics && observations
+        {activeTab === 'dashboard'
+          ? <>기간 <span className="font-mono text-body">{query.from}</span> — <span className="font-mono text-body">{query.to}</span> · 환경 <b className="text-body">local</b> · Job <span className="break-all font-mono text-body">{query.jobId || '전체'}</span></>
+          : metrics && observations
           ? <>기간 <span className="font-mono text-body">{metrics.from}</span> — <span className="font-mono text-body">{metrics.to}</span> · 환경 <b className="text-body">{metrics.environment}</b> · Job <span className="break-all font-mono text-body">{query.jobId || '전체'}</span>{loadedAt && <> · 조회 완료 <span className="font-mono text-body">{loadedAt}</span></>}</>
           : 'Metrics와 Observations에 같은 UTC 기간과 environment=local 필터를 적용합니다.'}
       </div>
@@ -699,7 +708,7 @@ function UsagePanel({ api }: { api: AgentSettingsApiClient }) {
       </div>}
     </section>}
 
-    {activeTab !== 'quality' && <nav className="mt-3 flex flex-wrap items-center justify-end gap-2 text-xs text-muted-2" aria-label="관측 페이지 이동">
+    {activeTab !== 'dashboard' && <nav className="mt-3 flex flex-wrap items-center justify-end gap-2 text-xs text-muted-2" aria-label="관측 페이지 이동">
       <span aria-live="polite">{query.page + 1} 페이지{!loading && observations && ` · 현재 ${(query.kind === 'NODE' ? nodeRows : providerRows).length}건`}</span>
       <button type="button" className={secondaryButton} disabled={loading || query.page === 0} onClick={() => setQuery((current) => ({ ...current, page: current.page - 1 }))}>이전</button>
       <button type="button" className={secondaryButton} disabled={loading || !!failure || !observations?.nextCursor || observations.status !== 'AVAILABLE'} onClick={() => {
@@ -708,9 +717,11 @@ function UsagePanel({ api }: { api: AgentSettingsApiClient }) {
       }}>다음</button>
     </nav>}
 
-    {!loading && activeTab === 'quality' && <section className={`${panel} mt-3`} aria-label="품질 평가 결과">
-      <PanelTitle title="품질 평가"><Badge tone="idle" dot={false}>평가 미설정</Badge></PanelTitle>
-      <p className="p-4 text-[0.71875rem] leading-6 text-muted-2">평가가 아직 설정되지 않았습니다.</p>
-    </section>}
+    {activeTab === 'dashboard' && <IntegratedObservabilityDashboard api={api} query={query} onDetail={selectTab} onRangeChange={next => {
+      setFromInput(next.from.slice(0, 16))
+      setToInput(next.to.slice(0, 16))
+      setJobInput(next.jobId)
+      setQuery(current => ({ ...current, ...next, cursors: [undefined], page: 0 }))
+    }} />}
   </section>
 }

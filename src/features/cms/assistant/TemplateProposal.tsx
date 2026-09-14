@@ -5,6 +5,7 @@ import { templateLabel, withTemplateImages } from '../templateImages'
 import { secondaryButton } from '../../../shared/ui/primitives'
 import type { CmsAssistantTarget } from './CmsAiAssistant'
 import type { NaturalCmsJob } from './api'
+import './TemplateProposal.css'
 
 export type TemplateAssistantContext = {
   target: CmsAssistantTarget | null
@@ -102,8 +103,8 @@ export function TemplateProposalPreview({ job, context }: { job: NaturalCmsJob; 
       </div>
     </section>)}
     <div className="flex flex-wrap gap-2">
-      <button type="button" className={secondaryButton} onClick={() => setRendered(before)}>변경 전 화면 보기</button>
-      <button type="button" className={secondaryButton} onClick={() => setRendered(after)}>변경 후 화면 보기</button>
+      <button type="button" className={`${secondaryButton} cms-template-preview-button`} onClick={() => setRendered(before)}>변경 전 화면 보기</button>
+      <button type="button" className={`${secondaryButton} cms-template-preview-button`} onClick={() => setRendered(after)}>변경 후 화면 보기</button>
     </div>
     {rendered && <TemplatePreview value={rendered} siteName={context?.siteName} menus={context?.menus}
       mode="approval" onClose={() => setRendered(null)} />}

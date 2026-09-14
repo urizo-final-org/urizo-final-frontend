@@ -6,8 +6,9 @@ import { notifyCmsChanged, notifySiteUpdated } from '../api'
 import { ContentDocument } from '../../site/contentDocument'
 import { contentImageUrl, type ContentImage } from '../api'
 import { Icon } from '../../../shared/ui/icons'
-import { Badge, control, panel, primaryButton, secondaryButton, textarea } from '../../../shared/ui/primitives'
+import { control, panel, primaryButton, secondaryButton, textarea } from '../../../shared/ui/primitives'
 import AssistantPreviewModal from './AssistantPreviewModal'
+import CmsRequestStatus from './CmsRequestStatus'
 import MenuRemovalNotice from './MenuRemovalNotice'
 import MenuTreePreview from './MenuTreePreview'
 import { refusalMessage } from './refusal'
@@ -661,7 +662,8 @@ export default function CmsAiAssistant({ route, target, templateContext, candida
       >
         <textarea
           id={inputId}
-          className={`${textarea} min-h-[4.75rem]`}
+          className={`${textarea} min-h-56 leading-relaxed`}
+          rows={10}
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
           onPaste={(event) => { if (canAttach && event.clipboardData.files.length > 0) void attach(event.clipboardData.files) }}
@@ -715,11 +717,12 @@ export default function CmsAiAssistant({ route, target, templateContext, candida
       </div>
 
       <div className="mt-4 border-t border-line-soft pt-[0.875rem]" aria-live="polite">
-        {phase.kind === 'analyzing' && <p className="m-0 text-[0.71875rem] text-muted">요청을 분석하고 있습니다…</p>}
+        {phase.kind === 'analyzing' && <CmsRequestStatus busy tone="run">요청을 분석하고 있습니다…</CmsRequestStatus>}
 
         {phase.kind === 'asking' && <>
-          <b className="text-[0.78125rem] font-semibold">어느 것을 바꿀까요?</b>
-          <p className="mt-[0.3125rem] text-[0.6875rem] leading-[1.6] text-muted-2">요청에 대상이 분명하지 않아 확인이 필요합니다.</p>
+          <CmsRequestStatus><b>어느 것을 바꿀까요?</b>
+            <p>요청에 대상이 분명하지 않아 확인이 필요합니다.</p>
+          </CmsRequestStatus>
           <div className="mt-[0.625rem] grid gap-[0.375rem]">
             {phase.candidates.map((candidate) => <button
               key={`${candidate.type}:${candidate.id}`}
@@ -734,10 +737,9 @@ export default function CmsAiAssistant({ route, target, templateContext, candida
         </>}
 
         {(phase.kind === 'waiting' || phase.kind === 'deciding') && <>
-          <div className="flex items-center gap-[0.4375rem]">
-            <Badge tone="wait">승인 대기</Badge>
-            <b className="text-[0.78125rem] font-semibold">변경 내용 확인</b>
-          </div>
+          <CmsRequestStatus busy={phase.kind === 'deciding'} tone={phase.kind === 'deciding' ? 'run' : 'wait'}>
+            {phase.kind === 'deciding' ? '요청을 처리하고 있습니다…' : <><b>승인 대기</b><p>변경 내용 확인</p></>}
+          </CmsRequestStatus>
           <div className="mt-[0.625rem] rounded-[0.3125rem] border border-line-soft bg-sub px-[0.6875rem] py-[0.625rem]">
             <small className="block text-[0.65625rem] text-muted-3">요청</small>
             <span className="mt-[0.1875rem] block text-[0.71875rem] text-body">{phase.job.requestText}</span>
@@ -773,20 +775,21 @@ export default function CmsAiAssistant({ route, target, templateContext, candida
         </>}
 
         {phase.kind === 'done' && <>
-          <Badge tone="ok">반영 완료</Badge>
-          <p className="mt-[0.625rem] text-[0.71875rem] text-muted">요청한 변경을 반영했습니다.</p>
+          <CmsRequestStatus tone="ok"><b>반영 완료</b><p>요청한 변경을 반영했습니다.</p></CmsRequestStatus>
           <button type="button" className={`${secondaryButton} mt-[0.625rem] w-full justify-center`} onClick={reset}>새 요청</button>
         </>}
 
         {/* 같은 REJECTED라도 내가 반려한 것과 화면 범위 밖이라 막힌 것은 다른 안내다. */}
         {phase.kind === 'rejected' && <>
-          <Badge tone="wait">{phase.job.approvalDecision === 'REJECTED' ? '반려됨' : '지원하지 않는 요청'}</Badge>
-          <p className="mt-[0.625rem] text-[0.71875rem] leading-[1.55] text-muted">{phase.job.approvalDecision === 'REJECTED'
-            ? '반영하지 않았습니다. 요청을 고쳐 다시 시도해 주세요.'
-            : refusalMessage(
-              phase.refusal?.code ?? null, phase.refusal?.reason ?? null,
-              phase.job.requestText, profile.section,
-              phase.refusal?.operations ?? [])}</p>
+          <CmsRequestStatus>
+            <b>{phase.job.approvalDecision === 'REJECTED' ? '반려됨' : '지원하지 않는 요청'}</b>
+            <p>{phase.job.approvalDecision === 'REJECTED'
+              ? '반영하지 않았습니다. 요청을 고쳐 다시 시도해 주세요.'
+              : refusalMessage(
+                phase.refusal?.code ?? null, phase.refusal?.reason ?? null,
+                phase.job.requestText, profile.section,
+                phase.refusal?.operations ?? [])}</p>
+          </CmsRequestStatus>
           <button type="button" className={`${secondaryButton} mt-[0.625rem] w-full justify-center`} onClick={reset}>새 요청</button>
         </>}
 

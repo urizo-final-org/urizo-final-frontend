@@ -13,6 +13,7 @@ import { highlightColor, textColor } from './contentPalette'
  * 함께 적지 않으면 관리자 편집기에서 링크와 목록 기호가 본문색 그대로 나온다.
  */
 export const contentStyles = [
+  'content-rich-text',
   // 앱 전체가 `font-synthesis: none`이라 UI 글자는 또렷하지만, 한글은 굵은 서체나 기울임 서체가
   // 없는 폰트로 떨어져 굵게와 기울임이 화면에 나타나지 않았다. 본문에서만 합성을 허용한다.
   'text-[1rem] leading-8 text-[#4a6167] [font-synthesis:style_weight]',

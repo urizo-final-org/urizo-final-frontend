@@ -97,9 +97,27 @@ test('renders the fixed Profile layout with actual N/P and keeps Q unconfigured'
   expect(screen.getByRole('region', { name: 'Node occurrence 이력' })).toHaveTextContent('일부 과거 이력은 잘렸으며 최신 Node 상태는 유지됩니다.')
 })
 
+test('keeps Snapshot/Layout immutable while routing and highlighting only selected-node connections', async () => {
+  const before = JSON.stringify(profile)
+  const client = monitoringApi()
+  const { container } = render(<ActiveJobMonitoringPanel api={client} />)
+  await screen.findByLabelText('읽기 전용 Node Canvas')
+  const edge = container.querySelector('[data-monitoring-edge="analyze:feasible:code"]')!
+  expect(edge).toHaveAttribute('data-edge-active', 'true')
+  expect(edge.getAttribute('marker-end')).toContain('url(#')
+  expect(edge.getAttribute('d')).toContain('Q ')
+  expect(screen.getByLabelText('analyze Node').style.left).toBe('48px')
+  expect(screen.getByLabelText('analyze Node').style.top).toBe('64px')
+  fireEvent.click(screen.getByLabelText('analyze Node'))
+  expect(JSON.stringify(profile)).toBe(before)
+  expect(screen.getByText(/실제 통과 이력을 뜻하지 않습니다/)).toBeInTheDocument()
+})
+
 test('zooms around the pointer and consumes wheel events at both limits without scrolling the page', async () => {
   const { unmount } = render(<ActiveJobMonitoringPanel api={monitoringApi()} />)
   const canvas = await screen.findByLabelText('읽기 전용 Node Canvas')
+  // Flush the mounted canvas effect before dispatching its native wheel event.
+  await act(async () => {})
   canvas.getBoundingClientRect = () => ({ left: 20, top: 30, width: 600, height: 400, right: 620, bottom: 430, x: 20, y: 30, toJSON: () => ({}) })
   canvas.scrollLeft = 100
   canvas.scrollTop = 80
@@ -200,6 +218,26 @@ test('preserves zoom across accepted polling and suppresses stale RUNNING decora
   expect(canvas).toHaveAttribute('data-canvas-zoom', '1.1')
   expect(screen.getByLabelText('analyze Node')).toHaveAttribute('aria-pressed', 'true')
   expect(screen.getByLabelText('code Node').querySelector('.monitoring-node-activity')).toBeNull()
+})
+
+test('refreshes actual call history without requiring a domain or monitor revision change', async () => {
+  vi.useFakeTimers()
+  const first = snapshot()
+  first.modelCalls = { status: 'AVAILABLE', calls: [], truncated: false }
+  const next = snapshot()
+  next.modelCalls = { status: 'AVAILABLE', truncated: false, calls: [{
+    callId: 'actual-call', callOrder: 1, pipelineAttempt: 1, executionAttempt: 1, nodeId: 'code', nodeSequence: 2,
+    turnId: 'actual-turn', provider: 'GOOGLE_GENAI', model: 'gemini-actual', providerAttempt: 1,
+    status: 'SUCCEEDED', errorCode: null, startedAt: '2026-09-07T00:00:01Z', finishedAt: '2026-09-07T00:00:02Z',
+  }] }
+  const getMonitoringJobSnapshot = vi.fn().mockResolvedValueOnce(first).mockResolvedValue(next)
+  render(<ActiveJobMonitoringPanel api={monitoringApi({ getMonitoringJobSnapshot })} />)
+  await act(async () => {})
+  expect(screen.getByLabelText('code Node')).toHaveTextContent('실제 모델 기록 없음')
+  await act(async () => { vi.advanceTimersByTime(1_000) })
+  expect(screen.getByLabelText('code Node')).toHaveTextContent('gemini-actual · 호출 성공')
+  expect(screen.getByRole('region', { name: '실제 모델 및 전환 이력' })).toHaveTextContent('GOOGLE_GENAI · 호출 성공')
+  expect(screen.getByRole('region', { name: 'N 상태 상세' })).toHaveTextContent('진행 중')
 })
 
 test('does not overlap polls, discards a hidden stale response, resumes immediately, and latches terminal', async () => {
