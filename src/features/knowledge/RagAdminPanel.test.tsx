@@ -161,7 +161,9 @@ test('a general admin sees the screen but every write button is already disabled
   // 눌러서 403을 받는 게 아니라 세션 역할로 미리 판별한다. 403은 방어선이지 UI가 아니다.
   expect(screen.getByRole('button', { name: '새 자료 만들기' })).toBeDisabled()
   expect(screen.getByRole('button', { name: '이전 버전 롤백' })).toBeDisabled()
-  expect(screen.getByText(/SUPER_ADMIN 권한이 필요합니다/)).toBeInTheDocument()
+  expect(screen.getByText(/최고 관리자의 권한이 필요합니다/)).toBeInTheDocument()
+  // 역할 코드는 화면에 쓰지 않는다 — 읽는 사람은 관리자이지 개발자가 아니다.
+  expect(screen.queryByText(/SUPER_ADMIN/)).not.toBeInTheDocument()
 })
 
 test('entering the screen starts polling only when a build is already running', async () => {
@@ -514,7 +516,7 @@ test('a general admin sees every write disabled and can open no dialog', async (
   })} role="GENERAL_ADMIN" />)
 
   // 쓰기 버튼 전부가 같은 안내를 단다 — 롤백 · 버전별 활성화 · Build 시작
-  const denied = await screen.findAllByTitle('SUPER_ADMIN 권한이 필요합니다. 최고 관리자에게 요청하세요.')
+  const denied = await screen.findAllByTitle('최고 관리자의 권한이 필요합니다. 아래 「갱신 요청」에 남겨 주세요.')
   expect(denied.length).toBeGreaterThan(1)
   denied.forEach((button) => expect(button).toBeDisabled())
   expect(screen.getByRole('button', { name: '새 자료 만들기' })).toBeDisabled()

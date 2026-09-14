@@ -40,8 +40,18 @@ const POLL_INTERVAL_MS = 5_000
  */
 const CLOCK_INTERVAL_MS = 1_000
 
-/** 쓰기 4종은 전부 SUPER_ADMIN 전용이다(`SecurityConfig:127-134`). */
-const WRITE_DENIED = 'SUPER_ADMIN 권한이 필요합니다. 최고 관리자에게 요청하세요.'
+/**
+ * 왜 못 누르는가. 쓰기 4종은 전부 SUPER_ADMIN 전용이다(`SecurityConfig:127-134`).
+ *
+ * <p>**역할 코드를 화면에 쓰지 않는다** — 읽는 사람은 관리자이지
+ * 개발자가 아니고, 화면의 다른 문구는 이미 "최고 관리자"라고 부른다.
+ *
+ * <p>무엇을 하면 되는지는 여기 넣지 않는다. 쓰는 자리마다 다음 행동이 다르고, 붙여 쓰면
+ * "최고 관리자의 권한이 필요합니다. 최고 관리자에게 요청하세요."처럼 같은 말이 겹친다.
+ */
+const WRITE_DENIED = '최고 관리자의 권한이 필요합니다.'
+/** 비활성 버튼 툴팁 — 이유에 갈 곳을 붙인다. */
+const WRITE_DENIED_HINT = `${WRITE_DENIED} 아래 「갱신 요청」에 남겨 주세요.`
 
 const STATUS_TONE: Record<KnowledgeVersionStatus, Tone> = {
   BUILD_REQUESTED: 'run', BUILDING: 'run', APPROVAL_PENDING: 'wait',
@@ -343,7 +353,7 @@ export function RagAdminPanel({ api, role }: { api: KnowledgeAdminApi; role: Adm
         className={tableButton}
         disabled={!canWrite || busy || newest == null || view != null}
         onClick={askBuild}
-        title={!mayWrite ? WRITE_DENIED : view != null ? '이미 만드는 중입니다.' : '검색에 쓸 자료를 새로 만듭니다 (약 8분).'}
+        title={!mayWrite ? WRITE_DENIED_HINT : view != null ? '이미 만드는 중입니다.' : '검색에 쓸 자료를 새로 만듭니다 (약 8분).'}
       >새 자료 만들기</button>
     </PageHead>
 
@@ -800,7 +810,7 @@ function VersionTable({ versions, mayWrite, blocked, busy, canRollback, onSwitch
         className={tableButton}
         disabled={busy || !canRollback}
         onClick={onRollback}
-        title={!mayWrite ? WRITE_DENIED : canRollback ? '마지막으로 활성화됐던 버전으로 되돌립니다.' : '되돌릴 이전 활성 버전이 없습니다.'}
+        title={!mayWrite ? WRITE_DENIED_HINT : canRollback ? '마지막으로 활성화됐던 버전으로 되돌립니다.' : '되돌릴 이전 활성 버전이 없습니다.'}
       >이전 버전 롤백</button>
     </PanelTitle>
     <div className="overflow-x-auto">
@@ -834,7 +844,7 @@ function VersionTable({ versions, mayWrite, blocked, busy, canRollback, onSwitch
                 className={tableButton}
                 disabled={busy || switchPath(version.status) == null}
                 onClick={() => onSwitch(version)}
-                title={!mayWrite ? WRITE_DENIED : NOT_SWITCHABLE[version.status] ?? `포털이 v${version.versionNumber} 기준으로 답하게 합니다.`}
+                title={!mayWrite ? WRITE_DENIED_HINT : NOT_SWITCHABLE[version.status] ?? `포털이 v${version.versionNumber} 기준으로 답하게 합니다.`}
               ><Icon name="repeat" size={12} />전환</button>}
           </span>
         </div>)}
