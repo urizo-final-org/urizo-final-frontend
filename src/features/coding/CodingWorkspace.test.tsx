@@ -1231,8 +1231,8 @@ test('the cancel control is a card of its own, apart from the approval buttons',
 test('the live status card names itself and shows the attempt it is on', async () => {
   render(<CodingWorkspace role="SUPER_ADMIN" api={waitingApi()} />)
 
-  expect(await screen.findByText('실시간 상태')).toBeInTheDocument()
   expect(await screen.findByText(/^\d{2}:\d{2}:\d{2} 갱신 · 시도 1\/3$/)).toBeInTheDocument()
+  expect(screen.getByText('실시간 상태')).toBeInTheDocument()
 })
 
 test('approval alerts and the history share one panel and switch by tab', async () => {
@@ -1248,4 +1248,83 @@ test('approval alerts and the history share one panel and switch by tab', async 
   expect(screen.getByRole('tab', { name: /실행 이력/ })).toHaveAttribute('aria-selected', 'true')
   expect(screen.getByText('아직 보낸 요청이 없습니다.')).toBeVisible()
   expect(screen.getByText('승인 알림이 없습니다.')).not.toBeVisible()
+})
+
+test('submission feedback starts immediately and stops on rejection without extra calls', async () => {
+  let rejectRequest!: (reason: Error) => void
+  const api = consoleApi({ createJob: vi.fn().mockImplementation(() => new Promise((_, reject) => { rejectRequest = reject })) })
+  render(<CodingWorkspace role="GENERAL_ADMIN" api={api} />)
+  await screen.findByRole('button', { name: '요청 보내기' })
+  fireEvent.change(screen.getByLabelText('무엇을 바꿀까요'), { target: { value: '문구를 바꿔줘' } })
+  fireEvent.click(screen.getByRole('button', { name: '요청 보내기' }))
+  expect(screen.getByRole('region', { name: '실시간 상태' })).toHaveAttribute('data-activity', 'sending')
+  expect(screen.getByText('요청을 접수하고 있습니다.')).toBeVisible()
+  expect(screen.queryByText('진행 중인 요청이 없습니다')).not.toBeInTheDocument()
+  expect(api.createJob).toHaveBeenCalledExactlyOnceWith(null, '문구를 바꿔줘')
+  await act(async () => rejectRequest(new Error('접수 실패')))
+  expect(screen.getByRole('region', { name: '실시간 상태' })).toHaveAttribute('data-activity', 'idle')
+  expect(screen.getByRole('button', { name: '요청 보내기' })).toBeEnabled()
+  expect(api.listJobs).toHaveBeenCalledTimes(1)
+})
+
+test('approval feedback continues through the existing refetch without changing the decision', async () => {
+  let resolveDecision!: (value: object) => void
+  let resolveList!: (value: object) => void
+  const api = waitingApi({
+    decideApproval: vi.fn().mockImplementation(() => new Promise(resolve => { resolveDecision = resolve })),
+    listJobs: vi.fn().mockResolvedValueOnce({ schemaVersion: '1.0', items: [openJob] })
+      .mockImplementation(() => new Promise(resolve => { resolveList = resolve })),
+  })
+  render(<CodingWorkspace role="SUPER_ADMIN" api={api} />)
+  fireEvent.click(await screen.findByRole('button', { name: '네, 진행하세요' }))
+  expect(screen.getByText('결정을 전달하고 있습니다.')).toBeVisible()
+  expect(api.decideApproval).toHaveBeenCalledExactlyOnceWith(openJob.jobId, pendingScope, 'APPROVED', undefined)
+  await act(async () => resolveDecision({}))
+  expect(screen.getByText('상태를 확인하고 있습니다.')).toBeVisible()
+  expect(screen.getByRole('region', { name: '실시간 상태' })).toHaveAttribute('data-activity', 'sending')
+  await act(async () => resolveList({ schemaVersion: '1.0', items: [openJob] }))
+  expect(screen.getByRole('region', { name: '실시간 상태' })).toHaveAttribute('data-activity', 'waiting')
+  expect(screen.getByText('아래에서 내용을 확인하고 승인해 주세요.')).toBeVisible()
+  expect(api.listJobs).toHaveBeenCalledTimes(2)
+})
+
+test('running feedback stops at approval on the unchanged fifteen second poll', async () => {
+  vi.useFakeTimers()
+  try {
+    const api = waitingApi({ listJobs: vi.fn()
+      .mockResolvedValueOnce({ schemaVersion: '1.0', items: [{ ...openJob, status: 'RUNNING' }] })
+      .mockResolvedValue({ schemaVersion: '1.0', items: [openJob] }) })
+    render(<CodingWorkspace role="GENERAL_ADMIN" api={api} />)
+    await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+    expect(screen.getByRole('region', { name: '실시간 상태' })).toHaveAttribute('data-activity', 'working')
+    await act(async () => { await vi.advanceTimersByTimeAsync(14_999) })
+    expect(api.listJobs).toHaveBeenCalledTimes(1)
+    await act(async () => { await vi.advanceTimersByTimeAsync(1) })
+    expect(api.listJobs).toHaveBeenCalledTimes(2)
+    expect(screen.getByRole('region', { name: '실시간 상태' })).toHaveAttribute('data-activity', 'waiting')
+    expect(api.createJob).not.toHaveBeenCalled()
+    expect(api.decideApproval).not.toHaveBeenCalled()
+  }
+  finally { vi.useRealTimers() }
+})
+
+test('failed polls stop activity on stale data and successful polling restores it', async () => {
+  vi.useFakeTimers()
+  try {
+    const running = { schemaVersion: '1.0', items: [{ ...openJob, status: 'RUNNING' }] }
+    const listJobs = vi.fn().mockResolvedValueOnce(running).mockRejectedValue(new Error('offline'))
+    render(<CodingWorkspace role="GENERAL_ADMIN" api={waitingApi({ listJobs })} />)
+    await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+    for (let tick = 0; tick < 3; tick += 1) {
+      await act(async () => { await vi.advanceTimersByTimeAsync(15_000) })
+    }
+    expect(screen.getByRole('region', { name: '실시간 상태' })).toHaveAttribute('data-activity', 'stale')
+    expect(screen.getByText('상태 확인이 지연되고 있습니다. 마지막으로 확인한 상태입니다.')).toBeVisible()
+    expect(listJobs).toHaveBeenCalledTimes(4)
+    listJobs.mockResolvedValue(running)
+    await act(async () => { await vi.advanceTimersByTimeAsync(15_000) })
+    expect(screen.getByRole('region', { name: '실시간 상태' })).toHaveAttribute('data-activity', 'working')
+    expect(listJobs).toHaveBeenCalledTimes(5)
+  }
+  finally { vi.useRealTimers() }
 })

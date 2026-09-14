@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import CmsAiAssistant from './CmsAiAssistant'
 import { templateProposal, TemplateProposalPreview } from './TemplateProposal'
@@ -12,6 +12,34 @@ function job(): NaturalCmsJob {
 }
 
 describe('saved template proposal', () => {
+  it('keeps both highlighted view buttons usable and closes each preview without changing the proposal', () => {
+    const originalShow = Object.getOwnPropertyDescriptor(HTMLDialogElement.prototype, 'showModal')
+    const originalClose = Object.getOwnPropertyDescriptor(HTMLDialogElement.prototype, 'close')
+    Object.defineProperties(HTMLDialogElement.prototype, {
+      showModal: { configurable: true, value(this: HTMLDialogElement) { this.setAttribute('open', '') } },
+      close: { configurable: true, value(this: HTMLDialogElement) { this.removeAttribute('open') } },
+    })
+    const value = job()
+    const saved = JSON.stringify(value)
+    try {
+      render(<TemplateProposalPreview job={value} />)
+      for (const name of ['변경 전 화면 보기', '변경 후 화면 보기']) {
+        const button = screen.getByRole('button', { name })
+        expect(button).toHaveClass('cms-template-preview-button')
+        expect(button).toHaveAttribute('type', 'button')
+        fireEvent.click(button)
+        const dialog = screen.getByRole('dialog', { name: 'CLASSIC 템플릿 미리보기' })
+        fireEvent.click(within(dialog).getByRole('button', { name: '닫기' }))
+        expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+      }
+      expect(JSON.stringify(value)).toBe(saved)
+    } finally {
+      if (originalShow) Object.defineProperty(HTMLDialogElement.prototype, 'showModal', originalShow)
+      else Reflect.deleteProperty(HTMLDialogElement.prototype, 'showModal')
+      if (originalClose) Object.defineProperty(HTMLDialogElement.prototype, 'close', originalClose)
+      else Reflect.deleteProperty(HTMLDialogElement.prototype, 'close')
+    }
+  })
   it('uses saved before/after and preserves all five captions in order', () => {
     const proposal = templateProposal(job())!
     expect(proposal.before.heroImages).toEqual(images)

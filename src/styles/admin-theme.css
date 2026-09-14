@@ -112,10 +112,11 @@
 }
 
 .admin-app :is(button, input, select, textarea) { font: inherit; }
-.admin-app button { cursor: pointer; border: 0; color: inherit; }
+.admin-app button { cursor: pointer; border: 0; }
 .admin-app .cms-suggestion-button { color: var(--teal-ink); background: var(--teal-bg); border: 1px dashed var(--field-line); }
 .admin-app .cms-suggestion-button:hover { background: var(--sub); }
-.admin-app button:disabled { cursor: not-allowed; opacity: 0.48; }
+.admin-app button:disabled { cursor: not-allowed; opacity: 1; color: var(--body); background-color: var(--line-soft); box-shadow: none; }
+.admin-app:not([data-admin-theme='dark']) button:is(.text-muted, .text-muted-2, .text-muted-3, .text-muted-4) { color: var(--body); }
 .admin-app ::placeholder { color: var(--muted-3); }
 .admin-app :is(button, input, select, textarea, a):focus-visible {
   outline: 2px solid color-mix(in srgb, var(--accent) 72%, transparent);
@@ -126,6 +127,16 @@
 .admin-app[data-admin-theme='dark'] .bg-slate-100 { background-color: #263b4d; }
 .admin-app[data-admin-theme='dark'] .text-slate-600 { color: #bdd0dc; }
 .admin-app[data-admin-theme='dark'] .border-white\/10 { border-color: rgb(255 255 255 / 0.14); }
+
+/* Editor and approval previews inherit the admin theme; site previews keep their own palette. */
+.admin-app[data-admin-theme='dark'] .content-rich-text:not(.site-app *) { color: var(--strong); }
+.admin-app[data-admin-theme='dark'] .content-rich-text:not(.site-app *) :is(h2, h3, strong):not([style*='color'] *, mark *) { color: var(--ink); }
+.admin-app[data-admin-theme='dark'] .content-rich-text:not(.site-app *) blockquote { color: var(--body); border-color: var(--field-line); }
+.admin-app[data-admin-theme='dark'] .content-rich-text:not(.site-app *) a:not(mark *) { color: var(--link); }
+.admin-app[data-admin-theme='dark'] .content-rich-text:not(.site-app *) li::marker { color: var(--link); }
+.admin-app[data-admin-theme='dark'] .content-rich-text:not(.site-app *) hr { border-color: var(--field-line); }
+/* Highlight marks carry inline color:inherit; retain dark text on their pale backgrounds. */
+.admin-app[data-admin-theme='dark'] .content-rich-text:not(.site-app *) mark:not(span[style*='color'] *) { color: #263e48 !important; }
 
 .admin-notice {
   display: grid;

@@ -184,6 +184,9 @@ function profileApi(overrides: Partial<AgentSettingsApiClient> = {}): AgentSetti
     getObservabilityMetrics: vi.fn().mockImplementation((from, to) => Promise.resolve({
       status: 'AVAILABLE', errorCode: null, from, to, environment: 'local', rows: [],
     })),
+    getTokenUsage: vi.fn().mockImplementation((from, to) => Promise.resolve({
+      status: 'AVAILABLE', errorCode: null, from, to, environment: 'local', granularity: 'hour', points: [],
+    })),
     getObservations: vi.fn().mockImplementation((from, to) => Promise.resolve({
       status: 'AVAILABLE', errorCode: null, from, to, environment: 'local', observations: [],
     })),
@@ -246,9 +249,77 @@ test('the six Agent settings tabs separate live monitoring from observability an
   await waitFor(() => expect(screen.getByText('관측 대기')).toBeInTheDocument())
   expect(screen.getByText('선택한 조건의 Node·Tool·Check 관측 · 페이지당 최대 50건 · 최신순')).toBeInTheDocument()
   expect(screen.getByText('이번 조회 결과에 Node·Tool·Check 관측이 없습니다.')).toBeInTheDocument()
-  fireEvent.click(screen.getByRole('tab', { name: '품질 평가' }))
-  expect(screen.getByText('평가 미설정')).toBeInTheDocument()
-  expect(screen.queryByText(/RAGAS|Langfuse|ToolCallAccuracy|AgentGoalAccuracy/)).not.toBeInTheDocument()
+  fireEvent.click(screen.getByRole('tab', { name: '통합 계측 대시보드' }))
+  await waitFor(() => expect(screen.getByText('계측 응답 3/3')).toBeInTheDocument())
+  expect(screen.getByRole('region', { name: '토큰 사용량 추이' })).toBeInTheDocument()
+  expect(screen.getByRole('region', { name: 'Node 계측 요약' })).toBeInTheDocument()
+  expect(screen.getByRole('region', { name: 'Provider 계측 요약' })).toBeInTheDocument()
+  expect(screen.queryByText(/RAGAS|ToolCallAccuracy|AgentGoalAccuracy|평가 미설정/)).not.toBeInTheDocument()
+})
+
+test('integrated dashboard shares applied filters, ignores detail cursors and returns to first detail page', async () => {
+  const api = profileApi({ getObservations: vi.fn().mockImplementation((from, to) => Promise.resolve({
+    status: 'AVAILABLE', errorCode: null, from, to, environment: 'local', observations: [], nextCursor: 'older', limit: 50,
+  })) })
+  render(<AgentSettingsWorkspace api={api} />)
+  fireEvent.click(screen.getByRole('tab', { name: /사용량·평가/ }))
+  await waitFor(() => expect(screen.getByRole('button', { name: '검색' })).toBeEnabled())
+  const jobId = '11111111-1111-4111-8111-111111111111'
+  fireEvent.change(screen.getByLabelText('Job ID 검색'), { target: { value: jobId } })
+  fireEvent.change(screen.getByLabelText('조회 시작 UTC'), { target: { value: '2026-09-01T00:00' } })
+  fireEvent.change(screen.getByLabelText('조회 종료 UTC'), { target: { value: '2026-09-02T00:00' } })
+  fireEvent.click(screen.getByRole('button', { name: '검색' }))
+  await waitFor(() => expect(screen.getByRole('button', { name: '다음' })).toBeEnabled())
+  fireEvent.click(screen.getByRole('button', { name: '다음' }))
+  await screen.findByText('2 페이지 · 현재 0건')
+  fireEvent.click(screen.getByRole('tab', { name: '통합 계측 대시보드' }))
+  await screen.findByText('계측 응답 3/3')
+  expect(api.getTokenUsage).toHaveBeenLastCalledWith('2026-09-01T00:00:00.000Z', '2026-09-02T00:00:00.000Z', jobId, expect.any(AbortSignal))
+  expect(api.getObservations).toHaveBeenLastCalledWith('2026-09-01T00:00:00.000Z', '2026-09-02T00:00:00.000Z', { jobId, kind: 'NODE', limit: 50 }, expect.any(AbortSignal))
+  expect(screen.queryByRole('navigation', { name: '관측 페이지 이동' })).not.toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: 'Node 상세 보기' }))
+  await screen.findByText('1 페이지 · 현재 0건')
+  expect(api.getObservations).toHaveBeenLastCalledWith('2026-09-01T00:00:00.000Z', '2026-09-02T00:00:00.000Z', { jobId, kind: 'NODE', limit: 50, cursor: undefined }, expect.any(AbortSignal))
+  expect(screen.getByLabelText('Job ID 검색')).toHaveValue(jobId)
+})
+
+test('dashboard period presets update UTC inputs and all queries while preserving the applied Job', async () => {
+  const api = profileApi()
+  render(<AgentSettingsWorkspace api={api} />)
+  fireEvent.click(screen.getByRole('tab', { name: /사용량·평가/ }))
+  await waitFor(() => expect(screen.getByRole('button', { name: '검색' })).toBeEnabled())
+  const jobId = '11111111-1111-4111-8111-111111111111'
+  fireEvent.change(screen.getByLabelText('Job ID 검색'), { target: { value: jobId } })
+  fireEvent.change(screen.getByLabelText('조회 시작 UTC'), { target: { value: '2026-09-01T00:00' } })
+  fireEvent.change(screen.getByLabelText('조회 종료 UTC'), { target: { value: '2026-09-02T00:00' } })
+  fireEvent.click(screen.getByRole('button', { name: '검색' }))
+  await waitFor(() => expect(screen.getByRole('button', { name: '검색' })).toBeEnabled())
+  fireEvent.click(screen.getByRole('tab', { name: '통합 계측 대시보드' }))
+  await screen.findByText('계측 응답 3/3')
+  fireEvent.change(screen.getByLabelText('조회 기간'), { target: { value: '168' } })
+  await screen.findByText('계측 응답 3/3')
+  expect(screen.getByLabelText('조회 시작 UTC')).toHaveValue('2026-08-26T00:00')
+  expect(screen.getByLabelText('조회 종료 UTC')).toHaveValue('2026-09-02T00:00')
+  expect(screen.getByLabelText('Job ID 검색')).toHaveValue(jobId)
+  for (const read of [api.getTokenUsage, api.getObservabilityMetrics]) {
+    expect(read).toHaveBeenLastCalledWith('2026-08-26T00:00:00.000Z', '2026-09-02T00:00:00.000Z', jobId, expect.any(AbortSignal))
+  }
+  expect(api.getObservations).toHaveBeenLastCalledWith('2026-08-26T00:00:00.000Z', '2026-09-02T00:00:00.000Z', { jobId, kind: 'NODE', limit: 50 }, expect.any(AbortSignal))
+  fireEvent.click(screen.getByRole('button', { name: 'Provider 상세 보기' }))
+  await waitFor(() => expect(api.getObservations).toHaveBeenLastCalledWith('2026-08-26T00:00:00.000Z', '2026-09-02T00:00:00.000Z', { jobId, kind: 'PROVIDER', limit: 50, cursor: undefined }, expect.any(AbortSignal)))
+})
+
+test('rejects windows beyond 31 days before making an observability request', async () => {
+  const api = profileApi()
+  render(<AgentSettingsWorkspace api={api} />)
+  fireEvent.click(screen.getByRole('tab', { name: /사용량·평가/ }))
+  await waitFor(() => expect(screen.getByRole('button', { name: '새로고침' })).toBeEnabled())
+  fireEvent.change(screen.getByLabelText('조회 시작 UTC'), { target: { value: '2026-09-01T00:00' } })
+  fireEvent.change(screen.getByLabelText('조회 종료 UTC'), { target: { value: '2026-10-03T00:00' } })
+  fireEvent.click(screen.getByRole('button', { name: '새로고침' }))
+  expect(screen.getByRole('alert')).toHaveTextContent('조회 기간은 최대 31일입니다.')
+  expect(api.getObservations).toHaveBeenCalledTimes(1)
+  expect(api.getTokenUsage).not.toHaveBeenCalled()
 })
 
 test('uses one UTC range for Node and Provider telemetry and preserves nullable Backend values', async () => {
@@ -823,7 +894,7 @@ test('the Workflow Canvas loads the latest stored Snapshot with exact edges, bin
   expect(screen.getByLabelText('선택 Handler')).toHaveValue('coding.analyze')
   expect(screen.getByLabelText('선택 주 모델')).toHaveValue('google-genai-gemini-3-6-flash')
   expect(screen.getByRole('option', { name: 'GOOGLE_GENAI · gemini-3.6-flash (google-genai-gemini-3-6-flash)' })).toBeInTheDocument()
-  expect(screen.getByText(/등록·검증된 Credential Provider의 Model만 선택/)).toBeInTheDocument()
+  expect(screen.getByText(/등록된 모델은 Key 상태와 함께 표시합니다/)).toBeInTheDocument()
   expect(screen.queryByRole('button', { name: /Profile 허용 도구/ })).not.toBeInTheDocument()
   expect(screen.getByText('잠금 가드레일 · 통과')).toBeInTheDocument()
   expect(screen.getAllByText('→ 요청 분석').length).toBeGreaterThan(0)
@@ -888,7 +959,8 @@ test('the Workflow Canvas uses a left control dock and one scrollable coordinate
   expect(canvas.querySelectorAll('[data-node-port="right"]')).toHaveLength(starterSnapshots.LLM_OPS.nodes.length)
   expect(canvas.querySelector('[data-edge-route="direct"]')).not.toBeNull()
   expect(canvas.querySelector('[data-edge-route="detour"]')).not.toBeNull()
-  expect(canvas.querySelector('[data-edge-route="detour"][data-edge-lane="0"]')).not.toBeNull()
+  expect(canvas.querySelector('[data-edge-route="detour"][data-edge-lane]')).not.toBeNull()
+  expect(canvas.querySelector('[data-edge-route="detour"]')).toHaveAttribute('stroke-dasharray', '6 4')
   expect(canvas.querySelector('[data-edge-active="true"]')).not.toBeNull()
   expect(Number(canvas.dataset.canvasWidth)).toBeGreaterThan(1180)
   expect(Number(canvas.dataset.canvasHeight)).toBeGreaterThan(680)
@@ -912,12 +984,47 @@ test('the Workflow Canvas uses a left control dock and one scrollable coordinate
   fireEvent.pointerMove(canvas, { pointerId: 8, clientX: 250, clientY: 160 })
   expect(viewport.scrollLeft).toBe(170)
   expect(viewport.scrollTop).toBe(150)
-  expect(screen.getByText('Retry·Reject 하단 Routing')).toBeInTheDocument()
+  expect(screen.getByText('역방향·Retry·Reject 점선')).toBeInTheDocument()
 
   fireEvent.wheel(canvas, { deltaY: -100, clientX: 400, clientY: 320 })
   expect(canvas).toHaveAttribute('data-canvas-zoom', '1.1')
   expect(canvasContent).toHaveStyle({ transform: 'scale(1.1)' })
   expect(screen.getByLabelText('Canvas 확대 비율')).toHaveTextContent('110%')
+})
+
+test('editor paths follow zoom-adjusted node dragging without saving or changing Snapshot connections', async () => {
+  const api = profileApi()
+  const before = JSON.stringify(activeVersion.snapshot)
+  render(<AgentSettingsWorkspace api={api} />)
+  await screen.findByLabelText('analyze Node')
+  const viewport = screen.getByLabelText('Node 편집 Canvas')
+  fireEvent.wheel(viewport, { deltaY: -100, clientX: 400, clientY: 320 })
+  expect(viewport).toHaveAttribute('data-canvas-zoom', '1.1')
+  const node = screen.getByLabelText('analyze Node')
+  const handle = within(node).getByRole('button', { name: /Node 이동/ })
+  const x = Number(node.getAttribute('data-node-x')), y = Number(node.getAttribute('data-node-y'))
+  const path = viewport.querySelector('[data-edge-to="analyze"]')!
+  const initialPath = path.getAttribute('d')
+  const corridor = path.getAttribute('data-edge-corridor')
+  const ports = [path.getAttribute('data-edge-source-port'), path.getAttribute('data-edge-target-port')]
+  const edgeCount = viewport.querySelectorAll('[data-edge-from]').length
+  fireEvent.pointerDown(handle, { pointerId: 9, clientX: 300, clientY: 200 })
+  fireEvent.pointerMove(handle, { pointerId: 9, clientX: 344, clientY: 222 })
+  expect(Number(node.getAttribute('data-node-x'))).toBeCloseTo(x + 40)
+  expect(Number(node.getAttribute('data-node-y'))).toBeCloseTo(y + 20)
+  expect(path.getAttribute('d')).not.toBe(initialPath)
+  expect(path.getAttribute('data-edge-corridor')).toBe(corridor)
+  expect([path.getAttribute('data-edge-source-port'), path.getAttribute('data-edge-target-port')]).toEqual(ports)
+  expect(screen.getByText('이동 중 연결 경로 유지')).toBeInTheDocument()
+  fireEvent.pointerUp(handle, { pointerId: 9 })
+  expect(screen.queryByText('이동 중 연결 경로 유지')).not.toBeInTheDocument()
+  expect(viewport.querySelectorAll('[data-edge-from]')).toHaveLength(edgeCount)
+  expect(JSON.stringify(activeVersion.snapshot)).toBe(before)
+  expect(api.create).not.toHaveBeenCalled()
+  expect(api.saveEditorLayout).not.toHaveBeenCalled()
+  fireEvent.pointerDown(handle, { pointerId: 10, clientX: 300, clientY: 200 })
+  fireEvent.lostPointerCapture(handle, { pointerId: 10 })
+  expect(screen.queryByText('이동 중 연결 경로 유지')).not.toBeInTheDocument()
 })
 
 test('feedback Edges choose the open side of their source Node after Nodes move', () => {
@@ -1322,6 +1429,108 @@ test('catalog selections save only edited inference metadata and reject duplicat
   expect(saved.modelBindings.code).toEqual(gemini36Binding())
 })
 
+test('unavailable fallbacks can be removed from all agent nodes before saving replacement providers', async () => {
+  const version: ProfileVersion = {
+    ...activeVersion,
+    snapshot: {
+      ...activeVersion.snapshot,
+      modelBindings: Object.fromEntries(['analyze', 'code', 'review'].map((nodeId) => [nodeId, {
+        ...gemini36Binding(),
+        fallback: ['google-genai-gemini-3-5-flash-lite'],
+        selections: {
+          ...gemini36Binding().selections,
+          'google-genai-gemini-3-5-flash-lite': { provider: 'GOOGLE_GENAI', model: 'gemini-3.5-flash-lite', inference: { reasoningIntensity: 'MINIMAL' } },
+        },
+      }])),
+    },
+  }
+  const catalog = modelCatalog('LLM_OPS')
+  catalog.models = catalog.models.filter((model) => model.provider !== 'GOOGLE_GENAI')
+  const create = vi.fn().mockResolvedValue({ ...version, profileVersionId: 'version-3', profileVersion: 3, status: 'DRAFT' })
+  render(<AgentSettingsWorkspace api={profileApi({
+    list: vi.fn().mockResolvedValue([version]), create,
+    listModelCatalog: vi.fn().mockResolvedValue(catalog),
+  })} />)
+  await screen.findByLabelText('analyze Node')
+  for (const nodeId of ['analyze', 'code', 'review']) {
+    fireEvent.click(screen.getByLabelText(`${nodeId} Node`))
+    await screen.findByRole('option', { name: 'ANTHROPIC · claude-sonnet-5 (anthropic-claude-sonnet-5)' })
+    fireEvent.change(screen.getByLabelText('선택 주 모델'), { target: { value: 'anthropic-claude-sonnet-5' } })
+    fireEvent.click(screen.getByLabelText('Fallback openai-gpt-5-4-nano'))
+    fireEvent.click(screen.getByRole('button', { name: '대체 모델 google-genai-gemini-3-5-flash-lite 제거' }))
+    expect(screen.queryByText(/GOOGLE_GENAI/)).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Fallback openai-gpt-5-4-nano')).toBeChecked()
+  }
+  fireEvent.click(screen.getByRole('button', { name: '새 DRAFT 저장' }))
+  fireEvent.click(within(screen.getByRole('dialog', { name: '새 DRAFT 저장' })).getByRole('button', { name: '저장하기' }))
+  await waitFor(() => expect(create).toHaveBeenCalledOnce())
+  const saved = create.mock.calls[0][1] as ProfileVersion['snapshot']
+  for (const nodeId of ['analyze', 'code', 'review']) {
+    expect(saved.modelBindings[nodeId]).toMatchObject({ primary: 'anthropic-claude-sonnet-5', fallback: ['openai-gpt-5-4-nano'] })
+    expect(Object.keys(saved.modelBindings[nodeId].selections!)).toEqual(['anthropic-claude-sonnet-5', 'openai-gpt-5-4-nano'])
+  }
+  expect(saved.nodes).toEqual(version.snapshot.nodes)
+  expect(saved.edges).toEqual(version.snapshot.edges)
+  expect(saved.config).toEqual(version.snapshot.config)
+  expect(version.snapshot.modelBindings.analyze.fallback).toEqual(['google-genai-gemini-3-5-flash-lite'])
+})
+
+test.each([
+  ['NOT_CONFIGURED', 'Key 미등록'], ['STORED', '연결 확인 필요'],
+  ['BILLING_BLOCKED', '결제·크레딧 확인 필요'], ['INVALID_CREDENTIAL', 'Key 인증 실패'],
+  ['PROVIDER_UNAVAILABLE', 'Provider 응답 없음·호출 제한 가능'],
+] as const)('shows %s models but prevents new primary and fallback selections', async (state, label) => {
+  const catalog = modelCatalog('LLM_OPS')
+  catalog.models = catalog.models.map((model) => ({ ...model, credentialState: model.provider === 'GOOGLE_GENAI' ? state : 'VERIFIED' }))
+  render(<AgentSettingsWorkspace api={profileApi({ listModelCatalog: vi.fn().mockResolvedValue(catalog) })} />)
+  await screen.findByLabelText('analyze Node')
+  fireEvent.click(screen.getByLabelText('analyze Node'))
+  const unavailable = await screen.findByRole('option', { name: `GOOGLE_GENAI · gemini-3.5-flash-lite (google-genai-gemini-3-5-flash-lite) · ${label}` })
+  expect(unavailable).toBeDisabled()
+  const fallback = screen.getByLabelText('Fallback google-genai-gemini-3-5-flash-lite')
+  expect(fallback).toBeDisabled()
+  fireEvent.click(fallback)
+  expect(fallback).not.toBeChecked()
+  fireEvent.change(screen.getByLabelText('선택 주 모델'), { target: { value: 'google-genai-gemini-3-5-flash-lite' } })
+  expect(screen.getByLabelText('선택 주 모델')).toHaveValue('google-genai-gemini-3-6-flash')
+  fireEvent.change(screen.getByLabelText('선택 주 모델'), { target: { value: 'anthropic-claude-sonnet-5' } })
+  expect(screen.getByLabelText('선택 주 모델')).toHaveValue('anthropic-claude-sonnet-5')
+  fireEvent.click(screen.getByLabelText('Fallback openai-gpt-5-4-nano'))
+  expect(screen.getByLabelText('Fallback openai-gpt-5-4-nano')).toBeChecked()
+})
+
+test('a visible unavailable fallback can be unchecked without being selected again or persisted', async () => {
+  const binding = { ...gemini36Binding(), primary: 'anthropic-claude-sonnet-5', fallback: ['google-genai-gemini-3-6-flash'], selections: {
+    ...gemini36Binding().selections,
+    'anthropic-claude-sonnet-5': { provider: 'ANTHROPIC' as const, model: 'claude-sonnet-5', inference: { reasoningIntensity: 'NONE' } },
+  } }
+  const version: ProfileVersion = { ...activeVersion, snapshot: { ...activeVersion.snapshot, modelBindings: { analyze: binding, code: binding, review: binding } } }
+  const catalog = modelCatalog('LLM_OPS')
+  catalog.models = catalog.models.map((model) => ({ ...model, credentialState: model.provider === 'GOOGLE_GENAI' ? 'PROVIDER_UNAVAILABLE' : 'VERIFIED' }))
+  const create = vi.fn().mockResolvedValue({ ...version, status: 'DRAFT' })
+  render(<AgentSettingsWorkspace api={profileApi({ list: vi.fn().mockResolvedValue([version]), create, listModelCatalog: vi.fn().mockResolvedValue(catalog) })} />)
+  await screen.findByLabelText('analyze Node')
+  for (const nodeId of ['analyze', 'code', 'review']) {
+    fireEvent.click(screen.getByLabelText(`${nodeId} Node`))
+    await screen.findByRole('option', { name: /gemini-3.6-flash.*Provider 응답 없음/ })
+    const checkbox = screen.getByLabelText('Fallback google-genai-gemini-3-6-flash')
+    expect(checkbox).toBeChecked()
+    expect(checkbox).toBeEnabled()
+    fireEvent.click(checkbox)
+    expect(checkbox).not.toBeChecked()
+    expect(checkbox).toBeDisabled()
+  }
+  fireEvent.click(screen.getByRole('button', { name: '새 DRAFT 저장' }))
+  fireEvent.click(within(screen.getByRole('dialog', { name: '새 DRAFT 저장' })).getByRole('button', { name: '저장하기' }))
+  await waitFor(() => expect(create).toHaveBeenCalledOnce())
+  const saved = create.mock.calls[0][1] as ProfileVersion['snapshot']
+  for (const binding of Object.values(saved.modelBindings)) {
+    expect(binding.fallback).toEqual([])
+    expect(Object.keys(binding.selections!)).toEqual(['anthropic-claude-sonnet-5'])
+    expect(JSON.stringify(binding)).not.toContain('credentialState')
+  }
+})
+
 test('provider-default Anthropic models do not expose a fake manual thinking control', async () => {
   render(<AgentSettingsWorkspace api={profileApi()} />)
   await screen.findByLabelText('analyze Node')
@@ -1389,6 +1598,8 @@ test('Workflow DRAFT validation failures remain visible with the Backend error c
   fireEvent.click(within(screen.getByRole('dialog', { name: '새 DRAFT 저장' })).getByRole('button', { name: '저장하기' }))
 
   expect(await screen.findByRole('alert')).toHaveTextContent('Snapshot 검증 실패 [CONTRACT_VALIDATION_FAILED]')
+  expect(screen.getByRole('alert')).toHaveTextContent('DRAFT를 저장하지 못했습니다.')
+  expect(screen.getByRole('alert')).not.toHaveTextContent('Workflow를 불러오지 못했습니다')
 })
 
 function deferred<T>() {

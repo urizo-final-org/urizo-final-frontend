@@ -85,6 +85,24 @@ export interface MonitoringJobSnapshotResponse {
   latestNodeStates: MonitoringLatestNodeState[]
   occurrences: MonitoringNodeOccurrence[]
   truncated: boolean
+  modelCalls?: { status: 'AVAILABLE' | 'UNAVAILABLE'; calls: MonitoringModelCall[]; truncated: boolean }
+}
+
+export interface MonitoringModelCall {
+  callId: string
+  callOrder: number
+  pipelineAttempt: number
+  executionAttempt: number
+  nodeId: string
+  nodeSequence: number
+  turnId: string
+  provider: ModelProvider
+  model: string
+  providerAttempt: number
+  status: 'RUNNING' | 'SUCCEEDED' | 'FAILED'
+  errorCode: string | null
+  startedAt: string
+  finishedAt: string | null
 }
 
 export interface SelectedObservationsResponse {
@@ -121,6 +139,23 @@ export interface ObservabilityMetricsResponse {
   to: string
   environment: string
   rows: ObservabilityMetricRow[]
+}
+
+export interface TokenUsagePoint {
+  bucketStart: string
+  inputTokens: number | null
+  outputTokens: number | null
+  totalTokens: number | null
+}
+
+export interface TokenUsageResponse {
+  status: ObservabilityStatus
+  errorCode: string | null
+  from: string
+  to: string
+  environment: string
+  granularity: 'hour' | 'day'
+  points: TokenUsagePoint[]
 }
 
 export interface ObservabilityMetadata {
@@ -248,6 +283,7 @@ export interface ProfileModelSelection {
 
 export interface ModelCatalogModel {
   selectionId: string
+  credentialState?: ProviderCredentialState | 'NOT_CONFIGURED'
   provider: ModelProvider
   model: string
   capabilities: string[]
@@ -334,6 +370,7 @@ export interface AgentSettingsApiClient extends ProfileVersionApiClient, Profile
   getMonitoringJobSnapshot(jobId: string, signal?: AbortSignal): Promise<MonitoringJobSnapshotResponse>
   getMonitoringOccurrenceObservations(path: string, signal?: AbortSignal): Promise<SelectedObservationsResponse>
   getObservabilityMetrics(from: string, to: string, jobId?: string, signal?: AbortSignal): Promise<ObservabilityMetricsResponse>
+  getTokenUsage(from: string, to: string, jobId?: string, signal?: AbortSignal): Promise<TokenUsageResponse>
   getObservations(from: string, to: string, query?: ObservabilityQuery, signal?: AbortSignal): Promise<ObservabilityResponse>
   listProviderCredentials(): Promise<ProviderCredentialOverview>
   storeProviderCredential(provider: ModelProvider, credential: string, csrfToken: string): Promise<ProviderCredentialStatus>
@@ -431,6 +468,10 @@ export class ProfileVersionApi implements AgentSettingsApiClient {
 
   getObservabilityMetrics = (from: string, to: string, jobId?: string, signal?: AbortSignal) => this.request<ObservabilityMetricsResponse>(
     `/api/admin/ai/observability/metrics?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}${jobId ? `&jobId=${encodeURIComponent(jobId)}` : ''}`, { signal },
+  )
+
+  getTokenUsage = (from: string, to: string, jobId?: string, signal?: AbortSignal) => this.request<TokenUsageResponse>(
+    `/api/admin/ai/observability/token-usage?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}${jobId ? `&jobId=${encodeURIComponent(jobId)}` : ''}`, { signal },
   )
 
   getObservations = (from: string, to: string, query: ObservabilityQuery = {}, signal?: AbortSignal) => {

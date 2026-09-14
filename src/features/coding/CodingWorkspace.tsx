@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent, type KeyboardEvent, type ReactNode
 import { describeFailure } from '../../shared/api/error'
 import { ROLE_LABELS, type AdminRole } from '../../shared/api/session'
 import {
-  Badge, Callout, PageHead, PanelTitle, dangerButton, fieldLabel, panel, primaryButton,
+  Badge, Callout, PageHead, PanelTitle, dangerButton, fieldLabel, panel, panelHead, primaryButton,
   secondaryButton, textarea, type Tone,
 } from '../../shared/ui/primitives'
 import { Icon } from '../../shared/ui/icons'
@@ -12,6 +12,7 @@ import type {
 } from './api'
 import { diffLines } from './diffLines'
 import { lastSeenAt, markSeen, notificationSentence, sinceLabel, unseen } from './notifications'
+import './CodingWorkspace.css'
 
 /**
  * E1, the request screen.
@@ -555,7 +556,7 @@ export default function CodingWorkspace({ api, role, monitoringAction }: { api: 
     {failure && <div className="mb-[0.875rem]"><Callout tone="warn" icon="triangle-alert">{failure}</Callout></div>}
 
     {loading
-      ? <section className={panel}><p className="p-4 text-[0.78125rem] text-muted">불러오는 중입니다…</p></section>
+      ? <LiveStatus job={current} detail={detail} updatedAt={nowMs} refreshing />
       : <>
         <div className="grid gap-3 sm:grid-cols-3">
           <SummaryFact label="진행 중인 요청" value={openSummary} />
@@ -637,7 +638,9 @@ export default function CodingWorkspace({ api, role, monitoringAction }: { api: 
         {current && lastFailed && <p className="mt-[0.875rem] text-[0.71875rem] leading-5 text-muted-2">
           아래는 이전에 보낸 요청이며, 아직 승인을 기다리고 있습니다.
         </p>}
-        <LiveStatus job={current} detail={detail} updatedAt={nowMs} />
+        <LiveStatus job={current} detail={detail} updatedAt={nowMs}
+          action={submitting ? 'submit' : deciding ? 'decide' : cancelling ? 'cancel' : undefined}
+          requestText={requestText} runnerUnavailable={runner?.alive === false} />
 
         {current && <>
           {pendingSecond && current?.jobId === pendingSecond.firstJobId
@@ -846,47 +849,83 @@ function clockLabel(ms: number): string {
  * whether to wait needs to know the reading is recent. The attempt count comes from the detail the
  * tick already loaded and is left out until that detail belongs to this request.
  */
-function LiveStatus({ job, detail, updatedAt }: { job: JobSummary | null; detail: JobDetail | null; updatedAt: number }) {
+function LiveStatus({ job, detail, updatedAt, action, requestText, refreshing = false, runnerUnavailable = false }: {
+  job: JobSummary | null
+  detail: JobDetail | null
+  updatedAt: number
+  action?: 'submit' | 'decide' | 'cancel'
+  requestText?: string
+  refreshing?: boolean
+  runnerUnavailable?: boolean
+}) {
+  // Presentation freshness only: this timer never fetches or changes the Job.
+  const [stale, setStale] = useState(false)
+  useEffect(() => {
+    const remaining = Math.max(0, updatedAt + POLL_INTERVAL_MS * 3 - Date.now())
+    const timer = setTimeout(() => setStale(true), remaining)
+    setStale(remaining === 0)
+    return () => clearTimeout(timer)
+  }, [updatedAt])
+  const activeJob = job?.status === 'PENDING' || job?.status === 'RUNNING'
+  const delayed = activeJob && (stale || runnerUnavailable)
+  const activity = action || refreshing ? 'sending'
+    : delayed ? 'stale'
+      : activeJob ? 'working'
+        : job?.status === 'WAITING_APPROVAL' ? 'waiting' : 'idle'
+  const animated = activity === 'sending' || activity === 'working'
+  const message = action === 'submit' ? '요청을 접수하고 있습니다.'
+    : action === 'decide' ? '결정을 전달하고 있습니다.'
+      : action === 'cancel' ? '취소 요청을 전달하고 있습니다.'
+        : refreshing ? '상태를 확인하고 있습니다.'
+          : delayed ? (runnerUnavailable ? '실행기 연결을 확인해 주세요.' : '상태 확인이 지연되고 있습니다. 마지막으로 확인한 상태입니다.')
+            : job ? nextStep[job.status] : undefined
   const updated = `${clockLabel(updatedAt)} 갱신`
-  if (!job) {
-    return <section className={`${panel} mt-[0.875rem]`}>
-      <PanelTitle title="실시간 상태" sub="지금 진행 중인 요청">
-        <small className="text-[0.6875rem] text-muted-2">{updated}</small>
-      </PanelTitle>
-      <div className="flex items-center gap-3 p-4">
-        <span className="grid h-[2.125rem] w-[2.125rem] shrink-0 place-items-center rounded-lg border border-line-soft bg-sub text-muted-3" aria-hidden="true">
-          <Icon name="inbox" size={17} />
-        </span>
-        <span className="text-[0.78125rem] leading-[1.6] text-muted-2">
-          <b className="block text-[0.8125rem] font-semibold text-ink">진행 중인 요청이 없습니다</b>
-          새 개발 요청을 보내면 여기에서 계획과 결과를 확인하고 승인합니다.
-        </span>
-      </div>
-    </section>
-  }
-  const presentation = statusPresentation[job.status]
-  const attempt = detail && detail.jobId === job.jobId && detail.maxPipelineAttempts
+  const presentation = job && action !== 'submit' ? statusPresentation[job.status] : null
+  const attempt = action !== 'submit' && job && detail && detail.jobId === job.jobId && detail.maxPipelineAttempts
     ? ` · 시도 ${detail.pipelineAttempt}/${detail.maxPipelineAttempts}`
     : ''
-  return <section className={`${panel} mt-[0.875rem]`}>
-    <PanelTitle title="실시간 상태" sub="지금 진행 중인 요청">
-      <span className="flex items-center gap-[0.625rem]">
+  return <section className={`${panel} coding-live-status mt-[0.875rem]`} data-activity={activity} aria-label="실시간 상태">
+    <div className={`${panelHead} flex-wrap`}>
+      <div>
+        <div className="flex items-center gap-2">
+          <b className="text-[0.84375rem] font-semibold">실시간 상태</b>
+          {animated && <span className="coding-status-wave" aria-hidden="true"><i /><i /><i /></span>}
+        </div>
+        <small className="mt-[0.125rem] block text-[0.6875rem] text-muted-2">지금 진행 중인 요청</small>
+      </div>
+      <span className="flex flex-wrap items-center gap-[0.625rem]">
         <small className="text-[0.6875rem] text-muted-2">{updated}{attempt}</small>
-        <Badge tone={presentation.tone}>{presentation.label}</Badge>
+        {presentation && <Badge tone={presentation.tone}>{presentation.label}</Badge>}
       </span>
-    </PanelTitle>
+    </div>
     {/*
       * The Job id used to lead this card. It is a value no administrator can act on, and it
       * pushed the sentence they actually wrote into second place.
       */}
-    <div className="p-4">
+    {action === 'submit' ? <p className="p-4 text-[0.875rem] leading-[1.6] text-body">{requestText}</p>
+      : job ? <div className="p-4">
       <p className="max-w-[47.5rem] text-[0.875rem] leading-[1.6] text-body">{job.requestText}</p>
       <small className="mt-2 block text-[0.6875rem] text-muted-2">
         {repositoryLabel(job.repository)}{job.currentStage ? ` · ${job.currentStage}까지 진행됨` : ''}
       </small>
-    </div>
-    {nextStep[job.status] && <p className="border-t border-line-soft px-4 py-[0.8125rem] text-[0.71875rem] leading-5 text-body">
-      {nextStep[job.status]}
+    </div> : !refreshing && <div className="flex items-center gap-3 p-4">
+      <span className="grid h-[2.125rem] w-[2.125rem] shrink-0 place-items-center rounded-lg border border-line-soft bg-sub text-muted-3" aria-hidden="true">
+        <Icon name="inbox" size={17} />
+      </span>
+      <span className="text-[0.78125rem] leading-[1.6] text-muted-2">
+        <b className="block text-[0.8125rem] font-semibold text-ink">진행 중인 요청이 없습니다</b>
+        새 개발 요청을 보내면 여기에서 계획과 결과를 확인하고 승인합니다.
+      </span>
+    </div>}
+    {message && <p className="coding-status-message" role="status" aria-live="polite">
+      <span className="coding-status-symbol" aria-hidden="true">
+        {animated ? <svg className="coding-module-mark" viewBox="0 0 24 24" fill="currentColor">
+          <rect x="3" y="3" width="8" height="8" rx="2" />
+          <rect x="13" y="3" width="8" height="8" rx="2" />
+          <rect x="8" y="13" width="8" height="8" rx="2" />
+        </svg> : <Icon name={activity === 'waiting' ? 'user-round-check' : 'triangle-alert'} size={18} />}
+      </span>
+      <span className={animated ? 'coding-status-shimmer' : ''}>{message}</span>
     </p>}
   </section>
 }
@@ -987,15 +1026,17 @@ function PlanApproval({ plan, pending, busy, onDecide }: {
         {plan?.summary ?? 'AI 가 계획 요약을 남기지 않았습니다. 아래 기준만 보고 판단해 주세요.'}
       </p>
 
-      <b className={`${fieldLabel} mt-4 block`}>합격 기준</b>
+      <div className="coding-acceptance">
+      <b className="coding-acceptance-title"><Icon name="scroll-text" size={16} />합격 기준</b>
       {criteria.length === 0
         ? <p className="mt-[0.375rem] text-[0.71875rem] text-muted-2">AI 가 합격 기준을 남기지 않았습니다.</p>
-        : <ul className="mt-[0.375rem]">
-          {criteria.map((criterion) => <li
+        : <ul className="coding-acceptance-list">
+          {criteria.map((criterion, index) => <li
             key={criterion}
-            className="border-b border-row-line py-[0.5625rem] text-[0.78125rem] leading-[1.6] text-body"
-          >{criterion}</li>)}
+            className="coding-acceptance-item"
+          ><span className="coding-acceptance-number" aria-hidden="true">{index + 1}</span><span>{criterion}</span></li>)}
         </ul>}
+      </div>
 
       {rejecting
         ? <div className="mt-[0.875rem]">

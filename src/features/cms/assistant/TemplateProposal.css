@@ -1,0 +1,26 @@
+/* 보기 버튼에만 적용한다. 관리자 공통 button 초기화보다 구체적인 선택자를 사용한다. */
+.cms-template-preview-button,
+.admin-app .cms-template-preview-button {
+  min-height: 2.25rem;
+  padding-inline: 1rem;
+  border: 1px solid var(--field-line);
+  background: var(--line);
+  color: var(--strong);
+  transition: background-color 150ms ease, border-color 150ms ease;
+}
+
+.cms-template-preview-button:enabled:hover,
+.admin-app .cms-template-preview-button:enabled:hover {
+  background: color-mix(in srgb, var(--line) 85%, var(--strong));
+  border-color: var(--primary);
+}
+
+.cms-template-preview-button:focus-visible,
+.admin-app .cms-template-preview-button:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cms-template-preview-button { transition: none; }
+}

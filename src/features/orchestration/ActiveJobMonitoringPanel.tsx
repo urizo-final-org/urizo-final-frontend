@@ -1,4 +1,7 @@
-import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
+import { monitoringEdgeRoutes, MONITORING_NODE_WIDTH as NODE_WIDTH, MONITORING_NODE_HEIGHT as NODE_HEIGHT } from './monitoringEdgeRoutes'
+import NodeExecutionHistory from './NodeExecutionHistory'
+import NodeModelActivity, { modelCallLabel } from './NodeModelActivity'
 import './ActiveJobMonitoringPanel.css'
 import { describeFailure } from '../../shared/api/error'
 import { Badge, Callout, PanelTitle, control, panel, secondaryButton, type Tone } from '../../shared/ui/primitives'
@@ -10,8 +13,6 @@ import type {
 
 const POLL_MS = 1_000
 const JOB_LIST_POLL_MS = 5_000
-const NODE_WIDTH = 176
-const NODE_HEIGHT = 112
 
 const statusView: Record<MonitoringNodeDisplayStatus, { label: string; tone: Tone; line: string }> = {
   NOT_STARTED: { label: '대기', tone: 'idle', line: '#8f9aa8' },
@@ -227,7 +228,7 @@ export default function ActiveJobMonitoringPanel({ api, requestedJobId = '' }: {
         {selectedSnapshot && profile && layout && <ReadOnlyMonitoringCanvas key={selectedSnapshot.job.jobId} snapshot={selectedSnapshot} profile={profile} layout={layout}
           selectedNodeId={selectedNodeId} selectedProviderLabel={selectedProviderLabel} onSelectNode={setSelectedNodeId} />}
       </article>
-      <NodeMonitoringDetail api={api} snapshot={selectedSnapshot} selectedNodeId={selectedNodeId} onProviderLabel={setSelectedProviderLabel} />
+      <NodeMonitoringDetail api={api} snapshot={selectedSnapshot} profile={profile} selectedNodeId={selectedNodeId} onProviderLabel={setSelectedProviderLabel} />
     </section>}
   </section>
 }
@@ -248,6 +249,8 @@ function ReadOnlyMonitoringCanvas({ snapshot, profile, layout, selectedNodeId, s
   const [panning, setPanning] = useState(false)
   const positions = new Map(layout.nodes.map((node) => [node.id, node]))
   const completeLayout = profile.snapshot.nodes.every((node) => positions.has(node.id))
+  const routing = useMemo(() => monitoringEdgeRoutes(profile.snapshot.nodes, profile.snapshot.edges, layout), [profile, layout])
+  const arrowId = useId().replace(/:/g, '')
 
   useEffect(() => {
     const viewport = viewportRef.current
@@ -307,13 +310,13 @@ function ReadOnlyMonitoringCanvas({ snapshot, profile, layout, selectedNodeId, s
   }
 
   if (!completeLayout) return <p role="alert" className="p-4 text-xs text-fail-fg">저장 Layout에 일부 Snapshot Node 좌표가 없습니다.</p>
-  const width = Math.max(720, ...layout.nodes.map((node) => node.x + NODE_WIDTH + 48))
-  const height = Math.max(420, ...layout.nodes.map((node) => node.y + NODE_HEIGHT + 48))
+  const width = routing.maxX - routing.minX
+  const height = routing.maxY - routing.minY
   const states = new Map(snapshot.latestNodeStates.map((node) => [node.nodeId, node]))
 
   return <div className="m-4 overflow-hidden rounded-md border border-[#343c46] bg-[#20262e]">
     <div className="flex items-center justify-between gap-3 border-b border-[#343c46] px-3 py-2 text-[0.625rem] text-[#cbd5df]">
-      <span>휠로 확대·축소 · 빈 공간을 드래그해 이동</span>
+      <span>휠로 확대·축소 · 빈 공간을 드래그해 이동 · 선택 Node 연결 강조</span>
       <span aria-label="모니터링 Canvas 확대 비율">{Math.round(zoom * 100)}%</span>
     </div>
     <div ref={viewportRef} className={`h-[36rem] max-h-[70vh] min-h-[20rem] touch-none overflow-auto overscroll-contain ${panning ? 'cursor-grabbing select-none' : 'cursor-grab'}`}
@@ -323,18 +326,17 @@ function ReadOnlyMonitoringCanvas({ snapshot, profile, layout, selectedNodeId, s
     <div className="relative bg-[#20262e] bg-[radial-gradient(circle,#596472_1px,transparent_1px)] [background-size:20px_20px]"
       data-monitoring-canvas-content style={{ width, height, transform: `scale(${zoom})`, transformOrigin: 'top left' }}>
       <svg className="pointer-events-none absolute inset-0 h-full w-full" viewBox={`0 0 ${width} ${height}`} aria-hidden="true">
-        {profile.snapshot.edges.map((edge) => {
-          const from = positions.get(edge.from)
-          const to = positions.get(edge.to)
-          if (!from || !to) return null
-          const x1 = from.x + NODE_WIDTH
-          const y1 = from.y + NODE_HEIGHT / 2
-          const x2 = to.x
-          const y2 = to.y + NODE_HEIGHT / 2
-          const bend = Math.max(48, Math.abs(x2 - x1) * .45)
-          return <path key={`${edge.from}:${edge.resultPort}:${edge.to}`} d={`M ${x1} ${y1} C ${x1 + bend} ${y1}, ${x2 - bend} ${y2}, ${x2} ${y2}`}
-            fill="none" stroke="#8f9aa8" strokeWidth="1.75" strokeLinecap="round" />
-        })}
+        <defs><marker id={arrowId} viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto"><path d="M 0 0 L 8 4 L 0 8 z" fill="context-stroke" /></marker></defs>
+        <g transform={`translate(${-routing.minX}, ${-routing.minY})`}>
+          {routing.routes.map(({ edge, path, detour, constrained }) => {
+            const active = selectedNodeId === edge.from || selectedNodeId === edge.to
+            return <path key={`${edge.from}:${edge.resultPort}:${edge.to}`} d={path}
+              data-monitoring-edge={`${edge.from}:${edge.resultPort}:${edge.to}`} data-edge-active={active} data-edge-constrained={constrained}
+              fill="none" stroke={active ? '#7dd3fc' : '#8f9aa8'} opacity={active ? 1 : 0.48}
+              strokeWidth={active ? 2.25 : 1.5} strokeDasharray={detour ? '6 4' : undefined}
+              strokeLinecap="round" strokeLinejoin="round" markerEnd={`url(#${arrowId})`} />
+          })}
+        </g>
       </svg>
       {profile.snapshot.nodes.map((node) => {
         const position = positions.get(node.id)!
@@ -353,7 +355,7 @@ function ReadOnlyMonitoringCanvas({ snapshot, profile, layout, selectedNodeId, s
         return <button key={node.id} type="button" aria-label={`${node.id} Node`} aria-pressed={selected}
           className="workflow-node-card monitoring-node-card absolute rounded-lg border bg-field p-3 text-left shadow-[0_8px_22px_#070a0e59]"
           data-node-current={current} data-node-running={running} data-node-selected={selected}
-          style={{ left: position.x, top: position.y, width: NODE_WIDTH, minHeight: NODE_HEIGHT, borderColor: current ? '#ff4058' : view.line, borderWidth: current ? 3 : 2 }}
+          style={{ left: position.x - routing.minX, top: position.y - routing.minY, width: NODE_WIDTH, minHeight: NODE_HEIGHT, borderColor: current ? '#ff4058' : view.line, borderWidth: current ? 3 : 2 }}
           onClick={() => onSelectNode(node.id)}>
           {current && <svg aria-hidden="true" className="monitoring-node-activity" width="100%" height="100%">
             <rect className="monitoring-node-activity__trail" width="100%" height="100%" rx="8" pathLength="100" />
@@ -362,7 +364,9 @@ function ReadOnlyMonitoringCanvas({ snapshot, profile, layout, selectedNodeId, s
           {/* The same name the settings canvas shows, so the two screens read alike; the
               id stays underneath because logs and approvals still refer to it. */}
           <span className="block truncate text-[0.75rem] font-semibold">{nodeDisplayName(profile.profileKey, node)}</span>
-          <span className="mt-1 block truncate font-mono text-[0.5625rem] text-muted-2">{node.id}</span>
+          <span className="mt-1 block truncate text-[0.625rem] text-muted-2" title={`${node.id} · ${modelCallLabel(snapshot, state)}`}>
+            {node.type === 'agent' ? modelCallLabel(snapshot, state) : node.id}
+          </span>
           <span className="monitoring-node-signals mt-2">
             <span className="monitoring-status-chip monitoring-status-chip--node" data-node-status={state?.status ?? 'NOT_STARTED'}>N · {view.label}</span>
             <span className="monitoring-node-signals__secondary">
@@ -375,10 +379,11 @@ function ReadOnlyMonitoringCanvas({ snapshot, profile, layout, selectedNodeId, s
     </div>
     </div>
     </div>
+    <p className="border-t border-[#343c46] px-3 py-2 text-[0.625rem] text-muted-2">저장된 Snapshot 연결 · 점선은 역방향·재시도 경로입니다. 강조는 선택 관계이며 실제 통과 이력을 뜻하지 않습니다.{routing.routes.some((route) => route.constrained) && ' 일부 연결은 저장된 Node 간격이 좁아 겹칠 수 있습니다.'}</p>
   </div>
 }
 
-function NodeMonitoringDetail({ api, snapshot, selectedNodeId, onProviderLabel }: { api: AgentSettingsApiClient; snapshot: MonitoringJobSnapshotResponse | null; selectedNodeId: string; onProviderLabel: (label: string) => void }) {
+function NodeMonitoringDetail({ api, snapshot, profile, selectedNodeId, onProviderLabel }: { api: AgentSettingsApiClient; snapshot: MonitoringJobSnapshotResponse | null; profile: ProfileVersion | null; selectedNodeId: string; onProviderLabel: (label: string) => void }) {
   const node = snapshot?.latestNodeStates.find((item) => item.nodeId === selectedNodeId) ?? null
   const occurrences = snapshot?.occurrences.filter((item) => item.nodeId === selectedNodeId) ?? []
   const selectedOccurrence = [...occurrences].sort((left, right) => right.pipelineAttempt - left.pipelineAttempt
@@ -449,6 +454,8 @@ function NodeMonitoringDetail({ api, snapshot, selectedNodeId, onProviderLabel }
     <PanelTitle title="Node 상세" sub={selectedNodeId || 'Node를 선택하세요'} />
     {!node && <p className="p-4 text-xs text-muted-2">Canvas에서 Node를 선택하면 상세를 표시합니다.</p>}
     {node && <div className="space-y-4 p-4 text-[0.6875rem]">
+      {snapshot && <NodeModelActivity snapshot={snapshot} node={node}
+        binding={profile?.profileVersionId === snapshot.job.profileVersionId ? profile.snapshot.modelBindings[node.nodeId] : undefined} />}
       <section aria-label="N 상태 상세" className="rounded-md border border-line-soft bg-sub p-3">
         <b>N · 실행 상태</b>
         <dl className="mt-2 grid grid-cols-[6rem_1fr] gap-2"><dt>상태</dt><dd>{statusView[node.status].label}</dd><dt>Pipeline</dt><dd>{node.pipelineAttempt ?? '제공되지 않음'}</dd><dt>실행 Attempt</dt><dd>{node.executionAttempt ?? '제공되지 않음'}</dd><dt>Sequence</dt><dd>{node.nodeSequence ?? '제공되지 않음'}</dd><dt>진행 시간</dt><dd>{elapsedSeconds === null ? '제공되지 않음' : `${elapsedSeconds}초`}</dd><dt>마지막 갱신</dt><dd>{node.lastUpdatedAt ?? '제공되지 않음'}</dd></dl>
@@ -463,9 +470,7 @@ function NodeMonitoringDetail({ api, snapshot, selectedNodeId, onProviderLabel }
         {(provider?.status === 'UNCONNECTED' || providerFailure) && providerSelection && <button type="button" className={`${secondaryButton} mt-3`} onClick={() => setProviderReload((value) => value + 1)}>P 다시 조회</button>}
       </section>
       <section aria-label="Q 평가 상세" className="rounded-md border border-line-soft bg-sub p-3"><b>Q · 품질 평가</b><p className="mt-2 text-muted-2">평가 미설정</p></section>
-      <section aria-label="Node occurrence 이력"><b>Occurrence</b>{snapshot?.truncated && <p className="mt-1 text-wait-fg">일부 과거 이력은 잘렸으며 최신 Node 상태는 유지됩니다.</p>}
-        {occurrences.length === 0 ? <p className="mt-2 text-muted-2">기록 없음</p> : <ol className="mt-2 space-y-2">{occurrences.map((item) => <li key={`${item.pipelineAttempt}:${item.executionAttempt}:${item.nodeSequence}`} className="rounded border border-line-soft p-2"><b>{statusView[item.status].label}</b> · P{item.pipelineAttempt}/E{item.executionAttempt} · #{item.nodeSequence}{item.errorCode && <span className="block text-fail-fg">{item.errorCode}</span>}</li>)}</ol>}
-      </section>
+      <NodeExecutionHistory occurrences={occurrences} truncated={snapshot?.truncated ?? false} domainTerminal={snapshot?.job.domainTerminal ?? false} />
       {snapshot && <p className="border-t border-line-soft pt-3 text-muted-2">Job 상태: <b className="text-body">{snapshot.job.domainJobStatus}</b> · monitorRevision {snapshot.job.monitorRevision} · 마지막 갱신 {snapshot.job.lastUpdatedAt}</p>}
     </div>}
   </aside>

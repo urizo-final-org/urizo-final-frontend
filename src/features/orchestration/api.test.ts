@@ -141,6 +141,24 @@ test('encodes Job filters and opaque cursors without changing endpoints and forw
   expect(fetcher.mock.calls[1][1].signal).toBe(controller.signal)
 })
 
+test('loads token time series from its read-only fixed endpoint with Job filter and cancellation', async () => {
+  const response = { status: 'AVAILABLE', from: '2026-09-01T00:00:00Z', to: '2026-09-02T00:00:00Z', environment: 'local', granularity: 'hour', points: [{ bucketStart: '2026-09-01T00:00:00Z', inputTokens: 0, outputTokens: null, totalTokens: null }] }
+  const fetcher = vi.fn().mockImplementation(() => Promise.resolve(new Response(JSON.stringify(response))))
+  vi.stubGlobal('fetch', fetcher)
+  vi.stubGlobal('crypto', { randomUUID: () => 'trace-id' })
+  const api = new ProfileVersionApi('token', vi.fn(), vi.fn())
+  const signal = new AbortController().signal
+  const jobId = '11111111-1111-4111-8111-111111111111'
+  await expect(api.getTokenUsage(response.from, response.to, jobId, signal)).resolves.toEqual(response)
+  const url = new URL(fetcher.mock.calls[0][0], 'http://localhost')
+  expect(url.pathname).toBe('/api/admin/ai/observability/token-usage')
+  expect(Object.fromEntries(url.searchParams)).toEqual({ from: response.from, to: response.to, jobId })
+  expect(fetcher.mock.calls[0][1].signal).toBe(signal)
+  expect(fetcher.mock.calls[0][1].body).toBeUndefined()
+  await api.getTokenUsage(response.from, response.to)
+  expect(fetcher.mock.calls[1][0]).not.toContain('jobId=')
+})
+
 test('reads monitoring jobs, one full snapshot, and only a server-provided occurrence observation path', async () => {
   const list = { schemaVersion: '1.0', observedAt: '2026-09-07T00:00:00Z', jobs: [] }
   const detail = { schemaVersion: '1.0', observedAt: '2026-09-07T00:00:01Z', job: { jobId: 'job-1' }, latestNodeStates: [], occurrences: [], truncated: false }
