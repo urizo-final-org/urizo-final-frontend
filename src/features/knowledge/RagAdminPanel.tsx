@@ -202,10 +202,7 @@ export function RagAdminPanel({ api, role }: { api: KnowledgeAdminApi; role: Adm
 
   const knowledgeBaseId = target?.kind === 'ready' ? target.knowledgeBaseId : null
   const newest = versions?.[0] ?? null
-  /** 이전 활성 버전 = 마지막으로 활성화된 적 있는 보관 버전. 없으면 롤백 대상이 없다. */
-  const previousActive = (versions ?? [])
-    .filter((v) => v.status === 'ARCHIVED' && v.activatedAt)
-    .sort((a, b) => (a.activatedAt! < b.activatedAt! ? 1 : -1))[0] ?? null
+  const previousActive = previousActiveOf(versions)
 
   /** 확인 창에서 승인했을 때만 실행한다. 성공하든 실패하든 목록을 다시 읽어 화면을 실제 상태에 맞춘다. */
   const runConfirmed = useCallback(async () => {
@@ -299,7 +296,8 @@ export function RagAdminPanel({ api, role }: { api: KnowledgeAdminApi; role: Adm
   const canWrite = mayWrite && knowledgeBaseId != null
 
   return <>
-    <PageHead title="RAG 관리" description="관광 공공데이터를 검색자료로 만들고 버전별 품질을 비교합니다.">
+    {/* 고객사가 둘 이상이므로 한 도메인(관광)을 설명에 박아 두지 않는다. */}
+    <PageHead title="RAG 관리" description="데이터를 검색 자료로 구축하고 버전별 품질을 비교·관리합니다.">
       <button
         className={tableButton}
         disabled={!canWrite || busy || newest == null || view != null}
@@ -576,19 +574,34 @@ function MetricsCell({ version }: { version: KnowledgeVersion }) {
 }
 
 /**
- * 지금 운영에 관계된 버전만 보인다 — <b>보관(ARCHIVED)만 뺀다</b>(AI02-023).
+ * 지금 운영에 관계된 버전만 보인다 — 보관은 <b>직전 한 건만</b> 남긴다(AI02-023).
  *
- * <p>보관된 과거 버전은 DB에 그대로 남아 있고 롤백 대상으로도 유효하다. 목록에서만 뺀다.
- * 여덟 줄을 늘어놓으면 관리자가 "지금 서비스되는 것이 무엇인가"를 한눈에 읽지 못하고,
- * 평가 방식이 서로 다른 옛 줄이 나란히 놓여 성립하지 않는 대조를 만든다. 되돌리기는
- * 「이전 버전 롤백」 버튼이 맡으며, 그 버튼은 이 필터와 무관하게 전체 목록에서 마지막 활성
- * 버전을 찾는다.
+ * <p>여덟 줄을 늘어놓으면 관리자가 "지금 서비스되는 것이 무엇인가"를 한눈에 읽지 못하고,
+ * 평가 방식이 서로 다른 옛 줄이 나란히 놓여 성립하지 않는 대조를 만든다. 그렇다고 보관을
+ * 전부 감추면 <b>방금 밀려난 버전이 활성화와 동시에 사라진다</b> — 되돌릴 대상이 화면에서
+ * 증발하는 셈이라 "잘못 활성화했다"를 알아챈 순간 돌아갈 곳이 안 보인다(2026-09-14 실측).
+ * 그래서 마지막으로 활성화됐던 보관 버전 하나는 남긴다. 「이전 버전 롤백」 버튼이 가리키는
+ * 바로 그 버전이고, 더 오래된 것은 DB에 남아 있되 목록에서 빠진다.
  *
  * <p><b>실패·빌드 중 버전은 남긴다.</b> 지금 처리해야 할 상태이기 때문이다 — 숨기면 방금
  * 실패한 빌드가 화면에서 조용히 사라져, 관리자가 왜 새 버전이 안 생겼는지 알 길이 없어진다.
  */
 function operating(versions: KnowledgeVersion[] | null): KnowledgeVersion[] | null {
-  return versions?.filter((v) => v.status !== 'ARCHIVED') ?? null
+  if (versions == null) return null
+  const rollbackTarget = previousActiveOf(versions)
+  return versions.filter((v) => v.status !== 'ARCHIVED'
+    || v.knowledgeVersionId === rollbackTarget?.knowledgeVersionId)
+}
+
+/**
+ * 이전 활성 버전 = 마지막으로 활성화된 적 있는 보관 버전. 없으면 롤백 대상이 없다.
+ * 버전 번호가 아니라 <b>활성화 시각</b>으로 고른다 — 롤백으로 되돌아간 이력이 있으면
+ * 번호가 큰 쪽이 더 최근에 서비스된 버전이라는 보장이 없다.
+ */
+function previousActiveOf(versions: KnowledgeVersion[] | null): KnowledgeVersion | null {
+  return (versions ?? [])
+    .filter((v) => v.status === 'ARCHIVED' && v.activatedAt)
+    .sort((a, b) => (a.activatedAt! < b.activatedAt! ? 1 : -1))[0] ?? null
 }
 
 /** A5 버전 테이블. 쓰기 버튼은 역할로 미리 판별해 disabled로 둔다 — 눌러서 403을 받지 않는다. */

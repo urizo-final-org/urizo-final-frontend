@@ -249,11 +249,12 @@ test('a blocked target says so instead of waiting forever', async () => {
 })
 
 /**
- * 승인 대기 버전은 표에서 바로 활성화한다. 보관 버전은 표에 없고(AI02-023) 되돌리기는
- * 목록 위 전용 버튼이 맡는다 — `switchPath`의 엔드포인트 분기 자체는 그대로 남아 있어,
- * 보관 행이 다시 보이게 되더라도 409 KNOWLEDGE_VERSION_NOT_APPROVABLE로 가지 않는다.
+ * 상태마다 다른 엔드포인트를 부른다. 이 분기가 없으면 보관 버전에서 409
+ * KNOWLEDGE_VERSION_NOT_APPROVABLE이 난다 — 9/7 실호출로 확인한 사고다.
+ *
+ * <p>표에 보이는 보관 버전은 직전 활성 하나뿐이고(AI02-023), 그 한 줄에서 되돌릴 수 있다.
  */
-test('an approval-pending version activates from the table', async () => {
+test('the archived rollback target rolls back while an approval-pending one activates', async () => {
   const rollback = vi.fn().mockResolvedValue({})
   const activate = vi.fn().mockResolvedValue({})
   const calls = api({
@@ -268,12 +269,14 @@ test('an approval-pending version activates from the table', async () => {
   })
   show(<RagAdminPanel api={calls} role="SUPER_ADMIN" />)
 
+  fireEvent.click(await screen.findByTitle('포털이 v11 기준으로 답하게 합니다.'))
+  fireEvent.click(screen.getByRole('button', { name: '되돌리기' }))
+  await waitFor(() => expect(rollback).toHaveBeenCalledWith('kb-1', 'kv-11'))
+  expect(activate).not.toHaveBeenCalled()
+
   fireEvent.click(await screen.findByTitle('포털이 v10 기준으로 답하게 합니다.'))
   fireEvent.click(screen.getByRole('button', { name: '활성화 (승인)' }))
   await waitFor(() => expect(activate).toHaveBeenCalledWith('kv-10'))
-  expect(rollback).not.toHaveBeenCalled()
-  // 보관 버전은 행이 없으므로 표에서 되돌릴 수 없다 — 전용 버튼이 그 자리다.
-  expect(screen.queryByTitle('포털이 v11 기준으로 답하게 합니다.')).not.toBeInTheDocument()
 })
 
 test('a failed build cannot be activated — it would make the chatbot see an empty knowledge', async () => {
@@ -488,17 +491,18 @@ test('the switch button label is just 전환 while the endpoint split stays else
       ],
     }),
   })} role="SUPER_ADMIN" />)
-  // 표에 나오는 전환 가능한 행은 승인 대기 하나뿐이다(보관 v11은 목록에서 빠진다).
-  expect(await screen.findAllByRole('button', { name: '전환' })).toHaveLength(1)
+  // 전환 가능한 행은 둘이다 — 승인 대기 v10과 되돌릴 대상인 보관 v11.
+  expect(await screen.findAllByRole('button', { name: '전환' })).toHaveLength(2)
   expect(screen.queryByRole('button', { name: /활성화\(승인\)/ })).not.toBeInTheDocument()
 })
 
 function ladder() {
   // 실제 로컬 상태와 같은 모양 — 활성이 중간에 있고(롤백 흔적) 실패 버전이 섞여 있다.
+  // 보관 둘의 활성화 시각을 갈라 둔다: v11이 더 최근에 서비스됐으므로 되돌릴 대상이다.
   return [
-    version({ versionNumber: 11, status: 'ARCHIVED', knowledgeVersionId: 'kv-11' }),
+    version({ versionNumber: 11, status: 'ARCHIVED', knowledgeVersionId: 'kv-11', activatedAt: '2026-09-07T02:00:00.000Z' }),
     version({ versionNumber: 10, status: 'APPROVAL_PENDING', knowledgeVersionId: 'kv-10', activatedAt: undefined }),
-    version({ versionNumber: 9, status: 'ARCHIVED', knowledgeVersionId: 'kv-9' }),
+    version({ versionNumber: 9, status: 'ARCHIVED', knowledgeVersionId: 'kv-9', activatedAt: '2026-09-01T02:00:00.000Z' }),
     version({ versionNumber: 8, status: 'ACTIVE', knowledgeVersionId: 'kv-8' }),
     version({ versionNumber: 4, status: 'FAILED', knowledgeVersionId: 'kv-4', documentCount: 0, chunkCount: 0, activatedAt: undefined }),
     version({ versionNumber: 3, status: 'FAILED', knowledgeVersionId: 'kv-3', documentCount: 0, chunkCount: 0, activatedAt: undefined }),
@@ -506,25 +510,25 @@ function ladder() {
 }
 
 /**
- * 표는 지금 운영에 관계된 버전만 낸다(AI02-023) — 활성과 승인 대기. 보관·실패 버전을 함께
- * 늘어놓으면 "지금 서비스되는 것이 무엇인가"가 한눈에 읽히지 않고, 평가 방식이 서로 다른 옛
- * 줄이 나란히 놓여 성립하지 않는 대조를 만든다. <b>DB에서는 지우지 않으므로</b> 보관 건수는
- * 부제에 남고 되돌리기는 전용 버튼이 든다.
+ * 표는 지금 운영에 관계된 버전만 낸다(AI02-023) — 활성 · 승인 대기 · 실패 · 만드는 중,
+ * 그리고 <b>되돌릴 대상인 직전 보관 하나</b>. 더 오래된 보관은 뺀다.
+ *
+ * <p>보관을 전부 감췄더니 새 버전을 활성화하는 순간 직전 버전이 화면에서 증발했다
+ * (2026-09-14 실측). 잘못 활성화했음을 알아챈 순간 돌아갈 곳이 안 보이는 상태다.
  */
-test('the table lists only the versions in operation and counts the archived ones', async () => {
+test('the table keeps the rollback target but drops older archives', async () => {
   show(<RagAdminPanel api={api({ listVersions: vi.fn().mockResolvedValue({ items: ladder() }) })} role="SUPER_ADMIN" />)
 
   // v8은 요약 카드에도 나오므로 버전 표 안으로 좁혀 단언한다.
   const table = within((await screen.findByText('RAG 버전')).closest('section') as HTMLElement)
-  // 활성·승인 대기는 물론, 실패한 빌드도 남는다 — 지금 처리해야 할 상태다.
-  for (const shown of ['v10', 'v8', 'v4', 'v3']) {
+  // 활성·승인 대기·실패는 물론, 마지막으로 서비스됐던 v11이 남는다.
+  for (const shown of ['v11', 'v10', 'v8', 'v4', 'v3']) {
     expect(table.getByText(shown)).toBeInTheDocument()
   }
-  for (const hidden of ['v11', 'v9']) {
-    expect(table.queryByText(hidden)).not.toBeInTheDocument()
-  }
+  // v9는 v11보다 먼저 서비스된 보관이라 목록에서 빠진다.
+  expect(table.queryByText('v9')).not.toBeInTheDocument()
   // 사라진 것이 아니라 보관된 것이다 — 건수로 남는다.
-  expect(table.getByText('운영 4건 · 보관 2건')).toBeInTheDocument()
+  expect(table.getByText('운영 5건 · 보관 1건')).toBeInTheDocument()
   expect(table.queryByRole('button', { name: /더 보기|접기/ })).not.toBeInTheDocument()
 })
 
