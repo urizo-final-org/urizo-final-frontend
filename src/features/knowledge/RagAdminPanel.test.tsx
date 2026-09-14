@@ -328,7 +328,7 @@ test('a golden evaluation keeps its set version and frozen exclusions in the too
     }),
   })} role="SUPER_ADMIN" />)
 
-  expect(await screen.findByText('Golden 79%')).toBeInTheDocument()
+  expect(await screen.findByText('품질 평가 79%')).toBeInTheDocument()
   const cell = screen.getByTitle(/같은 세트 버전끼리만 비교하세요/)
   expect(cell.title).toMatch(/세트 v1 · 문항 47/)
   expect(cell.title).toMatch(/제외된 문항 1건/)

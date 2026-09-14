@@ -112,6 +112,25 @@ test('비어 있는 선택 항목은 키 자체가 빠진다', () => {
   expect(body.response.itemsPath).toBe('$.items')
 })
 
+test('원천이 확인된 커넥터만 사용자용 이름으로 보이고 설정 지문은 화면에 없다', async () => {
+  render(<ConnectorPanel api={api({
+    listConnectors: vi.fn().mockResolvedValue({
+      items: [
+        connector({ connectorId: 'c-sme', name: 'SME_SUPPORT_ANNOUNCEMENT', status: 'ACTIVE' }),
+        connector({ connectorId: 'c-unknown', name: 'TOUR_AREA_V2', status: 'ACTIVE' }),
+      ],
+    }),
+  })} projectId="p-1" mayWrite />)
+
+  // 원천을 확인한 것만 갈아 끼운다. 저장 이름은 그대로라 title로 남는다.
+  expect(await screen.findByText('중소기업 지원사업 공고 API')).toBeInTheDocument()
+  expect(screen.getByTitle('SME_SUPPORT_ANNOUNCEMENT')).toBeInTheDocument()
+  // 모르는 이름은 지어내지 않는다 — 비슷한 이름 여럿을 같은 말로 덮으면 구분이 사라진다.
+  expect(screen.getByText('TOUR_AREA_V2')).toBeInTheDocument()
+  // 설정 지문은 내부 식별자라 화면에서 뺐다(AI02-024).
+  expect(screen.queryByText(/^[0-9a-f]{12}$/)).not.toBeInTheDocument()
+})
+
 test('일반 관리자에게는 등록·미리보기·활성화가 이미 잠겨 있다', async () => {
   render(<ConnectorPanel api={api()} projectId="p-1" mayWrite={false} />)
   await screen.findByText('LOCAL_FIXTURE')

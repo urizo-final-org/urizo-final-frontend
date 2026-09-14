@@ -564,7 +564,7 @@ function BuildEvaluationCell({ evaluation }: { evaluation: BuildEvaluation }) {
     : `제목으로 검색해 그 문서가 상위에 오는지 잰 값입니다. 표본 ${evaluation.sampleSize}건 ·`
       + ` 사용자 질문 기반 시험지가 아닙니다. ${numbers}.`
   return <b className="text-[0.71875rem] font-semibold text-ink" title={detail}>
-    {golden ? 'Golden' : '색인 검색'} {Math.round(evaluation.hit5 * 100)}%
+    {golden ? '품질 평가' : '색인 검색'} {Math.round(evaluation.hit5 * 100)}%
   </b>
 }
 

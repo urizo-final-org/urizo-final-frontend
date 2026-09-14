@@ -54,6 +54,26 @@ const PREVIEW_MAX_ITEMS = 5
 /** 미리보기 본문은 매핑 확인용이다 — 전문을 붙이면 카드가 화면을 덮는다. */
 const PREVIEW_CONTENT_CHARS = 200
 
+/**
+ * 커넥터 내부 이름 → 사용자에게 보일 출처 이름(AI02-024).
+ *
+ * <p>DB `connector.name`은 `^[A-Z][A-Z0-9_]*$` CHECK가 걸려 한글이 들어가지 않는다. 그래서
+ * 저장 이름은 그대로 두고 **화면에서만** 갈아 끼운다.
+ *
+ * <p>**원천이 확인된 것만 넣는다.** 모르는 이름은 원래 값을 그대로 보인다 — 짐작해서 이름을
+ * 지어 붙이면 관리자가 어느 출처인지 틀리게 알게 되고, 비슷한 이름 여럿을 같은 말로 덮으면
+ * 화면에서 서로 구분조차 안 된다(`TOUR_AREA`·`TOUR_AREA_FULL`·`TOUR_AREA_V2`가 그렇다).
+ * 항목을 늘리려면 그 커넥터의 baseUrl로 원천을 확인한 뒤 한 줄을 더한다.
+ */
+const SOURCE_NAMES: Readonly<Record<string, string>> = {
+  // apis.data.go.kr/1421000/bizinfo — 공공데이터포털 「중소기업 지원사업 공고 조회 서비스」
+  SME_SUPPORT_ANNOUNCEMENT: '중소기업 지원사업 공고 API',
+}
+
+function sourceName(name: string): string {
+  return SOURCE_NAMES[name] ?? name
+}
+
 const STATUS_TONE: Record<ConnectorStatus, Tone> = { DRAFT: 'wait', ACTIVE: 'ok', ARCHIVED: 'idle' }
 const STATUS_LABEL: Record<ConnectorStatus, string> = { DRAFT: '초안', ACTIVE: '활성', ARCHIVED: '보관' }
 
@@ -397,12 +417,8 @@ export function ConnectorPanel({ api, projectId, mayWrite, onFirstBuild }: {
       {items.map((connector) => <div key={connector.connectorId} className="border-b border-row-line px-4 py-[0.625rem] text-xs text-body last:border-b-0">
         <div className="flex flex-wrap items-center gap-2">
           <Icon name="plug" size={13} className="text-muted-3" />
-          <b className="text-[0.78125rem] font-semibold text-ink">{connector.name}</b>
+          <b className="text-[0.78125rem] font-semibold text-ink" title={connector.name}>{sourceName(connector.name)}</b>
           <Badge tone={STATUS_TONE[connector.status]}>{STATUS_LABEL[connector.status]}</Badge>
-          {/* 설정 지문. 같은 이름으로 재등록했을 때 실제로 다른 설정인지 여기서 갈린다. */}
-          <span className="font-mono text-[0.6875rem] text-muted-3" title={connector.configDigest}>
-            {connector.configDigest.slice(7, 19)}
-          </span>
           <span className="ml-auto flex items-center gap-2">
             <span className="font-mono text-[0.6875rem] text-muted-3">
               {new Date(connector.createdAt).toLocaleDateString('ko-KR')}
