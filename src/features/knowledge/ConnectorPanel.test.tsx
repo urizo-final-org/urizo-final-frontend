@@ -75,7 +75,7 @@ test('값이 빈 요청 파라미터는 defaultValue 키를 싣지 않는다', (
 
 test('폼에서 추가한 파라미터의 값이 계약 본문까지 간다', async () => {
   render(<ConnectorPanel api={api()} projectId="p-1" mayWrite />)
-  fireEvent.click(await screen.findByRole('button', { name: /커넥터 등록/ }))
+  fireEvent.click(await screen.findByRole('button', { name: /출처 추가/ }))
 
   // 프리셋이 실어 둔 dataType 행이 접히지 않고 값과 함께 보인다 — 이 칸이 숨으면
   // 시연에서 왜 XML이 오는지 화면만 보고는 알 수 없다.
@@ -117,14 +117,14 @@ test('일반 관리자에게는 등록·미리보기·활성화가 이미 잠겨
   await screen.findByText('LOCAL_FIXTURE')
 
   // 눌러서 403을 받는 게 아니라 세션 역할로 미리 판별한다.
-  expect(screen.getByRole('button', { name: /커넥터 등록/ })).toBeDisabled()
+  expect(screen.getByRole('button', { name: /출처 추가/ })).toBeDisabled()
   expect(screen.getByRole('button', { name: /미리보기/ })).toBeDisabled()
   expect(screen.getByRole('button', { name: /활성화/ })).toBeDisabled()
 })
 
 test('폼에는 secretRef만 있고 키 값을 받는 입력이 없다', async () => {
   render(<ConnectorPanel api={api()} projectId="p-1" mayWrite />)
-  fireEvent.click(await screen.findByRole('button', { name: /커넥터 등록/ }))
+  fireEvent.click(await screen.findByRole('button', { name: /출처 추가/ }))
 
   expect(screen.getByDisplayValue('cms-secret://sme-support-api')).toBeInTheDocument()
   // 비밀번호 입력도, API Key 값을 받는 칸도 없다. 화면에 남을 수 있는 것은 참조 문자열뿐이다.
@@ -135,7 +135,7 @@ test('폼에는 secretRef만 있고 키 값을 받는 입력이 없다', async (
 test('저장이 성공하면 목록을 다시 읽고 폼을 닫는다', async () => {
   const client = api()
   render(<ConnectorPanel api={client} projectId="p-1" mayWrite />)
-  fireEvent.click(await screen.findByRole('button', { name: /커넥터 등록/ }))
+  fireEvent.click(await screen.findByRole('button', { name: /출처 추가/ }))
   fireEvent.click(screen.getByRole('button', { name: '저장' }))
 
   await waitFor(() => expect(client.createConnector).toHaveBeenCalledWith('p-1', buildCreateRequest(PRESETS.sme.form)))
@@ -151,7 +151,7 @@ test('저장이 실패하면 서버 문장을 그대로 보이고 폼을 지우�
     ),
   })
   render(<ConnectorPanel api={client} projectId="p-1" mayWrite />)
-  fireEvent.click(await screen.findByRole('button', { name: /커넥터 등록/ }))
+  fireEvent.click(await screen.findByRole('button', { name: /출처 추가/ }))
   fireEvent.click(screen.getByRole('button', { name: '저장' }))
 
   // 화면이 자체 판정으로 다시 쓰지 않는다 — 422 사유는 서버만 안다.

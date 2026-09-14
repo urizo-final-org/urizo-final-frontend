@@ -61,7 +61,23 @@ export class KnowledgeAdminApi {
     return body as T
   }
 
-  listProjects = () => this.request<{ items: Project[] }>('/api/projects')
+  /**
+   * 화면에서 감출 프로젝트 이름. **데이터는 그대로 두고 목록에서만 뺀다** — 삭제가 아니라
+   * 표시 제외다(AI02-024).
+   *
+   * <p>UUID가 아니라 이름으로 거른다. UUID는 환경마다 다르게 생겨서 박아 두면 다른 환경에서
+   * 엉뚱한 프로젝트가 사라진다. 이름은 없으면 아무것도 안 걸러지므로 화면이 달라지지 않는다.
+   */
+  private static readonly HIDDEN_PROJECT_NAMES: ReadonlySet<string> = new Set(['중기부 지원사업'])
+
+  /**
+   * 감춘 프로젝트는 드롭다운뿐 아니라 **대기 건수 뱃지에서도 빠져야 한다.** 두 화면이 같은
+   * 목록을 봐야 "목록에 없는데 숫자에는 잡히는" 상태가 생기지 않으므로 여기 한 곳에서 거른다.
+   */
+  listProjects = async () => {
+    const list = await this.request<{ items: Project[] }>('/api/projects')
+    return { ...list, items: (list.items ?? []).filter((item) => !KnowledgeAdminApi.HIDDEN_PROJECT_NAMES.has(item.name)) }
+  }
 
   /** `projectId`가 필수 파라미터다 — 전체 목록 엔드포인트가 없다. */
   listKnowledgeBases = (projectId: string) => this.request<{ items: KnowledgeBase[] }>(

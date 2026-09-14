@@ -359,13 +359,13 @@ export function ConnectorPanel({ api, projectId, mayWrite, onFirstBuild }: {
   const items = connectors ?? []
 
   return <section className={panel}>
-    <PanelTitle title="데이터 소스" sub={connectors ? `커넥터 ${items.length}건` : undefined}>
+    <PanelTitle title="자료 출처" sub={connectors ? `출처 ${items.length}곳` : undefined}>
       <button
         className={tableButton}
         disabled={!mayWrite || busy}
         onClick={() => { setForm(form ? null : PRESETS.sme.form); setCreated(null); setFailure(null) }}
-        title={!mayWrite ? WRITE_DENIED : '고객사 외부 API 연결정보를 등록합니다.'}
-      ><Icon name="plus" size={12} />{form ? '등록 취소' : '커넥터 등록'}</button>
+        title={!mayWrite ? WRITE_DENIED : '고객사 자료를 가져올 곳을 추가합니다.'}
+      ><Icon name="plus" size={12} />{form ? '추가 취소' : '출처 추가'}</button>
     </PanelTitle>
 
     {form && <RegisterForm
