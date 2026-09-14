@@ -77,7 +77,13 @@ describe('기록', () => {
     mount({ records })
     await waitFor(() => { expect(screen.getByText('지난 요청')).toBeInTheDocument() })
     expect(records).toHaveBeenCalledWith('CONTENT', 5)
-    expect(screen.getByText('내 요청만')).toBeInTheDocument()
+  })
+
+  it('밀려난 요청을 볼 수 있는 곳으로 보낸다', async () => {
+    const records = vi.fn().mockResolvedValue([record()])
+    mount({ records })
+    const all = await screen.findByRole('link', { name: /전체 보기/ })
+    expect(all).toHaveAttribute('href', '/admin/runs')
   })
 
   it('조회가 막히면 오류 대신 기록 칸만 사라진다', async () => {

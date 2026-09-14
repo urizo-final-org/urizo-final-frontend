@@ -41,6 +41,14 @@ const TONES: Record<RecordState, string> = {
   rejected: 'text-[#a3564f]',
 }
 
+/**
+ * 밀려난 요청을 볼 수 있는 화면.
+ *
+ * 거버넌스 › 실행 이력의 `AI 실행` 탭에 다 있다. 탭을 주소로 지정하는 기능은 그 화면에
+ * 없으므로 화면까지만 보낸다.
+ */
+const ALL_RUNS_PATH = '/admin/runs'
+
 /** 몇 분 전인지만 말한다. 정확한 시각은 거버넌스 실행 이력에 있다. */
 export function sinceLabel(iso: string, now: number) {
   const at = Date.parse(iso)
@@ -70,10 +78,7 @@ export default function AssistantRecords({ records, now, stalledAfterMs, busy, o
 }) {
   if (records.length === 0) return null
   return <section className="mt-4 border-t border-line-soft pt-[0.875rem]">
-    <div className="flex items-baseline gap-[0.375rem]">
-      <h3 className="m-0 text-[0.71875rem] font-semibold text-body">기록</h3>
-      <span className="rounded bg-sub px-[0.3125rem] py-[0.0625rem] text-[0.625rem] font-semibold text-muted-2">내 요청만</span>
-    </div>
+    <h3 className="m-0 text-[0.71875rem] font-semibold text-body">기록</h3>
     <ul className="m-0 mt-[0.4375rem] list-none p-0">
       {records.map((record) => {
         const state = recordState(record, stalledAfterMs, now)
@@ -99,8 +104,12 @@ export default function AssistantRecords({ records, now, stalledAfterMs, busy, o
         </li>
       })}
     </ul>
+    {/* 여기서 밀려난 요청은 사라진 것이 아니다. 어디에 있는지 한 줄로 알려준다. */}
     <p className="m-0 mt-[0.4375rem] text-[0.625rem] leading-[1.5] text-muted-3">
-      최근 {records.length}건만 남습니다. 지난 요청은 거버넌스 › 실행 이력에서 볼 수 있습니다.
+      최근 {records.length}건만 남습니다.{' '}
+      <a className="font-semibold text-teal-fg underline underline-offset-2" href={ALL_RUNS_PATH}>
+        전체 보기 ↗
+      </a>
     </p>
   </section>
 }
