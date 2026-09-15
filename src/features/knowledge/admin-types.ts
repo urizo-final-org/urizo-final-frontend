@@ -28,6 +28,36 @@ export function isBuildInProgress(status: string): boolean {
   return (IN_PROGRESS_STATUSES as readonly string[]).includes(status)
 }
 
+/**
+ * 빌드가 스스로 잰 검색 평가(AI02-019).
+ *
+ * **시험지가 아니다.** `TITLE_SELF_RETRIEVAL`은 문서 제목으로 검색해 그 문서가 상위에
+ * 돌아오는지 본 것이라, 증명하는 것은 "색인이 검색 가능한가"이지 "사용자 질문에 잘
+ * 답하는가"가 아니다. 화면 문구가 이 구분을 지워서는 안 된다.
+ *
+ * 정답이 질의당 하나라 Recall@K와 Hit@K가 같은 값이고, 그래서 Hit만 싣는다.
+ */
+export type BuildEvaluation = {
+  method: 'TITLE_SELF_RETRIEVAL' | 'GOLDEN_QUESTION'
+  sampleSize: number
+  hit5: number
+  hit10: number
+  mrr10: number
+  /** AI02-020. 골든 세트 버전. 같은 값으로 잰 버전끼리만 점수 비교가 성립한다. */
+  setVersion?: number
+  /** 채점 **전에** 동결된 제외 문항. 순위를 보고 뺀 문항은 이 목록에 존재할 수 없다. */
+  excluded?: { id: string; reason: string }[]
+  /** 정답 문서 내용이 세트 생성 시점과 달라진 문항 수 — 제외 사유가 아니라 기록이다. */
+  modifiedCount?: number
+}
+
+/** 빌드가 LLM에게 받아 저장한 청킹 규칙. `reason`은 모델이 적은 근거 한 문장이다. */
+export type ChunkingStrategy = {
+  maxCharacters: number
+  overlapCharacters: number
+  reason: string
+}
+
 export type KnowledgeVersion = {
   knowledgeVersionId: string
   knowledgeBaseId: string
@@ -40,6 +70,13 @@ export type KnowledgeVersion = {
   configDigest?: string
   documentCount: number
   chunkCount: number
+  /**
+   * AI02-018. 이 버전이 쓴 청킹 규칙. **없으면 문서당 1청크로 만든 버전이다** —
+   * 계약상 선택 항목이라 AI02-018 이전에 만들어진 버전은 값이 없다.
+   */
+  chunkingStrategy?: ChunkingStrategy
+  /** AI02-019. 빌드가 잰 검색 평가. 없으면 평가 전에 만들어진 버전이다. */
+  evaluation?: BuildEvaluation
   /** 빌드 시작 시각. 경과 시간의 기준이며 새로고침 후에도 복구된다. */
   createdAt: string
   /**
@@ -105,12 +142,27 @@ export type Project = {
   status: string
 }
 
+/**
+ * 원천 변경 점검 요약(AI02-022). 스케줄러가 활성 버전과 원천 API를 (공고 ID, 내용 해시)로
+ * 대조해 남긴다. "소멸"은 삭제가 아니라 원천 조회 창에서 빠진 것까지 포함한다.
+ */
+export type SourceChangeSummary = {
+  checkedAt: string
+  /** 비교 기준이 된 활성 버전 번호. 이 버전을 갈아끼우면 요약도 0으로 돌아간다. */
+  comparedVersion: number
+  added: number
+  modified: number
+  missing: number
+}
+
 export type KnowledgeBase = {
   knowledgeBaseId: string
   projectId: string
   name: string
   /** 활성 버전이 없으면 null. 계약이 ALWAYS 직렬화라 키는 항상 온다. */
   activeVersionId: string | null
+  /** AI02-022. 점검된 적 없으면 없다. 활성 버전이 없는 지식베이스는 점검 대상이 아니다. */
+  sourceChangeSummary?: SourceChangeSummary
 }
 
 /**
@@ -162,4 +214,118 @@ export type ActivationRequestList = {
   schemaVersion: string
   traceId: string
   items: ActivationRequest[]
+}
+
+/**
+ * 커넥터 계약 타입. 기준은 Backend `contracts/public/openapi.yaml`(dev `bda6ec3`)이고
+ * 최종 판정은 `ConnectorStore.validateConnector`다 — 화면은 같은 규칙을 입력 단계에서
+ * 안내만 하고, 통과 여부는 서버 응답을 따른다.
+ *
+ * <p>⚠️ **`status`는 커넥터가 아니라 선택된 버전의 상태다.** 응답이 `active_version_id`
+ * 또는 최신 버전을 조인해 내려주므로(`ConnectorStore.connectorSelect()`), 한 커넥터를
+ * 여러 번 등록하면 같은 `connectorId`에 버전만 쌓인다.
+ */
+export type ConnectorStatus = 'DRAFT' | 'ACTIVE' | 'ARCHIVED'
+
+export type Connector = {
+  schemaVersion: string
+  traceId: string
+  projectId: string
+  connectorId: string
+  connectorVersionId: string
+  name: string
+  status: ConnectorStatus
+  configDigest: string
+  createdAt: string
+}
+
+export type ConnectorList = {
+  schemaVersion: string
+  traceId: string
+  items: Connector[]
+}
+
+/**
+ * ⚠️ **`secretRef`는 참조 문자열이지 키 값이 아니다.** 화면·로그·커밋 어디에도 실제
+ * API Key가 남지 않는 유일한 이유가 이것이다 — 폼에 키 값을 받는 입력을 만들지 않는다.
+ */
+export type ConnectorAuthentication = {
+  type: 'API_KEY'
+  location: 'QUERY' | 'HEADER'
+  name: string
+  secretRef: string
+}
+
+export type ConnectorParameterType = 'STRING' | 'INTEGER' | 'NUMBER' | 'BOOLEAN'
+
+export type ConnectorRequestParameter = {
+  name: string
+  type: ConnectorParameterType
+  required: boolean
+  description?: string
+  defaultValue?: string | number | boolean
+}
+
+export type ConnectorResponseMapping = {
+  itemsPath: string
+  successCodePath?: string
+  /** 계약이 `minItems: 1`이다 — 비면 키 자체를 빼야 한다. */
+  successValues?: (string | number)[]
+  totalCountPath?: string
+}
+
+export type ConnectorPagination = {
+  type: 'PAGE'
+  pageParameter: string
+  pageSizeParameter: string
+  startPage: number
+  pageSize: number
+}
+
+/**
+ * `metadata`는 **키를 라벨로 쓴다**(02번 문서 「도메인과 커넥터」). 표시 순서도 이 매핑이
+ * 정하므로 객체 키 삽입 순서를 보존한다 — 한글 키는 정수 키가 아니라 순서가 유지된다.
+ */
+export type ConnectorDocumentMapping = {
+  documentId: string
+  title: string
+  content: string
+  category?: string
+  sourceUpdatedAt?: string
+  sourceUrl?: string
+  metadata?: Record<string, string>
+}
+
+export type CreateConnectorRequest = {
+  name: string
+  baseUrl: string
+  endpoint: string
+  /** 계약이 `const: GET`이다. 고를 수 있는 값이 아니라 화면에 읽기 전용으로 적는다. */
+  method: 'GET'
+  authentication: ConnectorAuthentication
+  requestParameters: ConnectorRequestParameter[]
+  response: ConnectorResponseMapping
+  pagination: ConnectorPagination
+  documentMapping: ConnectorDocumentMapping
+}
+
+export type PreviewDocument = {
+  documentId: string
+  title: string
+  content: string
+  /** 계약상 배열이다 — 단수 문자열이 아니다. */
+  category?: string[]
+  sourceUrl?: string
+  sourceUpdatedAt?: string
+}
+
+export type ConnectorPreview = {
+  schemaVersion: string
+  traceId: string
+  connectorId: string
+  itemCount: number
+  totalCount?: number
+  documents: PreviewDocument[]
+  truncated: boolean
+  checkedAt: string
 }

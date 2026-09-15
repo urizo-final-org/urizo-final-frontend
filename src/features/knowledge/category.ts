@@ -9,7 +9,10 @@ import { PORTAL_TABS } from '../site/portal-meta'
  *
  * <p>"전체" 탭과 모르는 탭 id는 `undefined`다 — 필드를 아예 보내지 않아 서버가 필터를 걸지 않는다.
  */
-export function tabToCategory(tabId: string | null | undefined): string[] | undefined {
-  const tab = PORTAL_TABS.find((item) => item.id === tabId)
+export function tabToCategory(
+  tabId: string | null | undefined,
+  tabs: readonly { id: string; prefixes: string[] | null }[] = PORTAL_TABS,
+): string[] | undefined {
+  const tab = tabs.find((item) => item.id === tabId)
   return tab?.prefixes ?? undefined
 }

@@ -1,4 +1,4 @@
-import { homepageLine, overviewText } from './portal-meta'
+import { categoryBadge, homepageLine, overviewText } from './portal-meta'
 import { CardPhoto, PhotoTag } from './portal-primitives'
 
 /**
@@ -40,21 +40,30 @@ export function PortalResultCard({ title, excerpt, categoryLabel, address, event
 }) {
   const homepage = homepageLine(excerpt)
   const ended = eventStatus === 'ENDED'
+  // 실수집 본문은 제목 + 라벨 줄뿐이라 남길 소개글이 없다. 빈 칸을 그리면 여백만 벌어진다.
+  const overview = overviewText(excerpt, title)
+  // 실수집 코퍼스는 분류 코드(`EV03`)를 보낸다. 탭과 같은 원본으로 한글 이름을 찾는다.
+  const badge = categoryBadge(categoryLabel)
   return <article className="grid grid-cols-[15rem_minmax(0,1fr)] overflow-hidden rounded-xl border border-line-soft bg-panel max-[680px]:grid-cols-1">
     <div className="relative">
       <CardPhoto name={title} img={imageUrl} className="h-full min-h-[12.25rem] w-60 max-[680px]:aspect-[16/9] max-[680px]:h-auto max-[680px]:min-h-0 max-[680px]:w-full" />
       <PhotoTag />
     </div>
     <div className="flex flex-col gap-[0.4375rem] px-[1.625rem] py-[1.375rem]">
-      {(categoryLabel != null || ended) && <div className="flex flex-wrap gap-1.5">
-        {categoryLabel != null && <span className="rounded-md border border-line px-2 py-1 text-[0.6875rem] font-bold text-primary">{categoryLabel}</span>}
-        {ended && <span className="rounded-md border border-line px-2 py-1 text-[0.6875rem] font-bold text-muted">종료된 행사</span>}
+      {(badge != null || ended) && <div className="flex flex-wrap gap-1.5">
+        {badge != null && <span className="rounded-md border border-line px-2 py-1 text-[0.6875rem] font-bold text-primary">{badge}</span>}
+        {/* 카테고리 뱃지와 **모양으로** 갈린다 — 저쪽은 테두리형, 이쪽은 채움형이다. 둘 다
+            테두리형이던 때는 두 카드가 한눈에 거의 같아 보여서, 진행 중 행사와 종료된 행사를
+            나란히 놓아도 사람이 차이를 못 짚었다. 색만으로 구분하지 않으려고 "종료된 행사"
+            글자는 그대로 둔다. 경고색(fail)이 아니라 주의색(wait)인 것은 의도다 — 지난 행사도
+            참고 정보라 오류가 아니다. */}
+        {ended && <span className="rounded-md border border-wait-fg/35 bg-wait-bg px-2 py-1 text-[0.6875rem] font-bold text-wait-fg">종료된 행사</span>}
       </div>}
       <strong className="text-[1.1875rem] font-extrabold tracking-[-.03em] text-ink">{title}</strong>
       {address != null && <span className="text-[0.8125rem] text-muted">{address}</span>}
       {/* 라벨 줄은 각자 제 자리(뱃지·주소·링크)로 올라갔다. 본문에는 개요만 남긴다 —
           raw를 그대로 넣으면 `[분류] 숙박 [유형] 펜션 …`이 화면에 보인다. */}
-      <span className="mt-1 line-clamp-3 text-[0.8125rem] leading-[1.6] text-body">{overviewText(excerpt)}</span>
+      {overview !== '' && <span className="mt-1 line-clamp-3 text-[0.8125rem] leading-[1.6] text-body">{overview}</span>}
       {homepage && <a href={homepage} target="_blank" rel="noopener noreferrer" className="mt-1 self-start text-[0.8125rem] font-bold text-primary underline underline-offset-4">홈페이지 ↗</a>}
     </div>
   </article>

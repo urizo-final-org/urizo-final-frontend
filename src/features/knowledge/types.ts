@@ -44,10 +44,27 @@ export type PublicChatRequest = {
    */
   previousQuery?: string
   /**
+   * 질문이 향하는 프로젝트(고객사). 포털 경로에서 계산한다(`site/portal-projects.ts`).
+   * 비우면 서버가 기본(관광) 챗봇 설정으로 해석한다 — 1호 경로 보존용 전환 규칙.
+   */
+  projectId?: string
+  /**
    * `category_id` 접두 목록. 탭 하나가 접두 둘 이상인 경우(체험·레저 = LS + EX,
    * 관광지 = NA + HS + VE)가 있어 단일 값으로는 표현되지 않는다. "전체" 탭은 보내지 않는다.
    */
   category?: string[]
+  /**
+   * 답변이 할 일. 같은 엔드포인트를 쓰는 두 화면이 서로 다른 답을 필요로 한다.
+   *
+   * <p>`DETAILED`(생략 시 기본) — 챗봇. 근거 카드를 하나씩 충분히 풀어 설명한다.
+   * 방문자가 카드를 열어 보는 자리가 아니라 답변만 읽고 판단하는 자리다.
+   *
+   * <p>`BRIEF` — 통합검색. 바로 아래에 결과 카드가 펼쳐진 자리라, 카드마다 길게 풀면
+   * 같은 말을 두 번 하면서 목록을 훑는 일을 방해한다. 공통 성격만 두세 문장으로 쓴다.
+   *
+   * <p>서버는 어느 화면에서 왔는지 알 수 없다 — 호출자만 아는 값이다.
+   */
+  answerStyle?: 'DETAILED' | 'BRIEF'
 }
 
 export type PublicChatOutcome = 'ANSWERED' | 'REFUSED'

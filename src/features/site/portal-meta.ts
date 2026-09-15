@@ -28,6 +28,32 @@ export const PORTAL_TABS: PortalTab[] = [
   { id: 'event', label: '축제·행사', prefixes: ['EV'], tone: 'fail', icon: 'M5 21V4c4-2 8 2 12 0v9c-4 2-8-2-12 0' },
 ]
 
+/** 원천 분류 코드 꼴. 실측값은 `AC01`·`EV03`·`FD02`·`NA01`·`SH05`·`C0112` 형태다. */
+const CATEGORY_CODE = /^[A-Z]{1,2}\d+$/
+
+/**
+ * 카드 뱃지에 쓸 카테고리 표기.
+ *
+ * <p>실수집 코퍼스의 `categoryLabel`은 한글 라벨이 아니라 원천 분류 **코드**다(`EV03`·`AC03`·
+ * `C0112`). TourAPI가 한글 라벨을 주지 않아서인데, 코드는 내부 분류값이라 사용자 화면에
+ * 그대로 둘 수 없다.
+ *
+ * <p>**새 코드표를 만들지 않는다.** `PORTAL_TABS.prefixes`가 이미 코드 접두 → 한글 이름 대응을
+ * 갖고 있고 탭 필터가 같은 값을 쓴다. 뱃지가 같은 원본을 보면 탭과 뱃지가 어긋날 수 없다.
+ * 대신 표기가 `숙박 > 펜션/민박`보다 거칠어진다(`숙박`) — 원천이 주지 않는 세분류를 프론트가
+ * 따로 들고 있다가 원천과 갈라지는 것보다 낫다고 본 선택이다.
+ *
+ * <p>코드 꼴이 아니면 그대로 돌려준다 — 픽스처 코퍼스의 한글 라벨은 아무것도 달라지지 않는다.
+ * 접두가 어느 탭에도 안 맞는 코드도 그대로 둔다: 모르는 값을 감추면 무엇이 새로 들어왔는지
+ * 화면에서 알 길이 없어진다.
+ */
+export function categoryBadge(categoryLabel?: string): string | undefined {
+  if (categoryLabel == null) return undefined
+  if (!CATEGORY_CODE.test(categoryLabel)) return categoryLabel
+  const tab = PORTAL_TABS.find((item) => item.prefixes?.some((prefix) => categoryLabel.startsWith(prefix)))
+  return tab?.label ?? categoryLabel
+}
+
 /**
  * 본문의 `[주소]` 줄에서 주소를 꺼낸다. 코퍼스 500건 중 478건에 이 줄이 있고 나머지는 null이다.
  *
@@ -48,18 +74,40 @@ export function addressLine(excerpt: string): string | null {
  * `[분류] 숙박 > 펜션/민박 [유형] 숙박 …`이 보인다(9/6 실호출에서 확인). 라벨은 각자
  * 제 자리(뱃지·주소·링크)로 올라가므로 본문에는 개요만 남긴다.
  *
- * <p>`[개요]`가 없거나 값이 비면 **원문을 그대로 돌려준다.** 개요가 없는 문서(대동고택 등)에서
- * 본문을 통째로 비우는 것보다, 라벨이 섞여도 내용을 보여주는 편이 낫다.
+ * <p>`[개요]` **줄 자체가 없으면** 라벨 줄과 (제목과 같은) 첫 줄을 걷어낸 나머지를 돌려주고,
+ * 남는 것이 없으면 빈 문자열이다. 예전에는 이때 원문을 그대로 돌려줬다 — 개요가 없어도 산문이
+ * 섞여 있던 코퍼스에서는 그게 나았다. **실수집 축제 본문에서는 같은 선택이 곧 라벨 노출이다**:
+ * `제목` + `[전화]` + `[주소]` + `[행사시작]` + `[행사종료]`뿐이라 원문을 넣으면 화면에 라벨이
+ * 그대로 보이고 제목이 카드에 두 번 나온다. 라벨은 각자 제 자리(주소·기간·링크)로 올라가므로,
+ * 남길 산문이 없으면 본문 칸을 비우는 것이 맞다.
+ *
+ * <p>`[개요]`는 있는데 값이 비는 경우는 **여전히 원문을 돌려준다.** 뒤에 다른 라벨만 이어지는
+ * 문서이고, 그쪽은 판단 근거가 달라지지 않았다.
+ *
+ * <p>⚠️ **대괄호로 시작한다고 다 라벨이 아니다.** 개요 본문이 `[울산 1경 : 태화강 국가정원
+ * 십리대숲]` 같은 소제목으로 시작하는 문서가 있다(「울산 12경」). 예전에는 `startsWith('[')`로
+ * 라벨을 판정해서 그 줄에서 수집을 멈췄고, 개요가 통째로 비어 폴백이 원문을 돌려주는 바람에
+ * 카드에 라벨이 그대로 보였다. 라벨은 대괄호 안에 공백이 없는 짧은 토큰이고 소제목은 공백·콜론을
+ * 품으므로 그것으로 가른다. 개요가 실제 산문이 되기 전(W3 이전)에는 드러나지 않던 형태다.
  */
-export function overviewText(excerpt: string): string {
+/** 필드 라벨 줄. 대괄호 안에 공백이 없어야 한다 — `[개요]`는 라벨, `[울산 1경 : …]`은 본문이다. */
+const LABEL_LINE = /^\[[^\]\s]+\]/
+
+export function overviewText(excerpt: string, title?: string): string {
   const rows = excerpt.split('\n')
   const start = rows.findIndex((row) => row.startsWith('[개요]'))
-  if (start < 0) return excerpt
+  if (start < 0) {
+    return rows
+      .filter((row, index) => !(index === 0 && title != null && row.trim() === title.trim()))
+      .filter((row) => !LABEL_LINE.test(row))
+      .join('\n')
+      .trim()
+  }
   // `[개요]` 뒤에 같은 줄로 붙는 경우와 다음 줄로 내려가는 경우가 둘 다 있다.
   const head = rows[start].slice('[개요]'.length).trim()
   const rest: string[] = []
   for (let index = start + 1; index < rows.length; index += 1) {
-    if (rows[index].startsWith('[')) break
+    if (LABEL_LINE.test(rows[index])) break
     rest.push(rows[index])
   }
   const body = [head, ...rest].join('\n').trim()

@@ -1,7 +1,10 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { useLocation } from 'react-router-dom'
 import { useRagQuery } from '../knowledge/useRagQuery'
 import type { PublicCitation } from '../knowledge/types'
-import { homepageLine } from './portal-meta'
+import { categoryBadge, homepageLine } from './portal-meta'
+import { TOUR_DOMAIN, type PortalDomain } from './portal-domains'
+import { projectIdOf } from './portal-projects'
 import { describePortalStatus } from './portal-status'
 import { CardPhoto } from './portal-primitives'
 
@@ -30,8 +33,7 @@ type Turn = {
   notice?: { title: string; detail?: string; trace?: string }
 }
 
-/** 시안의 첫 화면 추천 질문. 코퍼스에 근거가 있는 질의만 둔다. */
-const SUGGESTIONS = ['지금 하는 축제 알려줘', '전주 한옥스테이 추천']
+/* 첫 화면 추천 질문은 도메인 상수다(portal-domains) — 코퍼스에 근거가 있는 질의만 둔다. */
 
 function ChatGlyph({ size = 22 }: { size?: number }) {
   return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
@@ -39,12 +41,13 @@ function ChatGlyph({ size = 22 }: { size?: number }) {
   </svg>
 }
 
-export function ChatWidget() {
+export function ChatWidget({ domain = TOUR_DOMAIN }: { domain?: PortalDomain } = {}) {
   const [open, setOpen] = useState(false)
   const [draft, setDraft] = useState('')
   const [turns, setTurns] = useState<Turn[]>([])
   const [locked, setLocked] = useState(false)
   const { state, ask } = useRagQuery()
+  const location = useLocation()
   const scroller = useRef<HTMLDivElement>(null)
   /** 마지막 문답의 머리. 스크롤을 여기에 맞춘다. */
   const lastTurn = useRef<HTMLDivElement>(null)
@@ -98,7 +101,7 @@ export function ChatWidget() {
     // "가족이 즐길 축제"가 제주 가족 놀이공원을 근거로 잡았다. 대명사 질문을 살리려면
     // 문맥이 필요한지 판정하는 쪽이 먼저다. 클라이언트의 previousQuery 지원은 남겨 둔다.
     setTurns((previous) => [...previous, { question }])
-    ask({ query: question })
+    ask({ query: question, projectId: projectIdOf(location.pathname, location.search) })
   }
 
   function submit(event: FormEvent) {
@@ -110,32 +113,32 @@ export function ChatWidget() {
   if (!open) {
     return <div className="group fixed bottom-7 right-7 z-40">
       <span className="pointer-events-none absolute bottom-[4.75rem] right-0 w-52 translate-y-1 rounded-xl bg-ink px-[0.875rem] py-[0.6875rem] text-center text-[0.78125rem] font-bold leading-[1.5] text-white opacity-0 shadow-[0_10px_24px_rgba(16,34,47,.28)] transition duration-150 group-hover:-translate-y-1 group-hover:opacity-100 group-focus-within:-translate-y-1 group-focus-within:opacity-100" aria-hidden="true">
-        관광에 대한 모든 것! 무엇이든 물어보세요
+        {domain.chatTagline}
         <span className="absolute -bottom-[5px] right-[1.375rem] h-2.5 w-2.5 rotate-45 bg-ink" />
       </span>
-      <button type="button" onClick={() => setOpen(true)} aria-label="관광 도우미 열기" className="grid h-[3.25rem] w-[3.25rem] place-items-center rounded-full bg-primary text-white shadow-[0_8px_20px_rgba(23,59,91,0.3)] hover:bg-[#12314c]">
+      <button type="button" onClick={() => setOpen(true)} aria-label={`${domain.chatTitle} 열기`} className="grid h-[3.25rem] w-[3.25rem] place-items-center rounded-full bg-primary text-white shadow-[0_8px_20px_rgba(23,59,91,0.3)] hover:bg-[#12314c]">
         <ChatGlyph />
       </button>
     </div>
   }
 
-  return <aside aria-label="관광 도우미" className="portal-chat-pop fixed bottom-7 right-7 z-40 flex h-[32.5rem] max-h-[calc(100vh-3.5rem)] w-[23.75rem] max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-[0.875rem] border border-line bg-panel shadow-[0_16px_48px_rgba(16,34,47,.26)]">
+  return <aside aria-label={domain.chatTitle} className="portal-chat-pop fixed bottom-7 right-7 z-40 flex h-[32.5rem] max-h-[calc(100vh-3.5rem)] w-[23.75rem] max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-[0.875rem] border border-line bg-panel shadow-[0_16px_48px_rgba(16,34,47,.26)]">
     <div className="flex flex-none items-center gap-[0.625rem] bg-primary px-4 py-[0.8125rem] text-white">
       <span className="grid h-[1.625rem] w-[1.625rem] flex-none place-items-center rounded-lg bg-white/[.18]" aria-hidden="true">
         <ChatGlyph size={15} />
       </span>
-      <span className="text-sm font-bold">관광 도우미</span>
-      <span className="text-[0.6875rem] font-medium text-sb-muted">AI 여행 안내</span>
-      <button type="button" onClick={() => setOpen(false)} aria-label="관광 도우미 닫기" className="ml-auto bg-transparent px-1 py-0.5 text-lg leading-none text-sb-muted hover:text-white">×</button>
+      <span className="text-sm font-bold">{domain.chatTitle}</span>
+      <span className="text-[0.6875rem] font-medium text-sb-muted">{domain.chatEyebrow}</span>
+      <button type="button" onClick={() => setOpen(false)} aria-label={`${domain.chatTitle} 닫기`} className="ml-auto bg-transparent px-1 py-0.5 text-lg leading-none text-sb-muted hover:text-white">×</button>
     </div>
 
     <div ref={scroller} className="flex flex-1 flex-col gap-3 overflow-y-auto bg-sub px-[0.875rem] py-4">
       {turns.length === 0 && <>
         <p className="m-0 max-w-[88%] self-start rounded-xl rounded-bl-[3px] border border-line-soft bg-white px-[0.8125rem] py-[0.6875rem] text-[0.8125rem] leading-[1.65] text-body">
-          전주 한옥스테이, 축제 일정처럼 여행지에 대해 물어보세요. 수집된 관광 문서에서 근거를 찾아 답해 드립니다.
+          {domain.chatGreeting}
         </p>
         <div className="flex flex-wrap gap-2">
-          {SUGGESTIONS.map((question) => <button key={question} type="button" onClick={() => send(question)} className="rounded-full border border-field-line bg-white px-[0.8125rem] py-2 text-xs font-semibold text-body">{question}</button>)}
+          {domain.chatSuggestions.map((question) => <button key={question} type="button" onClick={() => send(question)} className="rounded-full border border-field-line bg-white px-[0.8125rem] py-2 text-xs font-semibold text-body">{question}</button>)}
         </div>
       </>}
 
@@ -162,8 +165,18 @@ export function ChatWidget() {
         </div>}
       </div>)}
 
+      {/*
+        점이 움직여야 "생성 중"과 "멈춤"이 구분된다. 정지한 점 셋은 답이 오다 만 화면과
+        똑같이 생겼다 — 실제로 기다려야 할지 다시 물어야 할지 알 수 없다.
+        `motion-reduce`에서는 멈춘다(접근성). 그때도 aria-busy가 상태를 말한다.
+      */}
       {sending && <div className="flex max-w-[88%] items-center gap-1.5 self-start rounded-xl rounded-bl-[3px] border border-line-soft bg-white px-[0.8125rem] py-[0.8125rem]" aria-label="답변 작성 중" aria-busy="true">
-        {[0, 1, 2].map((dot) => <span key={dot} className="h-1.5 w-1.5 rounded-full bg-muted-3" />)}
+        {[0, 1, 2].map((dot) => <span
+          key={dot}
+          className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-3 motion-reduce:animate-none"
+          // 셋이 같은 박자로 뛰면 한 덩어리로 보인다. 어긋나게 해야 흐르는 것으로 읽힌다.
+          style={{ animationDelay: `${dot * 160}ms` }}
+        />)}
       </div>}
     </div>
 
@@ -173,7 +186,7 @@ export function ChatWidget() {
         onChange={(event) => setDraft(event.target.value)}
         disabled={sending || locked}
         placeholder="메시지를 입력하세요…"
-        aria-label="관광 도우미 메시지"
+        aria-label={`${domain.chatTitle} 메시지`}
         className="min-w-0 flex-1 rounded-[0.5625rem] border border-field-line bg-white px-3 py-[0.5625rem] text-[0.8125rem] text-ink outline-0 disabled:bg-sub"
       />
       <button type="submit" disabled={sending || locked || draft.trim() === ''} className="flex-none rounded-[0.5625rem] bg-primary px-4 py-[0.5625rem] text-[0.78125rem] font-bold text-white disabled:opacity-50">전송</button>
@@ -189,11 +202,14 @@ export function ChatWidget() {
  */
 function EvidenceCard({ citation }: { citation: PublicCitation }) {
   const homepage = homepageLine(citation.excerpt)
+  // 검색 카드와 같은 규칙으로 뱃지를 만든다 — 두 화면이 같은 문서를 다르게 부르면 안 된다.
+  const badge = categoryBadge(citation.categoryLabel)
   return <div className="flex items-center gap-[0.625rem] rounded-[0.5625rem] border border-line-soft bg-white px-[0.625rem] py-2">
     <CardPhoto name={citation.title} img={citation.imageUrl} className="h-9 w-9 flex-none rounded-md" />
     <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-[0.78125rem] font-bold text-ink">{citation.title}</span>
     {homepage && <a href={homepage} target="_blank" rel="noopener noreferrer" className="flex-none text-[0.6875rem] font-bold text-primary underline underline-offset-2">홈페이지 ↗</a>}
-    {citation.categoryLabel != null && <span className="flex-none rounded border border-line px-[0.375rem] py-[0.125rem] text-[0.625rem] font-bold text-primary">{citation.categoryLabel.split('>')[0].trim()}</span>}
-    {citation.eventStatus === 'ENDED' && <span className="flex-none rounded border border-line px-[0.375rem] py-[0.125rem] text-[0.625rem] font-bold text-muted">종료된 행사</span>}
+    {badge != null && <span className="flex-none rounded border border-line px-[0.375rem] py-[0.125rem] text-[0.625rem] font-bold text-primary">{badge.split('>')[0].trim()}</span>}
+    {/* 검색 카드와 같은 채움형이다. 두 화면이 같은 사실을 다른 무게로 보이면 안 된다. */}
+    {citation.eventStatus === 'ENDED' && <span className="flex-none rounded border border-wait-fg/35 bg-wait-bg px-[0.375rem] py-[0.125rem] text-[0.625rem] font-bold text-wait-fg">종료된 행사</span>}
   </div>
 }

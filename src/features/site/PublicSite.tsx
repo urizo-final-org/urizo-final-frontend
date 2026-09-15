@@ -5,6 +5,7 @@ import { SITE_UPDATE_EVENT, SiteApi, type Article, type Board, type Menu, type P
 import { ChatWidget } from './ChatWidget'
 import { ContentDocument } from './contentDocument'
 import { PortalFooter, PortalHeader, PortalHome, PortalSearch } from './TourPortal'
+import { SmePortal } from './SmePortal'
 import { SectionBreadcrumb, SectionNavigation } from './siteNavigation'
 import BoardBrowser from './BoardBrowser'
 
@@ -93,6 +94,12 @@ export default function PublicSite() {
   const currentBoard = currentMenu?.targetType === 'BOARD' ? boards.find((board) => board.id === currentMenu.targetId) : null
   const style = { '--brand': template.primaryColor } as CSSProperties
   const portalStyle = { ...style, '--primary': template.primaryColor } as CSSProperties
+
+  // /sme는 2호 고객사(중기부) 포털이다 — 같은 루트 사이트 안의 도메인 스킨(AI02-011).
+  // cms_site에 sme 행이 생기면 site.publicPath 분기가 이 자리를 자연히 대체한다.
+  if (site.publicPath === '/' && (routePath === '/sme' || routePath.startsWith('/sme/'))) {
+    return <SmePortal routePath={routePath === '/sme' ? '/' : routePath.slice('/sme'.length)} />
+  }
 
   // 루트 사이트(publicPath '/')는 관광 포털 스킨이다(I8). publicPath가 지정된 부속 사이트는 기존
   // Template Renderer를 그대로 유지해 템플릿 관리·사이트 관리 데모가 계속 성립한다.

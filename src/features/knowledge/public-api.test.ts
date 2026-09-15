@@ -35,6 +35,17 @@ test('posts the query to the public endpoint', async () => {
   expect(sentBody(fetch).query).toBe('한옥스테이')
 })
 
+// 포털 경로가 정한 프로젝트를 싣는다. 비우면 서버가 기본(관광) 챗봇으로 해석한다.
+test('serializes projectId only when the portal provides one', async () => {
+  const fetch = stubFetch()
+  await queryPublicChat({ query: '청년 창업', projectId: 'p-1' })
+  expect(sentBody(fetch).projectId).toBe('p-1')
+
+  const fallback = stubFetch()
+  await queryPublicChat({ query: '한옥스테이' })
+  expect('projectId' in sentBody(fallback)).toBe(false)
+})
+
 // 접두가 여러 개인 탭(체험·레저 = LS + EX)이 있어 단일 문자열로는 표현되지 않는다.
 test('serializes category as an array', () => {
   const fetch = stubFetch()
@@ -65,6 +76,20 @@ test('sends none of the administrator-only request parts', async () => {
   expect(Object.keys(headers).map((key) => key.toLowerCase())).not.toContain('idempotency-key')
   expect(Object.keys(headers).map((key) => key.toLowerCase())).not.toContain('authorization')
   expect(sentBody(fetch)).toEqual({ query: '한옥스테이', conversationId: 'c1' })
+})
+
+/**
+ * 답변 목적은 호출자만 안다 — 서버는 챗봇에서 왔는지 검색에서 왔는지 알 방법이 없다.
+ * 생략은 상세 답변(서버 기본값)이라, 이 필드가 생기기 전 호출이 그대로 동작한다.
+ */
+test('sends the answer style only when the caller asked for one', async () => {
+  const chat = stubFetch()
+  await queryPublicChat({ query: '축제 일정 알려줘' })
+  expect('answerStyle' in sentBody(chat)).toBe(false)
+
+  const search = stubFetch()
+  await queryPublicChat({ query: '축제 일정 알려줘', answerStyle: 'BRIEF' })
+  expect(sentBody(search).answerStyle).toBe('BRIEF')
 })
 
 // 첫 턴에도 previousQuery가 실리면 자기 질문을 자기 문맥으로 보내게 된다.
