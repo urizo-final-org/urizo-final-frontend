@@ -44,6 +44,48 @@ test('combines three independent reads with identical filters and drilldown with
   expect(client.getScores).not.toHaveBeenCalled()
 })
 
+test('session refresh does not repeat aggregates and an explicit refresh uses the latest API', async () => {
+  const first = api()
+  const refreshed = api()
+  const view = render(<IntegratedObservabilityDashboard api={first} query={query} onDetail={vi.fn()} />)
+  await screen.findByText('계측 응답 3/3')
+  view.rerender(<IntegratedObservabilityDashboard api={refreshed} query={query} onDetail={vi.fn()} />)
+  await act(async () => {})
+  expect(first.getObservabilityMetrics).toHaveBeenCalledTimes(1)
+  expect(refreshed.getObservabilityMetrics).not.toHaveBeenCalled()
+  expect(refreshed.getTokenUsage).not.toHaveBeenCalled()
+  view.rerender(<IntegratedObservabilityDashboard api={refreshed} query={{ ...query }} onDetail={vi.fn()} />)
+  await screen.findByText('계측 응답 3/3')
+  expect(refreshed.getObservabilityMetrics).toHaveBeenCalledTimes(1)
+  expect(refreshed.getTokenUsage).toHaveBeenCalledTimes(1)
+})
+
+test('hidden dashboard defers reads and ignores a response aborted on hiding', async () => {
+  const client = api()
+  Object.defineProperty(document, 'hidden', { configurable: true, value: true })
+  const view = render(<IntegratedObservabilityDashboard api={client} query={query} onDetail={vi.fn()} />)
+  try {
+    expect(client.getObservabilityMetrics).not.toHaveBeenCalled()
+    let resolve!: (value: unknown) => void
+    client.getObservabilityMetrics.mockImplementationOnce(() => new Promise(done => { resolve = done }))
+    act(() => {
+      Object.defineProperty(document, 'hidden', { configurable: true, value: false })
+      document.dispatchEvent(new Event('visibilitychange'))
+    })
+    expect(client.getObservabilityMetrics).toHaveBeenCalledTimes(1)
+    act(() => {
+      Object.defineProperty(document, 'hidden', { configurable: true, value: true })
+      document.dispatchEvent(new Event('visibilitychange'))
+    })
+    expect(client.getObservabilityMetrics.mock.calls[0][3].aborted).toBe(true)
+    await act(async () => { resolve({ ...base, rows: [{ model: 'STALE' }] }) })
+    expect(screen.queryByText('STALE')).not.toBeInTheDocument()
+  } finally {
+    view.unmount()
+    Object.defineProperty(document, 'hidden', { configurable: true, value: false })
+  }
+})
+
 test('period presets preserve the applied end and Job while display controls do not query again', async () => {
   const client = api()
   const onRangeChange = vi.fn()

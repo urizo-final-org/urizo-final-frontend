@@ -33,6 +33,21 @@ function props(): ComponentProps<typeof HomeDashboard> {
 function mount(input: ComponentProps<typeof HomeDashboard>) { return render(<MemoryRouter><HomeDashboard {...input} /></MemoryRouter>) }
 function deferred<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>((done) => { resolve = done }); return { promise, resolve } }
 
+test('home session replacement does not repeat metrics; a period change uses the new session', async () => {
+  const input = props()
+  const view = mount(input)
+  await screen.findByRole('group', { name: '모델별 호출 비교' })
+  const refreshed = props().profileApi
+  view.rerender(<MemoryRouter><HomeDashboard {...input} profileApi={refreshed} /></MemoryRouter>)
+  await act(async () => {})
+  expect(refreshed.getObservabilityMetrics).not.toHaveBeenCalled()
+  fireEvent.change(screen.getByLabelText('모델 사용량 기간'), { target: { value: '7' } })
+  await waitFor(() => expect(refreshed.getObservabilityMetrics).toHaveBeenCalledTimes(1))
+  expect(input.profileApi.getObservabilityMetrics).toHaveBeenCalledTimes(1)
+  const to = vi.mocked(refreshed.getObservabilityMetrics).mock.calls[0][1]
+  expect(Date.parse(to) % 60_000).toBe(0)
+})
+
 test('home renders real bounded request composition and preserves completion/approval meaning', async () => {
   const input = props(); mount(input)
   expect(screen.getByRole('heading', { name: '운영 대시보드' })).toBeInTheDocument()

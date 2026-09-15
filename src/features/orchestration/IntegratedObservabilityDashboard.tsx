@@ -1,3 +1,4 @@
+import { useObservabilityRead } from './useObservabilityRead'
 import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import TokenUsageDetail from './TokenUsageDetail'
 import { describeFailure } from '../../shared/api/error'
@@ -32,28 +33,26 @@ export default function IntegratedObservabilityDashboard({ api, query, onDetail,
   const hours = (Date.parse(query.to) - Date.parse(query.from)) / 3_600_000
   const preset = [24, 48, 168, 720].includes(hours) ? String(hours) : ''
 
-  useEffect(() => {
-    const controller = new AbortController()
+  useObservabilityRead((signal) => {
     setNodes(pending); setProviders(pending); setTokens(pending)
     async function read<T extends { from: string; to: string; environment: string }>(request: () => Promise<T>, save: (result: Result<T>) => void) {
       try {
         const data = await request()
-        if (controller.signal.aborted) return
+        if (signal.aborted) return
         // Compare instants: Spring may omit .000 while the browser sends milliseconds.
         if (Date.parse(data.from) !== Date.parse(query.from) || Date.parse(data.to) !== Date.parse(query.to) || data.environment !== 'local') {
           throw new Error('관측 응답의 UTC 기간 또는 환경이 일치하지 않습니다.')
         }
         save({ data, error: null, loadedAt: new Date().toISOString() })
       } catch (error) {
-        if (!controller.signal.aborted) save({ data: null, error: describeFailure(error), loadedAt: null })
+        if (!signal.aborted) save({ data: null, error: describeFailure(error), loadedAt: null })
       }
     }
     const job = query.jobId || undefined
-    void read(() => api.getObservations(query.from, query.to, { jobId: job, kind: 'NODE', limit: 50 }, controller.signal), setNodes)
-    void read(() => api.getObservabilityMetrics(query.from, query.to, job, controller.signal), setProviders)
-    void read(() => api.getTokenUsage(query.from, query.to, job, controller.signal), setTokens)
-    return () => controller.abort()
-  }, [api, query])
+    void read(() => api.getObservations(query.from, query.to, { jobId: job, kind: 'NODE', limit: 50 }, signal), setNodes)
+    void read(() => api.getObservabilityMetrics(query.from, query.to, job, signal), setProviders)
+    void read(() => api.getTokenUsage(query.from, query.to, job, signal), setTokens)
+  }, query)
 
   const nodeRows = nodes.data?.observations.filter((row) => row.name !== 'axms.model') ?? []
   const providerRows = providers.data?.rows ?? []

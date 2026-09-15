@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react'
+import { useObservabilityRead } from './useObservabilityRead'
+import { useState } from 'react'
 import { describeFailure } from '../../shared/api/error'
 import { secondaryButton } from '../../shared/ui/primitives'
 import type { AgentSettingsApiClient, ObservabilityMetricsResponse, TokenUsagePoint, TokenUsageResponse } from './api'
@@ -24,13 +25,12 @@ export default function TokenUsageDetail({ data, point, jobId, getMetrics, cache
   const [result, setResult] = useState<ObservabilityMetricsResponse | null>(() => cache.get(key) ?? null)
   const [error, setError] = useState<string | null>(null)
   const [reload, setReload] = useState(0)
-  useEffect(() => {
+  useObservabilityRead((signal) => {
     if (!range || cache.has(key)) return
-    const controller = new AbortController()
     // A pause over a bucket triggers one bounded query, never one request per mouse move.
     const timer = window.setTimeout(() => {
-      void getMetrics(range.from, range.to, jobId || undefined, controller.signal).then((response) => {
-        if (controller.signal.aborted) return
+      void getMetrics(range.from, range.to, jobId || undefined, signal).then((response) => {
+        if (signal.aborted) return
         if (Date.parse(response.from) !== Date.parse(range.from) || Date.parse(response.to) !== Date.parse(range.to) || response.environment !== 'local') {
           throw new Error('상세 응답의 UTC 구간 또는 환경이 일치하지 않습니다.')
         }
@@ -39,10 +39,10 @@ export default function TokenUsageDetail({ data, point, jobId, getMetrics, cache
           cache.set(key, response)
         }
         setResult(response)
-      }).catch((failure) => { if (!controller.signal.aborted) setError(describeFailure(failure)) })
+      }).catch((failure) => { if (!signal.aborted) setError(describeFailure(failure)) })
     }, 300)
-    return () => { window.clearTimeout(timer); controller.abort() }
-  }, [range?.from, range?.to, key, jobId, getMetrics, cache, reload])
+    return () => { window.clearTimeout(timer) }
+  }, `${key}:${reload}`)
 
   return <section aria-label="시간 구간 상세" className="text-xs">
     <div className="flex items-center justify-between gap-2 border-b border-line-soft px-3 py-2">
