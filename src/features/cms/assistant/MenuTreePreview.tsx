@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { hasMenuChange, type MenuChange, type MenuTreeNode } from './menuTree'
+import { hasMenuChange, type MenuChange, type MenuLinkChange, type MenuTreeNode } from './menuTree'
 
 /** 변경 표시. 추가는 초록, 삭제는 빨강, 자리·값 변경은 노랑이다. */
 const marks: Record<Exclude<MenuChange, 'none'>, { label: string; className: string }> = {
@@ -7,6 +7,27 @@ const marks: Record<Exclude<MenuChange, 'none'>, { label: string; className: str
   removed: { label: '삭제', className: 'bg-[#fdf1f0] text-[#a3564f] line-through' },
   moved: { label: '이동', className: 'bg-[#fdf6e6] text-[#8a6a25]' },
   changed: { label: '변경', className: 'bg-[#fdf6e6] text-[#8a6a25]' },
+}
+
+/**
+ * 연결이 어떻게 달라지는지 한 줄.
+ *
+ * 트리 줄은 이름과 경로만 그리므로, 연결만 바꾸는 요청은 노란 배지 하나로 끝나 무엇이
+ * 바뀌는지 알 수 없었다. 떼어지는 쪽을 취소선으로 함께 보여줘야 잘못 고른 대상을
+ * 승인 전에 잡는다. 등록은 「전」이 없어 화살표 없이 붙는 것만 적는다.
+ */
+function LinkChange({ link, depth }: { link: MenuLinkChange; depth: number }) {
+  return <p
+    className="m-0 flex flex-wrap items-center gap-[0.3125rem] py-[0.0625rem] text-[0.71875rem] text-muted-2"
+    style={{ marginLeft: `${depth * 1.125 + 1.5}rem` }}
+  >
+    <span className="text-[0.65625rem] font-semibold text-muted-3">연결</span>
+    {link.before !== null && <>
+      <span className="rounded bg-sub px-[0.375rem] py-[0.0625rem] font-semibold text-muted-3 line-through">{link.before}</span>
+      <span aria-hidden="true" className="text-muted-3">→</span>
+    </>}
+    <span className="rounded bg-teal-bg px-[0.375rem] py-[0.0625rem] font-semibold text-teal-fg">{link.after}</span>
+  </p>
 }
 
 function Row({ node, depth }: { node: MenuTreeNode; depth: number }) {
@@ -58,8 +79,10 @@ export default function MenuTreePreview({ nodes }: { nodes: MenuTreeNode[] }) {
           <div className="min-w-0 flex-1"><Row node={node} depth={0} /></div>
           {!expanded && node.children.length > 0 && <small className="shrink-0 text-[0.6875rem] text-muted-3">하위 {node.children.length}개</small>}
         </div>
+        {node.link && <LinkChange link={node.link} depth={0} />}
         {expanded && node.children.map((child) => <div key={child.key} className="pl-6">
           <Row node={child} depth={1} />
+          {child.link && <LinkChange link={child.link} depth={0} />}
         </div>)}
       </div>
     })}

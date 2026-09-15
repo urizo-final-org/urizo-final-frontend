@@ -15,7 +15,7 @@ import MenuTreePreview from './MenuTreePreview'
 import { refusalMessage } from './refusal'
 import type { NaturalCmsApi, NaturalCmsJob, NaturalCmsRecord, NaturalCmsRefusal } from './api'
 import { hasChange, lineDiff } from './diff'
-import { menuPreviewTree, menuRemoval, type AssistantMenu, type MenuCommand } from './menuTree'
+import { menuPreviewTree, menuRemoval, type AssistantLinkTargets, type AssistantMenu, type MenuCommand } from './menuTree'
 import { templateProposal, TemplateProposalPreview, type TemplateAssistantContext } from './TemplateProposal'
 
 /** 되묻기에 한 번에 보여줄 후보 최대 갯수. 더 많으면 목록에서 직접 고르게 한다. */
@@ -220,12 +220,14 @@ function removalSubject(target: CmsAssistantTarget | null) {
 /** 요청 하나에 붙일 수 있는 사진. 더 늘리면 프롬프트에 주소만 길게 실린다. */
 const MAX_ATTACHMENTS = 3
 
-export default function CmsAiAssistant({ route, target, templateContext, candidates, menus, onTarget, api, onUploadImage, collapsed, onToggle }: {
+export default function CmsAiAssistant({ route, target, templateContext, candidates, menus, linkTargets, onTarget, api, onUploadImage, collapsed, onToggle }: {
   route: AssistedRoute
   target: CmsAssistantTarget | null
   templateContext?: TemplateAssistantContext | null
   candidates: CmsAssistantTarget[]
   menus: AssistantMenu[]
+  /** 연결 대상 이름을 찾는 목록. 메뉴 화면만 넘긴다. */
+  linkTargets?: AssistantLinkTargets
   onTarget: (target: CmsAssistantTarget) => void
   api: NaturalCmsApi
   /** 사진 첨부를 여는 화면만 넘긴다. 지금은 컨텐츠 화면뿐이다. */
@@ -702,7 +704,7 @@ export default function CmsAiAssistant({ route, target, templateContext, candida
         ? <MenuRemovalNotice target={removal.target} removed={removal.children} />
         : <p className="m-0 text-[0.71875rem] text-muted-2">삭제할 메뉴를 찾지 못했습니다.</p>
     }
-    return <MenuTreePreview nodes={menuPreviewTree(menus, command, target.id)} />
+    return <MenuTreePreview nodes={menuPreviewTree(menus, command, target.id, linkTargets)} />
   }
 
   if (collapsed) return <aside
