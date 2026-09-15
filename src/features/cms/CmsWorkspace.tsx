@@ -16,7 +16,7 @@ import ContentEditor from './ContentEditor'
 import CodeWorkspace from './CodeWorkspace'
 import { contentImageUrl, type CmsCode, type CodeGroup } from './api'
 import type { NaturalCmsApi } from './assistant/api'
-import type { AssistantMenu } from './assistant/menuTree'
+import type { AssistantLinkTargets, AssistantMenu } from './assistant/menuTree'
 import type { TemplateAssistantContext } from './assistant/TemplateProposal'
 import type { CmsSiteSettingsApiClient } from '../site-settings/api'
 
@@ -47,6 +47,8 @@ export default function CmsWorkspace({ route, api, assistantApi, siteSettingsApi
   const [assistantCandidates, setAssistantCandidates] = useState<CmsAssistantTarget[]>([])
   /** 메뉴 미리보기 트리는 화면이 가진 전체 목록으로 결과 순서를 계산한다. */
   const [assistantMenus, setAssistantMenus] = useState<AssistantMenu[]>([])
+  /** 명령서는 연결 대상을 번호로만 담는다. 이름은 화면이 이미 읽어 둔 목록에서 찾는다. */
+  const [assistantLinks, setAssistantLinks] = useState<AssistantLinkTargets>({ contents: [], boards: [] })
   useEffect(() => {
     const showSuccess = (event: Event) => setSuccess({ id: `${Date.now()}-${Math.random()}`, message: (event as CustomEvent<string>).detail })
     window.addEventListener(CMS_SUCCESS_EVENT, showSuccess)
@@ -57,10 +59,10 @@ export default function CmsWorkspace({ route, api, assistantApi, siteSettingsApi
     const timer = window.setTimeout(() => setSuccess(null), 2600)
     return () => window.clearTimeout(timer)
   }, [success])
-  useEffect(() => { setSuccess(null); setAssistantTarget(null); setAssistantCandidates([]); setAssistantMenus([]) }, [route])
+  useEffect(() => { setSuccess(null); setAssistantTarget(null); setAssistantCandidates([]); setAssistantMenus([]); setAssistantLinks({ contents: [], boards: [] }) }, [route])
   const workspace = route === 'members' ? <Members api={api} />
     : route === 'codes' ? <CodeWorkspace api={api} />
-    : route === 'menus' ? <Menus api={api} onSelect={setAssistantTarget} onCandidates={setAssistantCandidates} onMenus={setAssistantMenus} monitoringAction={monitoringAction} />
+    : route === 'menus' ? <Menus api={api} onSelect={setAssistantTarget} onCandidates={setAssistantCandidates} onMenus={setAssistantMenus} onLinkTargets={setAssistantLinks} monitoringAction={monitoringAction} />
       : route === 'contents' ? <Contents api={api} onSelect={setAssistantTarget} onCandidates={setAssistantCandidates} onMenus={setAssistantMenus} monitoringAction={monitoringAction} />
         : route === 'boards' ? <Boards api={api} onSelect={setAssistantTarget} onCandidates={setAssistantCandidates} onMenus={setAssistantMenus} monitoringAction={monitoringAction} />
           : <Templates api={api} siteSettingsApi={siteSettingsApi} monitoringAction={monitoringAction} onAssistantContext={setTemplateContext} />
@@ -70,7 +72,7 @@ export default function CmsWorkspace({ route, api, assistantApi, siteSettingsApi
     {assistantRoute
       ? <div className={`grid items-start gap-[0.875rem] ${assistantCollapsed ? 'min-[1240px]:grid-cols-[minmax(0,1fr)_4rem]' : 'min-[1240px]:grid-cols-[minmax(0,1fr)_22rem]'}`}>
         <div className="min-w-0">{workspace}</div>
-        <CmsAiAssistant key={assistantRoute} route={assistantRoute} target={assistantRoute === 'templates' ? templateContext?.target ?? null : assistantTarget} templateContext={templateContext} candidates={assistantCandidates} menus={assistantMenus} onTarget={setAssistantTarget} api={assistantApi} onUploadImage={assistantRoute === 'templates' || assistantRoute === 'contents' || (assistantRoute === 'boards' && assistantTarget?.id.startsWith('board:')) ? api.uploadImage : undefined} collapsed={assistantCollapsed} onToggle={() => setAssistantCollapsed((value) => !value)} />
+        <CmsAiAssistant key={assistantRoute} route={assistantRoute} target={assistantRoute === 'templates' ? templateContext?.target ?? null : assistantTarget} templateContext={templateContext} candidates={assistantCandidates} menus={assistantMenus} linkTargets={assistantLinks} onTarget={setAssistantTarget} api={assistantApi} onUploadImage={assistantRoute === 'templates' || assistantRoute === 'contents' || (assistantRoute === 'boards' && assistantTarget?.id.startsWith('board:')) ? api.uploadImage : undefined} collapsed={assistantCollapsed} onToggle={() => setAssistantCollapsed((value) => !value)} />
       </div>
       : workspace}
   </>
@@ -152,12 +154,13 @@ function Members({ api }: { api: CmsApi }) {
   </>
 }
 
-function Menus({ api, onSelect, onCandidates, onMenus, monitoringAction }: {
+function Menus({ api, onSelect, onCandidates, onMenus, onLinkTargets, monitoringAction }: {
   api: CmsApi
   monitoringAction?: ReactNode
   onSelect: (target: CmsAssistantTarget | null) => void
   onCandidates: (candidates: CmsAssistantTarget[]) => void
   onMenus: (menus: AssistantMenu[]) => void
+  onLinkTargets: (targets: AssistantLinkTargets) => void
 }) {
   const [items, setItems] = useState<Menu[]>([])
   const [contents, setContents] = useState<Article[]>([])
@@ -182,7 +185,12 @@ function Menus({ api, onSelect, onCandidates, onMenus, monitoringAction }: {
       parentId: item.parentId,
       link: targetLabel(item, contents, boards),
     })))
-  }, [items, contents, boards, onCandidates, onMenus])
+    // 미리보기가 명령서의 대상 번호를 이름으로 바꿀 때 쓴다. 이미 읽은 목록이라 조회가 없다.
+    onLinkTargets({
+      contents: contents.map((item) => ({ id: item.id, title: item.title })),
+      boards: boards.map((item) => ({ id: item.id, name: item.name })),
+    })
+  }, [items, contents, boards, onCandidates, onMenus, onLinkTargets])
   function select(item: Menu | null) {
     setEditing(item); setName(item?.name ?? ''); setPath(item?.path ?? '/'); setParentId(item?.parentId?.toString() ?? '')
     setOrder(item?.displayOrder ?? 0); setTargetType(item?.targetType ?? 'NONE'); setTargetId(item?.targetId?.toString() ?? '')

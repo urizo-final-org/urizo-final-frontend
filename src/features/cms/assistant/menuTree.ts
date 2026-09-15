@@ -4,11 +4,52 @@ export type AssistantMenu = {
   name: string
   path: string
   parentId: number | null
-  /** 연결 상태를 그대로 보여주는 설명. 삭제 확인에서만 쓴다. */
+  /** 지금 연결 상태를 그대로 보여주는 설명. 미리보기의 「변경 전」이기도 하다. */
   link?: string
 }
 
+/**
+ * 연결할 수 있는 것들. 메뉴 화면이 이미 목록으로 들고 있다.
+ *
+ * 명령서는 `targetId` 번호만 담는데 사람은 번호로 확인할 수 없다. 이름을 여기서 찾는다.
+ */
+export type AssistantLinkTargets = {
+  contents: { id: number; title: string }[]
+  boards: { id: number; name: string }[]
+}
+
+export const NO_LINK = '연결 없음'
+
+/**
+ * 연결 하나를 사람이 읽는 말로.
+ *
+ * 타입을 앞에 붙인다. 컨텐츠와 게시판에 같은 이름이 있을 수 있어 이름만으로는 갈리지 않는다.
+ * 목록에서 못 찾으면 `미지정`으로 두고 번호를 노출하지 않는다 — 메뉴 화면의 상세 표기와 같다.
+ */
+export function linkLabel(
+  targetType: unknown,
+  targetId: unknown,
+  targets?: AssistantLinkTargets,
+): string {
+  const id = numberOrNull(targetId)
+  if (targetType === 'CONTENT') {
+    return `컨텐츠 · ${targets?.contents.find((item) => item.id === id)?.title ?? '미지정'}`
+  }
+  if (targetType === 'BOARD') {
+    return `게시판 · ${targets?.boards.find((item) => item.id === id)?.name ?? '미지정'}`
+  }
+  return NO_LINK
+}
+
 export type MenuChange = 'none' | 'added' | 'moved' | 'changed' | 'removed'
+
+/**
+ * 연결이 달라질 때만 채운다.
+ *
+ * `before`가 `null`이면 등록이라 「전」이 없다는 뜻이다. 바뀌지 않은 연결은 아예 담지 않는다 —
+ * 안 바뀐 것까지 적으면 매번 읽어야 할 줄만 는다.
+ */
+export type MenuLinkChange = { before: string | null; after: string }
 
 export type MenuTreeNode = {
   key: string
@@ -17,6 +58,7 @@ export type MenuTreeNode = {
   change: MenuChange
   /** 이동 전 자리. 서수이며 이동이 아닐 때는 `null`이다. */
   from: number | null
+  link: MenuLinkChange | null
   children: MenuTreeNode[]
 }
 
@@ -25,7 +67,17 @@ export type MenuCommand = { operation: string; fields: Record<string, unknown> }
 /** 아직 만들어지지 않은 메뉴의 자리표. 화면 안에서만 쓰고 서버로 보내지 않는다. */
 const NEW_MENU_ID = -1
 
-type Entry = { menu: AssistantMenu; change: MenuChange; from: number | null }
+type Entry = {
+  menu: AssistantMenu
+  change: MenuChange
+  from: number | null
+  link?: MenuLinkChange | null
+}
+
+/** 명령서가 연결을 건드렸나. 둘 중 하나만 와도 바꾸겠다는 뜻이다. */
+function touchesLink(fields: Record<string, unknown>): boolean {
+  return 'targetType' in fields || 'targetId' in fields
+}
 
 /**
  * 명령서 하나를 지금 목록에 얹어 결과 트리를 만든다.
@@ -38,6 +90,7 @@ export function menuPreviewTree(
   menus: AssistantMenu[],
   command: MenuCommand,
   targetId: string,
+  targets?: AssistantLinkTargets,
 ): MenuTreeNode[] {
   const entries: Entry[] = menus.map((menu) => ({ menu, change: 'none', from: null }))
   const fields = command.fields ?? {}
@@ -60,6 +113,10 @@ export function menuPreviewTree(
       },
       change: 'added',
       from: null,
+      // 새로 만드는 메뉴에는 「전」이 없다. 화살표 없이 붙는 것만 보여준다.
+      link: touchesLink(fields)
+        ? { before: null, after: linkLabel(fields.targetType, fields.targetId, targets) }
+        : null,
     }
     return tree(place(entries, created, parentId, position(fields)))
   }
@@ -73,12 +130,19 @@ export function menuPreviewTree(
     path: text(fields.path) ?? current.menu.path,
     parentId,
   }
+  // 연결을 건드렸어도 값이 같으면 담지 않는다. 안 바뀐 줄을 그리지 않기 위해서다.
+  const after = touchesLink(fields)
+    ? linkLabel(fields.targetType, fields.targetId, targets)
+    : null
+  const before = current.menu.link ?? NO_LINK
+  const link: MenuLinkChange | null = after !== null && after !== before ? { before, after } : null
+
   const place_ = position(fields)
   if (place_ === null) {
     const change: MenuChange = Object.keys(fields).length > 0 ? 'changed' : 'none'
-    return tree(entries.map((entry) => entry === current ? { menu, change, from: null } : entry))
+    return tree(entries.map((entry) => entry === current ? { menu, change, from: null, link } : entry))
   }
-  const moved: Entry = { menu, change: 'moved', from: ordinal(entries, current) }
+  const moved: Entry = { menu, change: 'moved', from: ordinal(entries, current), link }
   return tree(place(entries.filter((entry) => entry !== current), moved, parentId, place_))
 }
 
@@ -129,6 +193,7 @@ function node(entry: Entry, children: Entry[]): MenuTreeNode {
     path: entry.menu.path,
     change: entry.change,
     from: entry.from,
+    link: entry.link ?? null,
     children: children.map((child) => node(child, [])),
   }
 }
