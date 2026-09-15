@@ -1,3 +1,4 @@
+import { useObservabilityRead } from '../orchestration/useObservabilityRead'
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { describeFailure } from '../../shared/api/error'
@@ -8,7 +9,7 @@ import type { CodingConsoleApiClient } from '../coding/api'
 import type { HistoryClient, HistoryEntry } from '../governance/api'
 import type { KnowledgeAdminApi } from '../knowledge/admin-api'
 import type { KnowledgeTarget, KnowledgeVersion } from '../knowledge/admin-types'
-import type { AgentSettingsApiClient, ObservabilityMetricRow } from '../orchestration/api'
+import type { AgentSettingsApiClient, ObservabilityMetricsResponse, ObservabilityMetricRow } from '../orchestration/api'
 import { monitoringJobHref } from '../orchestration/ActiveJobMonitoringLink'
 import './HomeDashboard.css'
 
@@ -173,11 +174,16 @@ function metricText(value: number | null, metric: Metric) {
 function ModelUsage({ api, revision }: { api: DashboardProps['profileApi']; revision: number }) {
   const [days, setDays] = useState(1)
   const [metric, setMetric] = useState<Metric>('observationCount')
-  const read = useCallback((signal: AbortSignal) => {
-    const to = new Date()
-    return api.getObservabilityMetrics(new Date(to.getTime() - days * 86_400_000).toISOString(), to.toISOString(), undefined, signal)
-  }, [api, days])
-  const query = useDashboardQuery(read, revision)
+  const [query, setQuery] = useState<Query<ObservabilityMetricsResponse>>({ data: null, loading: true, error: null })
+  useObservabilityRead((signal) => {
+    // Minute-aligned ranges let concurrent Home viewers share the Backend cache.
+    const to = new Date(Math.floor(Date.now() / 60_000) * 60_000)
+    setQuery({ data: null, loading: true, error: null })
+    void api.getObservabilityMetrics(new Date(to.getTime() - days * 86_400_000).toISOString(), to.toISOString(), undefined, signal).then(
+      (data) => { if (!signal.aborted) setQuery({ data, loading: false, error: null }) },
+      (error: unknown) => { if (!signal.aborted) setQuery({ data: null, loading: false, error: describeFailure(error) }) },
+    )
+  }, `${days}:${revision}`)
   const data = query.data
   const rows = data?.status === 'AVAILABLE' ? data.rows : []
   const sorted = [...rows].sort((a, b) => (numeric(b[metric]) ? b[metric] : -1) - (numeric(a[metric]) ? a[metric] : -1)).slice(0, 6)

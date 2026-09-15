@@ -1,3 +1,4 @@
+import { useObservabilityRead } from './useObservabilityRead'
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import { monitoringEdgeRoutes, MONITORING_NODE_WIDTH as NODE_WIDTH, MONITORING_NODE_HEIGHT as NODE_HEIGHT } from './monitoringEdgeRoutes'
 import NodeExecutionHistory from './NodeExecutionHistory'
@@ -413,14 +414,16 @@ function NodeMonitoringDetail({ api, snapshot, profile, selectedNodeId, onProvid
     selectedOccurrence?.executionAttempt, selectedOccurrence?.nodeSequence,
     selectedOccurrence?.startedAt, selectedOccurrence?.status])
 
-  useEffect(() => {
+  const providerIdentity = JSON.stringify(providerSelection)
+  useEffect(() => { setProvider(null); setProviderFailure(null) }, [providerIdentity])
+
+  useObservabilityRead((signal) => {
     setProvider(null)
     setProviderFailure(null)
     if (!providerSelection) return
     let active = true
-    const controller = new AbortController()
-    void api.getMonitoringOccurrenceObservations(providerSelection.observationsPath, controller.signal).then((response) => {
-      if (!active || response.jobId !== providerSelection.jobId
+    void api.getMonitoringOccurrenceObservations(providerSelection.observationsPath, signal).then((response) => {
+      if (!active || signal.aborted || response.jobId !== providerSelection.jobId
         || response.profileVersionId !== providerSelection.profileVersionId
         || response.pipelineAttempt !== providerSelection.pipelineAttempt
         || response.executionAttempt !== providerSelection.executionAttempt
@@ -428,13 +431,11 @@ function NodeMonitoringDetail({ api, snapshot, profile, selectedNodeId, onProvid
         || response.nodeSequence !== providerSelection.nodeSequence) return
       setProvider(response)
     }).catch((error) => {
-      if (active && !controller.signal.aborted) setProviderFailure(describeFailure(error))
+      if (active && !signal.aborted) setProviderFailure(describeFailure(error))
     })
-    return () => { active = false; controller.abort() }
-  }, [api, providerSelection?.jobId, providerSelection?.profileVersionId,
-    providerSelection?.pipelineAttempt, providerSelection?.executionAttempt,
-    providerSelection?.nodeId, providerSelection?.nodeSequence,
-    providerSelection?.observationsPath, snapshot?.job.monitorRevision, providerReload])
+    return () => { active = false }
+  }, providerSelection ? JSON.stringify([providerSelection, selectedOccurrence?.lastUpdatedAt, selectedOccurrence?.status,
+    node?.lastUpdatedAt, providerReload]) : null, 30_000)
 
   useEffect(() => {
     if (!providerSelection || providerFailure) onProviderLabel('미제공')
@@ -460,7 +461,7 @@ function NodeMonitoringDetail({ api, snapshot, profile, selectedNodeId, onProvid
         <b>N · 실행 상태</b>
         <dl className="mt-2 grid grid-cols-[6rem_1fr] gap-2"><dt>상태</dt><dd>{statusView[node.status].label}</dd><dt>Pipeline</dt><dd>{node.pipelineAttempt ?? '제공되지 않음'}</dd><dt>실행 Attempt</dt><dd>{node.executionAttempt ?? '제공되지 않음'}</dd><dt>Sequence</dt><dd>{node.nodeSequence ?? '제공되지 않음'}</dd><dt>진행 시간</dt><dd>{elapsedSeconds === null ? '제공되지 않음' : `${elapsedSeconds}초`}</dd><dt>마지막 갱신</dt><dd>{node.lastUpdatedAt ?? '제공되지 않음'}</dd></dl>
       </section>
-      <section aria-label="P Provider 상세" className="rounded-md border border-line-soft bg-sub p-3"><b>P · Provider 계측</b>
+      <section aria-label="P Provider 상세" className="rounded-md border border-line-soft bg-sub p-3"><b>P · Provider 계측</b><p className="mt-2 text-muted-2">변경 시 최대 30초 간격으로 조회합니다. N 실행 상태와 모델 호출 이력은 별도로 갱신됩니다.</p>
         {!providerSelection && <p className="mt-2 text-muted-2">P 조회 식별자가 제공되지 않았습니다.</p>}
         {providerFailure && <p role="alert" className="mt-2 text-fail-fg">{providerFailure}</p>}
         {provider?.status === 'UNCONNECTED' && <p className="mt-2 text-muted-2">관측 연결 안 됨 · {provider.errorCode}</p>}

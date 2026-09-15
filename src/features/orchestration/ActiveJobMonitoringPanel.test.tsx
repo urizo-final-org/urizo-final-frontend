@@ -305,7 +305,7 @@ test('rejects a stale terminal response without stopping later polling', async (
   expect(within(screen.getByRole('region', { name: '실행 모니터링 상세' })).getAllByText('WAITING_APPROVAL')).toHaveLength(2)
 })
 
-test('refreshes only the selected occurrence P detail after an accepted monitorRevision change', async () => {
+test('unrelated monitorRevision changes do not query the selected occurrence again', async () => {
   vi.useFakeTimers()
   const getMonitoringJobSnapshot = vi.fn()
     .mockResolvedValueOnce(snapshot({ monitorRevision: 2, stateVersion: 5 }))
@@ -320,7 +320,35 @@ test('refreshes only the selected occurrence P detail after an accepted monitorR
   expect(getMonitoringOccurrenceObservations).toHaveBeenCalledTimes(1)
   await act(async () => { vi.advanceTimersByTime(1_000) })
   await act(async () => {})
+  expect(getMonitoringOccurrenceObservations).toHaveBeenCalledTimes(1)
+  expect(getMonitoringJobSnapshot).toHaveBeenCalledTimes(2)
+})
+
+test('keeps N current through rapid attempts while throttling P and eventually reads the terminal occurrence', async () => {
+  vi.useFakeTimers()
+  let revision = 2
+  const getMonitoringJobSnapshot = vi.fn().mockImplementation(() => {
+    const attempt = Math.min(revision, 6)
+    const next = snapshot({ monitorRevision: revision++, domainTerminal: attempt === 6,
+      domainJobStatus: attempt === 6 ? 'COMPLETED' : 'RUNNING', lastUpdatedAt: `2026-09-07T00:00:0${attempt}Z` })
+    next.latestNodeStates[1].executionAttempt = attempt
+    next.occurrences[0].executionAttempt = attempt
+    next.occurrences[0].observationsPath = `/api/admin/ai/monitoring/jobs/${job.jobId}/occurrences/1/${attempt}/2/observations`
+    return Promise.resolve(next)
+  })
+  const getMonitoringOccurrenceObservations = vi.fn().mockResolvedValue({ status: 'UNCONNECTED', observations: [] })
+  render(<ActiveJobMonitoringPanel api={monitoringApi({ getMonitoringJobSnapshot, getMonitoringOccurrenceObservations })} />)
+  await act(async () => {})
+  expect(getMonitoringOccurrenceObservations).toHaveBeenCalledTimes(1)
+  for (let i = 0; i < 4; i++) await act(async () => { vi.advanceTimersByTime(1_000) })
+  expect(getMonitoringJobSnapshot).toHaveBeenCalledTimes(5)
+  expect(screen.getByRole('region', { name: 'N 상태 상세' })).toHaveTextContent('완료')
+  expect(screen.getByRole('region', { name: 'N 상태 상세' })).toHaveTextContent('실행 Attempt6')
+  expect(getMonitoringOccurrenceObservations).toHaveBeenCalledTimes(1)
+  await act(async () => { vi.advanceTimersByTime(26_000) })
   expect(getMonitoringOccurrenceObservations).toHaveBeenCalledTimes(2)
+  expect(getMonitoringOccurrenceObservations.mock.lastCall?.[0]).toContain('/occurrences/1/6/2/observations')
+  expect(getMonitoringJobSnapshot).toHaveBeenCalledTimes(5)
 })
 
 test('uses latestNodeStates identity for P when bounded occurrence history is truncated', async () => {

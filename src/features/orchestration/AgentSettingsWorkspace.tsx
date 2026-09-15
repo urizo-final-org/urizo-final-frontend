@@ -1,3 +1,4 @@
+import { useObservabilityRead } from './useObservabilityRead'
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { describeFailure } from '../../shared/api/error'
 import {
@@ -577,8 +578,7 @@ function UsagePanel({ api }: { api: AgentSettingsApiClient }) {
     }
   }
 
-  useEffect(() => {
-    const controller = new AbortController()
+  useObservabilityRead((signal) => {
     setLoading(true)
     setFailure(null)
     setMetrics(null)
@@ -586,40 +586,39 @@ function UsagePanel({ api }: { api: AgentSettingsApiClient }) {
     setLoadedAt(null)
     if (activeTab === 'dashboard') {
       setLoading(false)
-      return () => controller.abort()
+      return
     }
     const fetchPage = async () => {
       try {
         const [nextMetrics, nextObservations] = await Promise.all([
-          api.getObservabilityMetrics(query.from, query.to, query.jobId || undefined, controller.signal),
+          activeTab === 'provider' ? api.getObservabilityMetrics(query.from, query.to, query.jobId || undefined, signal) : Promise.resolve(null),
           api.getObservations(query.from, query.to, {
             jobId: query.jobId || undefined, kind: query.kind, limit: 50, cursor: query.cursors[query.page],
-          }, controller.signal),
+          }, signal),
         ])
-        if (controller.signal.aborted) return
-        if (nextMetrics.from !== nextObservations.from || nextMetrics.to !== nextObservations.to
-          || nextMetrics.environment !== nextObservations.environment || nextMetrics.environment !== 'local') {
+        if (signal.aborted) return
+        if (Date.parse(nextObservations.from) !== Date.parse(query.from) || Date.parse(nextObservations.to) !== Date.parse(query.to)
+          || nextObservations.environment !== 'local' || (nextMetrics && (Date.parse(nextMetrics.from) !== Date.parse(query.from)
+          || Date.parse(nextMetrics.to) !== Date.parse(query.to) || nextMetrics.environment !== 'local'))) {
           throw new Error('관측 응답의 UTC 기간 또는 환경이 일치하지 않습니다.')
         }
         setMetrics(nextMetrics)
         setObservations(nextObservations)
         setLoadedAt(new Date().toISOString())
       } catch (error) {
-        if (!controller.signal.aborted) setFailure(describeFailure(error))
+        if (!signal.aborted) setFailure(describeFailure(error))
       } finally {
-        if (!controller.signal.aborted) setLoading(false)
+        if (!signal.aborted) setLoading(false)
       }
     }
     void fetchPage()
-    return () => controller.abort()
-  }, [api, query, activeTab])
+  }, query)
 
   function selectTab(tab: ObservabilityTab) {
+    if (tab === activeTab) return
     setActiveTab(tab)
-    if (tab !== 'dashboard') {
-      const kind = tab === 'provider' ? 'PROVIDER' : 'NODE'
-      if (kind !== query.kind || activeTab === 'dashboard') setQuery((current) => ({ ...current, kind, cursors: [undefined], page: 0 }))
-    }
+    const kind = tab === 'provider' ? 'PROVIDER' : 'NODE'
+    setQuery((current) => ({ ...current, kind, cursors: [undefined], page: 0 }))
   }
 
   const nodeRows = observations?.observations.filter((row) => row.name !== 'axms.model') ?? []
@@ -661,9 +660,9 @@ function UsagePanel({ api }: { api: AgentSettingsApiClient }) {
       <div className="border-t border-line-soft px-4 py-3 text-[0.6875rem] leading-5 text-muted-2">
         {activeTab === 'dashboard'
           ? <>기간 <span className="font-mono text-body">{query.from}</span> — <span className="font-mono text-body">{query.to}</span> · 환경 <b className="text-body">local</b> · Job <span className="break-all font-mono text-body">{query.jobId || '전체'}</span></>
-          : metrics && observations
-          ? <>기간 <span className="font-mono text-body">{metrics.from}</span> — <span className="font-mono text-body">{metrics.to}</span> · 환경 <b className="text-body">{metrics.environment}</b> · Job <span className="break-all font-mono text-body">{query.jobId || '전체'}</span>{loadedAt && <> · 조회 완료 <span className="font-mono text-body">{loadedAt}</span></>}</>
-          : 'Metrics와 Observations에 같은 UTC 기간과 environment=local 필터를 적용합니다.'}
+          : observations
+          ? <>기간 <span className="font-mono text-body">{observations.from}</span> — <span className="font-mono text-body">{observations.to}</span> · 환경 <b className="text-body">{observations.environment}</b> · Job <span className="break-all font-mono text-body">{query.jobId || '전체'}</span>{loadedAt && <> · 조회 완료 <span className="font-mono text-body">{loadedAt}</span></>}</>
+          : '계측 데이터에 선택한 UTC 기간과 local 환경 필터를 적용합니다.'}
       </div>
     </section>
 
@@ -678,7 +677,7 @@ function UsagePanel({ api }: { api: AgentSettingsApiClient }) {
         onClick={() => selectTab(tab.id)}>{tab.label}</button>)}
     </div>
 
-    {loading && <div className="mt-3"><Callout tone="warn" icon="loader-circle">Node와 Provider 계측을 조회하고 있습니다.</Callout></div>}
+    {loading && <div className="mt-3"><Callout tone="warn" icon="loader-circle">선택한 계측 데이터를 조회하고 있습니다.</Callout></div>}
 
     {!loading && activeTab === 'node' && observations && <section className={`${panel} mt-3`} aria-label="Node 계측 결과">
       <PanelTitle title="Node 계측"><Badge tone={nodeAvailability?.tone ?? 'idle'}>{nodeAvailability?.label ?? '관측 대기'}</Badge></PanelTitle>
