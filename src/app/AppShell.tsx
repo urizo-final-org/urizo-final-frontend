@@ -134,7 +134,7 @@ function AuthenticatedAdmin({ session, theme, onToggleTheme, onRefresh, onExpire
   const historyApi = useMemo(() => new HistoryApi(session.sessionToken, lifecycle.refreshed, lifecycle.expired), [session.sessionToken, lifecycle])
   const profileApi = useMemo(() => new ProfileVersionApi(session.sessionToken, lifecycle.refreshed, lifecycle.expired), [session.sessionToken, lifecycle])
   const siteSettingsApi = useMemo(() => new CmsSiteSettingsApi(session.sessionToken, lifecycle.refreshed, lifecycle.expired), [session.sessionToken, lifecycle])
-  const naturalCmsApi = useMemo(() => new NaturalCmsApi(session.sessionToken, lifecycle.refreshed, lifecycle.expired), [session.sessionToken, lifecycle])
+  const naturalCmsApi = useMemo(() => new NaturalCmsApi(session.sessionToken, lifecycle.refreshed, lifecycle.expired, session.actor.actorId), [session.sessionToken, lifecycle, session.actor.actorId])
   const cmsGuardrailApi = useMemo(() => new NaturalCmsGuardrailApi(session.sessionToken, lifecycle.refreshed, lifecycle.expired), [session.sessionToken, lifecycle])
   const codingApi = useMemo(() => new CodingConsoleApi(session.sessionToken, lifecycle.refreshed, lifecycle.expired), [session.sessionToken, lifecycle])
   const knowledgeApi = useMemo(() => new KnowledgeAdminApi(session.sessionToken, lifecycle.refreshed, lifecycle.expired), [session.sessionToken, lifecycle])

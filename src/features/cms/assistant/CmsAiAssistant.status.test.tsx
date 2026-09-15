@@ -17,6 +17,7 @@ it.each([['menus', 'MENU'], ['contents', 'CONTENT'], ['templates', 'TEMPLATE'], 
       activeProfileVersionId: vi.fn(() => new Promise<string>(resolve => { releaseProfile = resolve })),
       createJob: vi.fn().mockResolvedValue(pending), job: vi.fn().mockResolvedValue(pending),
       decide: vi.fn(() => new Promise<NaturalCmsJob>(resolve => { releaseDecision = resolve })),
+      records: vi.fn().mockResolvedValue([]),
     }
     const view = render(<CmsAiAssistant route={route} target={{ type, id: '1', label: '선택 대상', fields: {} }}
       candidates={[]} menus={[]} onTarget={vi.fn()} api={api as unknown as NaturalCmsApi}

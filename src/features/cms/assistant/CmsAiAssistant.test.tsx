@@ -6,8 +6,9 @@ import type { NaturalCmsApi } from './api'
 it.each(['menus', 'contents', 'boards', 'templates'] as const)(
   '%s provides a larger resizable request input without submitting while typing', (route) => {
     const createJob = vi.fn()
+    const records = vi.fn().mockResolvedValue([])
     render(<CmsAiAssistant route={route} target={null} candidates={[]} menus={[]}
-      onTarget={vi.fn()} api={{ createJob } as unknown as NaturalCmsApi}
+      onTarget={vi.fn()} api={{ createJob, records } as unknown as NaturalCmsApi}
       collapsed={false} onToggle={vi.fn()} />)
     const input = screen.getByRole('textbox', { name: '자연어 요청' })
     expect(input).toHaveAttribute('rows', '10')

@@ -49,6 +49,41 @@ export interface NaturalCmsRefusal {
 
 type ProfileVersionSummary = { profileVersionId: string; profileKey: string; status: string }
 
+/**
+ * 패널에 남길 지난 요청 한 줄.
+ *
+ * 거버넌스 실행 이력을 그대로 쓴다. 패널이 따로 저장하지 않으므로 새로고침해도 남고,
+ * 두 곳이 어긋날 일도 없다.
+ */
+export interface NaturalCmsRecord {
+  jobId: string
+  /** Job 상태 원본. 화면이 대기·응답 없음·승인·반려로 옮겨 부른다. */
+  status: string
+  requestText: string
+  targetId: string
+  updatedAt: string
+}
+
+/** 거버넌스 이력 한 줄. 자연어 CMS 외 다른 AI Job도 같은 모양으로 온다. */
+type HistoryEntry = {
+  domain: string
+  kind: string
+  title: string
+  targetType: string
+  targetId: string
+  jobId: string | null
+  status: string
+  actorId: string | null
+  updatedAt: string
+}
+
+/**
+ * 한 번에 받아올 이력 수.
+ *
+ * 자연어 것만 남기고 다시 자르므로, 보여줄 개수보다 넉넉히 받아야 다섯 칸이 비지 않는다.
+ */
+const HISTORY_FETCH_LIMIT = 50
+
 async function responseBody<T>(response: Response): Promise<T> {
   if (!response.ok) {
     const body = await response.json().catch(() => ({})) as {
@@ -72,6 +107,8 @@ export class NaturalCmsApi {
     private token: string,
     private readonly onRefreshed: (session: AdminSession) => void,
     private readonly onExpired: () => void,
+    /** 기록을 내 요청만으로 거르는 데 쓴다. 서버에는 작성자 필터가 없다. */
+    private readonly actorId?: string,
   ) {}
 
   private async request<T>(path: string, init: RequestInit = {}): Promise<T> {
@@ -116,6 +153,38 @@ export class NaturalCmsApi {
   refusal = (jobId: string) =>
     this.request<NaturalCmsRefusal>(
       `/api/natural-cms/jobs/${encodeURIComponent(jobId)}/refusal`)
+
+  /**
+   * 이 화면에서 내가 보낸 지난 요청.
+   *
+   * 이력 API는 자연어 CMS 말고 다른 AI Job도 함께 돌려주고 작성자 필터가 없다. 그래서
+   * 걸러낸 뒤에 자른다. 순서를 바꾸면 남의 요청이 자리를 차지해 내 것이 밀려난다.
+   */
+  records = async (targetType: NaturalCmsResourceType, limit: number) => {
+    const page = await this.request<{ items: HistoryEntry[] }>(
+      `/api/admin/governance/runs?category=AI&limit=${HISTORY_FETCH_LIMIT}`)
+    return page.items
+      .filter((entry) => entry.domain === 'NATURAL_CMS'
+        && entry.kind === 'NATURAL_CMS_JOB'
+        && entry.targetType === targetType
+        && entry.jobId !== null
+        && (this.actorId === undefined || entry.actorId === this.actorId))
+      .slice(0, limit)
+      .map((entry): NaturalCmsRecord => ({
+        jobId: entry.jobId as string,
+        status: entry.status,
+        requestText: entry.title,
+        targetId: entry.targetId,
+        updatedAt: entry.updatedAt,
+      }))
+  }
+
+  /** 끝나지 않은 Job을 사유와 함께 닫는다. `AI05-021`이 만든 경로다. */
+  cancel = (jobId: string, reason: string) =>
+    this.request<NaturalCmsJob>(`/api/natural-cms/jobs/${encodeURIComponent(jobId)}/cancel`, {
+      method: 'POST',
+      body: JSON.stringify({ schemaVersion: SCHEMA_VERSION, reason }),
+    })
 
   decide = (jobId: string, value: {
     previewId: string
