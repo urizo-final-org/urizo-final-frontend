@@ -206,6 +206,34 @@ function profileApi(overrides: Partial<AgentSettingsApiClient> = {}): AgentSetti
   }
 }
 
+test('input optimization defaults off and saves independent frozen node options', async () => {
+  const create = vi.fn().mockResolvedValue({ ...activeVersion, profileVersionId: 'version-3', profileVersion: 3, status: 'DRAFT' })
+  const { unmount } = render(<AgentSettingsWorkspace api={profileApi({ create })} />)
+  fireEvent.click(await screen.findByLabelText('code Node'))
+  expect(screen.getByLabelText('RTK 검색 결과 압축')).not.toBeChecked()
+  expect(screen.getByLabelText('작은 도구 결과 추가 보존')).not.toBeChecked()
+  fireEvent.click(screen.getByLabelText('RTK 검색 결과 압축'))
+  fireEvent.click(screen.getByLabelText('작은 도구 결과 추가 보존'))
+  fireEvent.click(screen.getByLabelText('review Node'))
+  expect(screen.getByLabelText('RTK 검색 결과 압축')).not.toBeChecked()
+  expect(screen.queryByLabelText('작은 도구 결과 추가 보존')).not.toBeInTheDocument()
+  fireEvent.click(screen.getByLabelText('RTK 검색 결과 압축'))
+  fireEvent.click(screen.getByLabelText('analyze Node'))
+  expect(screen.queryByLabelText('RTK 검색 결과 압축')).not.toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: '새 DRAFT 저장' }))
+  fireEvent.click(within(screen.getByRole('dialog', { name: '새 DRAFT 저장' })).getByRole('button', { name: '저장하기' }))
+  await waitFor(() => expect(create).toHaveBeenCalled())
+  const saved = create.mock.calls[0][1] as ProfileVersion['snapshot']
+  expect(saved.nodes.find((node) => node.id === 'code')?.config).toEqual({ rtkSearchEnabled: true, retainSmallToolResults: true })
+  expect(saved.nodes.find((node) => node.id === 'review')?.config).toEqual({ rtkSearchEnabled: true })
+  expect(activeVersion.snapshot.nodes.find((node) => node.id === 'code')?.config).toEqual({})
+  unmount()
+  render(<AgentSettingsWorkspace api={profileApi({ list: vi.fn().mockResolvedValue([{ ...activeVersion, snapshot: { ...activeVersion.snapshot, nodes: saved.nodes } }]) })} />)
+  fireEvent.click(await screen.findByLabelText('code Node'))
+  expect(screen.getByLabelText('RTK 검색 결과 압축')).toBeChecked()
+  expect(screen.getByLabelText('작은 도구 결과 추가 보존')).toBeChecked()
+})
+
 test('incoming monitoring navigation selects its tab and returning to the plain route restores the default tab', async () => {
   const api = profileApi({ getMonitoringJobSnapshot: vi.fn().mockRejectedValue(new Error('Job unavailable')) })
   const view = render(<AgentSettingsWorkspace api={api} openMonitoring monitoringJobId="linked-job" />)
@@ -343,6 +371,7 @@ test('uses one UTC range for Node and Provider telemetry and preserves nullable 
       id: 'model-observation', traceId: 'otel-trace', parentObservationId: 'node-observation', type: 'GENERATION', name: 'axms.model',
       level: 'DEFAULT', environment: 'local', startTime: '2026-09-06T00:00:00Z', endTime: '2026-09-06T00:00:00.100Z',
       model: 'gpt-5.6-sol', inputTokens: 120, outputTokens: null, latencyMs: 100,
+      cachedInputTokens: 96, uncachedInputTokens: 24, cacheStatus: 'REPORTED',
       metadata: {
         jobId: 'job-1', traceId: 'business-trace', profileVersionId: 'version-2', nodeId: 'code',
         nodeType: 'agent', nodeStatus: null, attempt: 1, provider: 'OPENAI', model: 'gpt-5.6-sol',
@@ -371,7 +400,35 @@ test('uses one UTC range for Node and Provider telemetry and preserves nullable 
   expect(provider).toHaveTextContent('OPENAI')
   expect(provider).toHaveTextContent('job-1')
   expect(provider).toHaveTextContent('otel-trace')
+  const call = within(provider).getByText('otel-trace').closest('tr')!
+  expect(within(call).getByText('96')).toBeInTheDocument()
+  expect(within(call).getByText('24')).toBeInTheDocument()
+  expect(within(call).getByText('120 / 제공되지 않음')).toBeInTheDocument()
   expect(within(provider).getAllByText('제공되지 않음').length).toBeGreaterThan(0)
+})
+
+test('cache evidence distinguishes reported zero from absent and unsupported counters', async () => {
+  const getObservations = vi.fn().mockImplementation((from, to) => Promise.resolve({
+    status: 'AVAILABLE', errorCode: null, from, to, environment: 'local', observations:
+      ['REPORTED', 'NOT_REPORTED', 'UNSUPPORTED_OR_UNKNOWN'].map((cacheStatus, index) => ({
+        id: `cache-${index}`, traceId: `cache-trace-${index}`, parentObservationId: null,
+        type: 'GENERATION', name: 'axms.model', level: 'DEFAULT', environment: 'local',
+        startTime: '2026-09-06T00:00:00Z', endTime: null, model: 'test-model',
+        inputTokens: 120, outputTokens: null, latencyMs: null, cacheStatus,
+        cachedInputTokens: index === 0 ? 0 : null, uncachedInputTokens: index === 0 ? 120 : null,
+        metadata: { provider: index === 2 ? 'GOOGLE_GENAI' : 'OPENAI', jobId: 'job-1', nodeId: 'code' },
+      })),
+  }))
+  render(<AgentSettingsWorkspace api={profileApi({ getObservations })} />)
+  fireEvent.click(screen.getByRole('tab', { name: /사용량·평가/ }))
+  fireEvent.click(await screen.findByRole('tab', { name: 'Provider 계측' }))
+  const zero = (await screen.findByText('cache-trace-0')).closest('tr')!
+  expect(within(zero).getByText('0')).toBeInTheDocument()
+  const missing = screen.getByText('cache-trace-1').closest('tr')!
+  expect(within(missing).getAllByText('미제공')).toHaveLength(2)
+  expect(within(missing).queryByText('0')).not.toBeInTheDocument()
+  const unsupported = screen.getByText('cache-trace-2').closest('tr')!
+  expect(within(unsupported).getAllByText('미지원·확인 불가')).toHaveLength(2)
 })
 
 test('searches full Job IDs on the server and keeps conditions while paging then resets on changes', async () => {

@@ -1677,6 +1677,19 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient & 
             </fieldset>
           </div>}
 
+          {(selected.handlerKey === 'coding.code' || selected.handlerKey === 'coding.review') && <section className="mt-3 border-t border-row-line pt-3" aria-label="모델 입력 최적화">
+            <b className="text-[0.71875rem] font-semibold text-body">모델 입력 최적화</b>
+            <label className="mt-2 flex items-start gap-2 text-xs">
+              <input type="checkbox" aria-label="RTK 검색 결과 압축" checked={selected.config.rtkSearchEnabled === true} disabled={loading || saving || !supported} onChange={(event) => updateSelectedConfig({ rtkSearchEnabled: event.target.checked })} />
+              <span>RTK 검색 결과 압축<small className="mt-1 block text-muted-2">큰 검색 결과를 압축합니다. 정보를 보존할 수 없으면 원문을 사용합니다.</small></span>
+            </label>
+            {selected.handlerKey === 'coding.code' && <label className="mt-2 flex items-start gap-2 text-xs">
+              <input type="checkbox" aria-label="작은 도구 결과 추가 보존" checked={selected.config.retainSmallToolResults === true} disabled={loading || saving || !supported} onChange={(event) => updateSelectedConfig({ retainSmallToolResults: event.target.checked })} />
+              <span>작은 도구 결과 추가 보존<small className="mt-1 block text-muted-2">이전 결과의 재조회를 줄이기 위한 설정입니다. 입력량이 늘어날 수 있으며, Provider 자동 캐시 설정과는 별개입니다.</small></span>
+            </label>}
+            <p className="mt-2 text-xs text-muted-2">새 버전을 활성화한 뒤 시작하는 Job부터 적용됩니다. 비용 절감은 실제 사용량으로 확인하세요.</p>
+          </section>}
+
           {Object.keys(selectedToolDefaults).length > 0 && <section className="mt-3 border-t border-row-line pt-3" aria-label="선택 Node MCP Tool binding">
             <b className="text-[0.71875rem] font-semibold text-body">MCP Tool binding</b>
             <p className="mt-1 text-[0.625rem] leading-4 text-muted-2">연결은 Snapshot Edge가 아닙니다. MODEL_OPTIONAL만 이 Node에서 연결하거나 해제할 수 있습니다.</p>

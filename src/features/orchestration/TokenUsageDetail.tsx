@@ -69,7 +69,7 @@ export default function TokenUsageDetail({ data, point, jobId, getMetrics, cache
         <b className="block break-all font-mono">{row.model ?? '모델 미제공'}</b>
         <dl className="mt-3 grid grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)] gap-x-3 gap-y-2 break-words text-xs">
           <dt>호출 수</dt><dd>{shown(row.observationCount)}</dd>
-          <dt>입력 / 출력 Token</dt><dd>{shown(row.inputTokens)} / {shown(row.outputTokens)}</dd>
+          <dt>전체 입력 / 출력 Token</dt><dd>{shown(row.inputTokens)} / {shown(row.outputTokens)}</dd>
           <dt>전체 Token</dt><dd>{shown(row.totalTokens)}</dd>
           <dt>비용 (Langfuse)</dt><dd>{shown(row.totalCost)}</dd>
           <dt>P95 지연 (ms)</dt><dd>{shown(row.p95LatencyMs)}</dd>

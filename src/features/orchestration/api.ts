@@ -194,6 +194,10 @@ export interface ObservabilityRow {
   outputTokens: number | null
   latencyMs: number | null
   metadata: ObservabilityMetadata
+  cachedInputTokens?: number | null
+  uncachedInputTokens?: number | null
+  cacheStatus?: 'REPORTED' | 'NOT_REPORTED' | 'UNSUPPORTED_OR_UNKNOWN'
+
 }
 
 export interface ObservabilityResponse {

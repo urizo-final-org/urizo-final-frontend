@@ -113,6 +113,7 @@ export default function IntegratedObservabilityDashboard({ api, query, onDetail,
         {nodes.loadedAt && <p className="px-4 pb-3 text-[0.6875rem] text-muted-2">조회 완료 UTC {nodes.loadedAt}</p>}
       </section>
       <section className={panel} aria-label="Provider 계측 요약">
+        <p className="mb-2 text-xs text-muted-2">입력은 캐시를 포함한 전체 사용량입니다. 캐시 입력은 Provider 상세의 호출별 관측에서 확인하세요.</p>
         <PanelTitle title="Provider 계측 요약"><button type="button" className={secondaryButton} onClick={() => onDetail('provider')}>Provider 상세 보기</button></PanelTitle>
         <p className="px-4 pt-3 text-xs leading-5 text-muted-2">전체 조회 기간의 모델별 호출·토큰·비용 · 비용순 상위 5개 모델만 표시합니다. 전체 모델 합계가 아닙니다.</p>
         <State result={providers} count={providerRows.length}>
