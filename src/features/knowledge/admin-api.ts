@@ -14,6 +14,7 @@ import {
   type KnowledgeVersion,
   type KnowledgeVersionList,
   type Project,
+  type TourDiagnosis,
 } from './admin-types'
 
 /**
@@ -121,10 +122,25 @@ export class KnowledgeAdminApi {
     `/api/agent-jobs/${encodeURIComponent(jobId)}`,
   )
 
-  startBuild = (knowledgeBaseId: string, connectorVersionId: string, label?: string) =>
+  /**
+   * @param connectorVersionId BASE 원천 — 문서 집합을 만든다. 여기 없는 문서는 어디에도 없다.
+   * @param overlayConnectorVersionIds 덧붙일 원천(최대 4). BASE가 만든 문서에 정보를 더한다.
+   *     축제 행사일처럼 목록 API가 주지 않는 값이 이 경로로 들어온다. 계약상 선택 항목이라
+   *     비었으면 아예 보내지 않는다 — 빈 배열을 보내도 같지만 요청이 전과 똑같아야 안전하다.
+   */
+  startBuild = (
+    knowledgeBaseId: string, connectorVersionId: string, label?: string,
+    overlayConnectorVersionIds: string[] = [],
+  ) =>
     this.request<{ jobId: string; status: string; statusUrl: string }>(
       `/api/knowledge-bases/${encodeURIComponent(knowledgeBaseId)}/versions`,
-      { method: 'POST', body: JSON.stringify({ schemaVersion: ADMIN_SCHEMA_VERSION, connectorVersionId, label }) },
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          schemaVersion: ADMIN_SCHEMA_VERSION, connectorVersionId, label,
+          ...(overlayConnectorVersionIds.length > 0 ? { overlayConnectorVersionIds } : {}),
+        }),
+      },
     )
 
   /**
@@ -223,6 +239,24 @@ export class KnowledgeAdminApi {
       method: 'POST',
       body: JSON.stringify({ schemaVersion: ADMIN_SCHEMA_VERSION, name, knowledgeBaseId }),
     })
+
+  /**
+   * 품질 진단 에이전트(AI02-027). **로컬 전용 통로다** — `/internal/dev`는 루프백과 CSRF로
+   * 막혀 있고 `dev & local-full` 프로필에서만 산다. 공개 계약이 아니므로 다른 환경에서는
+   * 404가 돌아오고, 화면은 그 404를 "이 환경에는 없는 기능"으로 읽는다.
+   *
+   * <p>CSRF 토큰은 같은 통로의 GET에서 받는다(provider-credentials 화면과 같은 방식).
+   * 진단 자체가 모델을 여러 번 부르므로 30초 안팎이 걸린다 — 부르는 쪽이 기다림을 설계해야 한다.
+   */
+  diagnoseTourVersion = async (knowledgeBaseId: string, knowledgeVersionId: string) => {
+    const { csrfToken } = await this.request<{ csrfToken: string }>(
+      `/internal/dev/evaluation-sets/${encodeURIComponent(knowledgeBaseId)}`,
+    )
+    return this.request<TourDiagnosis>(
+      `/internal/dev/tour-diagnosis/${encodeURIComponent(knowledgeVersionId)}`,
+      { method: 'POST', headers: { 'X-AXMS-CSRF': csrfToken }, body: '{}' },
+    )
+  }
 }
 
 /** 제품 경로는 `{ traceId, error: { code, message, retryable, retryAfterMs } }` 봉투를 쓴다. */

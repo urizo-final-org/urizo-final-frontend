@@ -32,8 +32,11 @@ import type {
  * 빌드가 쓸 커넥터를 고르는 것도 이번 범위가 아니다 — 기존 빌드 동작을 바꾸지 않는다.
  */
 
-/** 쓰기 4종과 같은 문장. 역할로 미리 판별해 눌러서 403을 받지 않는다. */
-const WRITE_DENIED = 'SUPER_ADMIN 권한이 필요합니다. 최고 관리자에게 요청하세요.'
+/**
+ * 쓰기 4종과 같은 문장. 역할로 미리 판별해 눌러서 403을 받지 않는다.
+ * 역할 코드가 아니라 화면의 다른 문구와 같은 말("최고 관리자")로 부른다.
+ */
+const WRITE_DENIED = '최고 관리자의 권한이 필요합니다. 아래 「갱신 요청」에 남겨 주세요.'
 
 /**
  * 쓸 수 있는 참조는 두 갈래뿐이다. **계약 정규식(`^[A-Za-z][A-Za-z0-9+.-]*://`)보다 좁게 막는다.**
@@ -272,7 +275,7 @@ export function buildCreateRequest(form: ConnectorForm): CreateConnectorRequest 
   }
 }
 
-export function ConnectorPanel({ api, projectId, mayWrite, onFirstBuild }: {
+export function ConnectorPanel({ api, projectId, mayWrite, onFirstBuild, onConnectors }: {
   api: KnowledgeAdminApi
   /** 대상 프로젝트가 정해지기 전에는 목록을 읽을 곳이 없다. */
   projectId: string | null
@@ -283,6 +286,11 @@ export function ConnectorPanel({ api, projectId, mayWrite, onFirstBuild }: {
    * 확인창과 실행은 `RagAdminPanel`이 자기 기계로 처리한다.
    */
   onFirstBuild?: (connector: Connector) => void
+  /**
+   * 목록을 읽을 때마다 그대로 올려 보낸다(AI02-027). 빌드 확인창이 "어느 자료를 모을지"를
+   * 물으려면 같은 목록이 필요한데, 두 화면이 각자 불러오면 한쪽이 낡는다.
+   */
+  onConnectors?: (connectors: Connector[]) => void
 }) {
   const [connectors, setConnectors] = useState<Connector[] | null>(null)
   // 실패를 null로 표현하면 "불러오는 중…"과 구분이 안 돼 실패가 로딩으로 위장한다.
@@ -316,12 +324,13 @@ export function ConnectorPanel({ api, projectId, mayWrite, onFirstBuild }: {
     try {
       const list = await api.listConnectors(projectId)
       if (alive.current) { setConnectors(list.items ?? []); setListFailed(false) }
+      onConnectors?.(list.items ?? [])
     }
     catch {
       // 커넥터 목록 하나 때문에 RAG 화면 전체가 오류로 덮이면 안 된다. 패널은 세워 둔다.
       if (alive.current) setListFailed(true)
     }
-  }, [api, projectId])
+  }, [api, projectId, onConnectors])
 
   useEffect(() => { void load() }, [load])
 

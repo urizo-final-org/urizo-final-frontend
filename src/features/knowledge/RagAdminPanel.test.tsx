@@ -37,25 +37,46 @@ function api(overrides: Partial<Record<keyof KnowledgeAdminApi, unknown>> = {}) 
   } as unknown as KnowledgeAdminApi
 }
 
-// 스케줄러가 남긴 변경 요약이 있으면 갱신 필요 콜아웃이 뜨고, 요청 패널로 안내한다(AI02-022).
-test('a stored source change summary raises the refresh-needed callout', async () => {
-  const changed = {
-    ...base,
-    sourceChangeSummary: {
-      checkedAt: '2026-09-13T09:00:00.000Z', comparedVersion: 8,
-      added: 3, modified: 5, missing: 1,
-    },
-  }
+const changed = {
+  ...base,
+  sourceChangeSummary: {
+    checkedAt: '2026-09-13T09:00:00.000Z', comparedVersion: 8,
+    added: 3, modified: 5, missing: 1,
+  },
+}
+
+function showChanged(role: 'SUPER_ADMIN' | 'GENERAL_ADMIN') {
   show(<RagAdminPanel api={api({
     resolveTarget: vi.fn().mockResolvedValue({
       kind: 'ready', projectId: 'p-1', knowledgeBaseId: 'kb-1', name: '관광 지식 베이스',
       projects: [project], project, bases: [changed],
     }),
-  })} role="GENERAL_ADMIN" />)
+  })} role={role} />)
+}
 
-  expect(await screen.findByText(/원천 데이터 변경 감지/)).toBeInTheDocument()
-  expect(screen.getByText(/신규 3 · 수정 5 · 소멸 1건/)).toBeInTheDocument()
-  expect(screen.getByText(/RAG 갱신이 필요합니다/)).toBeInTheDocument()
+// 일반 관리자는 볼 수만 있으므로 요청 패널로 안내한다(AI02-022).
+test('a general admin is pointed at the request panel', async () => {
+  showChanged('GENERAL_ADMIN')
+
+  expect(await screen.findByText(/원천 데이터가 바뀌었습니다/)).toBeInTheDocument()
+  expect(screen.getByText('3')).toBeInTheDocument()
+  expect(screen.getByText(/아래 「갱신 요청」에 남겨 주세요/)).toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: '지금 새 자료 만들기' })).not.toBeInTheDocument()
+})
+
+/**
+ * 최고 관리자는 알림을 본 자리에서 바로 빌드한다(AI02-027). 알림과 조치가 같은 사람 몫인데
+ * 다른 패널로 보내면 읽고 나서 할 일을 한 번 더 찾아야 한다.
+ */
+test('a super admin gets the build action inside the alert', async () => {
+  showChanged('SUPER_ADMIN')
+
+  const build = await screen.findByRole('button', { name: '지금 새 자료 만들기' })
+  expect(build).toBeEnabled()
+  expect(screen.queryByText(/아래 「갱신 요청」에 남겨 주세요/)).not.toBeInTheDocument()
+
+  fireEvent.click(build)
+  expect(await screen.findByText('만들기 시작')).toBeInTheDocument()
 })
 
 // 0건 요약은 "점검했고 이상 없음"이다 — 알림으로 띄우면 늑대 소년이 된다.
@@ -75,7 +96,7 @@ test('an all-zero change summary raises nothing', async () => {
   })} role="GENERAL_ADMIN" />)
 
   await screen.findByText('관광 지식 베이스')
-  expect(screen.queryByText(/원천 데이터 변경 감지/)).not.toBeInTheDocument()
+  expect(screen.queryByText(/원천 데이터가 바뀌었습니다/)).not.toBeInTheDocument()
 })
 
 /**
@@ -140,7 +161,9 @@ test('a general admin sees the screen but every write button is already disabled
   // 눌러서 403을 받는 게 아니라 세션 역할로 미리 판별한다. 403은 방어선이지 UI가 아니다.
   expect(screen.getByRole('button', { name: '새 자료 만들기' })).toBeDisabled()
   expect(screen.getByRole('button', { name: '이전 버전 롤백' })).toBeDisabled()
-  expect(screen.getByText(/SUPER_ADMIN 권한이 필요합니다/)).toBeInTheDocument()
+  expect(screen.getByText(/최고 관리자의 권한이 필요합니다/)).toBeInTheDocument()
+  // 역할 코드는 화면에 쓰지 않는다 — 읽는 사람은 관리자이지 개발자가 아니다.
+  expect(screen.queryByText(/SUPER_ADMIN/)).not.toBeInTheDocument()
 })
 
 test('entering the screen starts polling only when a build is already running', async () => {
@@ -411,7 +434,16 @@ test('the top rollback targets the most recently activated archived version', as
   await waitFor(() => expect(rollback).toHaveBeenCalledWith('kb-1', 'kv-8'))
 })
 
-test('a build reuses the newest version connector and warns it will not auto-activate', async () => {
+function connector(id: string, name: string, status = 'ACTIVE') {
+  return {
+    schemaVersion: '1.0', traceId: 't', projectId: 'p-1', connectorId: `c-${id}`,
+    connectorVersionId: id, name, status,
+    configDigest: `sha256:${'a'.repeat(64)}`, createdAt: '2026-09-12T03:00:00.000Z',
+  }
+}
+
+/** 고르지 않고 그냥 누르면 예전과 같아야 한다 — 최신 버전이 쓴 원천, 덧붙임 없음. */
+test('a build defaults to the newest version connector and warns it will not auto-activate', async () => {
   const startBuild = vi.fn().mockResolvedValue({})
   show(<RagAdminPanel api={api({
     listVersions: vi.fn().mockResolvedValue({ items: [version({ connectorVersionId: 'cv-9' })] }),
@@ -421,7 +453,57 @@ test('a build reuses the newest version connector and warns it will not auto-act
   fireEvent.click(await screen.findByRole('button', { name: '새 자료 만들기' }))
   expect(screen.getByText(/자동 활성화되지 않고 승인 대기 상태로 멈춥니다/)).toBeInTheDocument()
   fireEvent.click(screen.getByRole('button', { name: '만들기 시작' }))
-  await waitFor(() => expect(startBuild).toHaveBeenCalledWith('kb-1', 'cv-9', expect.any(String)))
+  await waitFor(() => expect(startBuild).toHaveBeenCalledWith('kb-1', 'cv-9', expect.any(String), []))
+})
+
+/**
+ * 무엇을 모을지 사람이 고른다(AI02-027). 예전에는 최신 버전의 원천을 말없이 재사용해,
+ * 지금 서비스 중인 버전과 다른 자료가 모여도 화면 어디에도 드러나지 않았다.
+ */
+test('a build collects the sources the admin picks', async () => {
+  const startBuild = vi.fn().mockResolvedValue({})
+  show(<RagAdminPanel api={api({
+    listVersions: vi.fn().mockResolvedValue({ items: [version({ connectorVersionId: 'cv-basic' })] }),
+    listConnectors: vi.fn().mockResolvedValue({
+      items: [
+        connector('cv-basic', 'TOUR_BASIC_ONLY'),
+        connector('cv-detail', 'TOUR_AREA_RECENT'),
+        connector('cv-festival', 'TOUR_FESTIVAL'),
+      ],
+    }),
+    startBuild,
+  })} role="SUPER_ADMIN" />)
+
+  fireEvent.click(await screen.findByRole('button', { name: '새 자료 만들기' }))
+
+  // 기준은 최신 버전이 쓴 것으로 미리 골라져 있다.
+  expect(await screen.findByRole('radio', { name: 'TOUR_BASIC_ONLY' })).toBeChecked()
+
+  fireEvent.click(screen.getByRole('radio', { name: 'TOUR_AREA_RECENT' }))
+  // 기준으로 고른 것은 덧붙임 목록에서 빠진다 — 같은 자료를 두 번 넣을 이유가 없다.
+  expect(screen.queryByRole('checkbox', { name: 'TOUR_AREA_RECENT' })).not.toBeInTheDocument()
+
+  fireEvent.click(screen.getByRole('checkbox', { name: 'TOUR_FESTIVAL' }))
+  fireEvent.click(screen.getByRole('button', { name: '만들기 시작' }))
+
+  await waitFor(() => expect(startBuild)
+    .toHaveBeenCalledWith('kb-1', 'cv-detail', expect.any(String), ['cv-festival']))
+})
+
+// 서버가 ACTIVE가 아닌 커넥터 버전을 거절한다. 고를 수 없어야 눌러서 409를 받지 않는다.
+test('only active sources can be picked', async () => {
+  show(<RagAdminPanel api={api({
+    listVersions: vi.fn().mockResolvedValue({ items: [version({ connectorVersionId: 'cv-basic' })] }),
+    listConnectors: vi.fn().mockResolvedValue({
+      items: [connector('cv-basic', 'TOUR_BASIC_ONLY'), connector('cv-old', 'TOUR_RETIRED', 'ARCHIVED')],
+    }),
+  })} role="SUPER_ADMIN" />)
+
+  fireEvent.click(await screen.findByRole('button', { name: '새 자료 만들기' }))
+  const dialog = within(await screen.findByRole('dialog'))
+  // 보관된 커넥터는 아래 출처 패널에는 남아 있다 — 고를 수 없어야 하는 곳은 이 창이다.
+  expect(await dialog.findByRole('radio', { name: 'TOUR_BASIC_ONLY' })).toBeInTheDocument()
+  expect(dialog.queryByText('TOUR_RETIRED')).not.toBeInTheDocument()
 })
 
 test('a general admin sees every write disabled and can open no dialog', async () => {
@@ -434,7 +516,7 @@ test('a general admin sees every write disabled and can open no dialog', async (
   })} role="GENERAL_ADMIN" />)
 
   // 쓰기 버튼 전부가 같은 안내를 단다 — 롤백 · 버전별 활성화 · Build 시작
-  const denied = await screen.findAllByTitle('SUPER_ADMIN 권한이 필요합니다. 최고 관리자에게 요청하세요.')
+  const denied = await screen.findAllByTitle('최고 관리자의 권한이 필요합니다. 아래 「갱신 요청」에 남겨 주세요.')
   expect(denied.length).toBeGreaterThan(1)
   denied.forEach((button) => expect(button).toBeDisabled())
   expect(screen.getByRole('button', { name: '새 자료 만들기' })).toBeDisabled()

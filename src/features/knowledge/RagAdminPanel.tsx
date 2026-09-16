@@ -7,6 +7,7 @@ import { Badge, Callout, PageHead, PanelTitle, panel, primaryButton, secondaryBu
 import { Icon } from '../../shared/ui/icons'
 import { ActivationRequests } from './ActivationRequests'
 import { ConnectorPanel } from './ConnectorPanel'
+import { TourDiagnosisPanel } from './TourDiagnosis'
 import { noHover } from './no-hover'
 import { KnowledgeAdminApi } from './admin-api'
 import type { BuildEvaluation, Connector, KnowledgeBase, KnowledgeTarget, KnowledgeVersion, KnowledgeVersionStatus, AgentJob, Project } from './admin-types'
@@ -39,8 +40,18 @@ const POLL_INTERVAL_MS = 5_000
  */
 const CLOCK_INTERVAL_MS = 1_000
 
-/** 쓰기 4종은 전부 SUPER_ADMIN 전용이다(`SecurityConfig:127-134`). */
-const WRITE_DENIED = 'SUPER_ADMIN 권한이 필요합니다. 최고 관리자에게 요청하세요.'
+/**
+ * 왜 못 누르는가. 쓰기 4종은 전부 SUPER_ADMIN 전용이다(`SecurityConfig:127-134`).
+ *
+ * <p>**역할 코드를 화면에 쓰지 않는다** — 읽는 사람은 관리자이지
+ * 개발자가 아니고, 화면의 다른 문구는 이미 "최고 관리자"라고 부른다.
+ *
+ * <p>무엇을 하면 되는지는 여기 넣지 않는다. 쓰는 자리마다 다음 행동이 다르고, 붙여 쓰면
+ * "최고 관리자의 권한이 필요합니다. 최고 관리자에게 요청하세요."처럼 같은 말이 겹친다.
+ */
+const WRITE_DENIED = '최고 관리자의 권한이 필요합니다.'
+/** 비활성 버튼 툴팁 — 이유에 갈 곳을 붙인다. */
+const WRITE_DENIED_HINT = `${WRITE_DENIED} 아래 「갱신 요청」에 남겨 주세요.`
 
 const STATUS_TONE: Record<KnowledgeVersionStatus, Tone> = {
   BUILD_REQUESTED: 'run', BUILDING: 'run', APPROVAL_PENDING: 'wait',
@@ -84,7 +95,28 @@ const NOT_SWITCHABLE: Partial<Record<KnowledgeVersionStatus, string>> = {
  */
 
 /** 확인 창 하나로 쓰기 3종을 받는다. 되돌리기 어려운 동작 앞에 사람 손을 한 번 더 둔다. */
-type Confirmation = { title: string; lines: string[]; label: string; run: () => Promise<unknown> }
+/**
+ * 확인창 한 건.
+ *
+ * <p>`sources`가 있으면 창이 "어느 자료를 모을지"를 먼저 묻고, 고른 것을 `run`에 넘긴다.
+ * 고르는 상태를 창이 들고 있는 이유는 취소하면 그대로 버려져야 하기 때문이다 —
+ * 패널에 두면 창을 닫았다 열어도 지난 선택이 남는다.
+ */
+type Confirmation = {
+  title: string
+  lines: string[]
+  label: string
+  run: (sources?: BuildSources) => Promise<unknown>
+  /**
+   * 있으면 창이 원천 선택을 보여준다. 목록은 여기 담지 않는다 — 창이 열리는 순간
+   * 커넥터 목록이 아직 안 왔을 수 있어, 그때 담으면 영영 빈 목록으로 굳는다.
+   */
+  sources?: { base: string }
+}
+
+/** BASE는 문서 집합을 만들고, OVERLAY는 그 문서에 정보를 덧붙인다(계약상 최대 4). */
+export type BuildSources = { base: string; overlays: string[] }
+const MAX_OVERLAYS = 4
 
 export function RagAdminPanel({ api, role }: { api: KnowledgeAdminApi; role: AdminRole }) {
   const [target, setTarget] = useState<KnowledgeTarget | null>(null)
@@ -97,6 +129,10 @@ export function RagAdminPanel({ api, role }: { api: KnowledgeAdminApi; role: Adm
   // 활성화·롤백이 곧 요청 처리다. 서버가 그때 열린 요청을 닫으므로 쓰기 성공 뒤
   // 요청 목록도 다시 읽어 사라지는 것을 보인다 — 버전 목록만 갱신하면 처리된 요청이 남아 보인다.
   const [requestsKey, setRequestsKey] = useState(0)
+  /** 진단 중인 버전(AI02-027). 한 번에 하나만 연다 — 30초짜리 조사를 여럿 띄울 이유가 없다. */
+  const [diagnosing, setDiagnosing] = useState<KnowledgeVersion | null>(null)
+  /** 빌드 확인창이 쓸 원천 목록. 아래 커넥터 패널이 읽은 것을 그대로 받는다. */
+  const [connectors, setConnectors] = useState<Connector[] | null>(null)
   const alive = useRef(true)
   // 선택은 URL에 둔다. 새로고침·링크 공유가 그대로 되고 전역 상태가 필요 없다.
   const [params, setParams] = useSearchParams()
@@ -205,11 +241,11 @@ export function RagAdminPanel({ api, role }: { api: KnowledgeAdminApi; role: Adm
   const previousActive = previousActiveOf(versions)
 
   /** 확인 창에서 승인했을 때만 실행한다. 성공하든 실패하든 목록을 다시 읽어 화면을 실제 상태에 맞춘다. */
-  const runConfirmed = useCallback(async () => {
+  const runConfirmed = useCallback(async (picked?: BuildSources) => {
     if (!confirmation || !knowledgeBaseId) return
     setBusy(true)
     try {
-      await confirmation.run()
+      await confirmation.run(picked)
       if (alive.current) setFailure(null)
     }
     catch (error) {
@@ -254,8 +290,17 @@ export function RagAdminPanel({ api, role }: { api: KnowledgeAdminApi; role: Adm
     })
   }, [api, knowledgeBaseId, previousActive, active])
 
+  /**
+   * 자료 만들기. **어느 자료를 모을지 사람이 고른다**(AI02-027).
+   *
+   * <p>예전에는 최신 버전이 쓴 원천을 말없이 재사용했다. 그런데 최신 버전이 지금 서비스
+   * 중인 버전과 다른 원천으로 만들어져 있으면, 관리자는 같은 자료를 다시 모은다고 믿고
+   * 눌렀는데 <b>다른 자료</b>가 모인다. 실측에서 이것이 품질을 90%에서 68%로 떨어뜨렸고,
+   * 화면 어디에도 그 사실이 드러나지 않았다.
+   *
+   * <p>기본값은 예전 동작 그대로다(최신 버전의 원천). 바꾸지 않고 누르면 전과 같다.
+   */
   const askBuild = useCallback(() => {
-    // 커넥터를 따로 고르지 않는다 — 최신 버전이 쓴 것을 그대로 재사용한다(같은 자료원 재수집).
     if (!knowledgeBaseId || !newest) return
     setConfirmation({
       title: '새 자료 만들기',
@@ -265,7 +310,13 @@ export function RagAdminPanel({ api, role }: { api: KnowledgeAdminApi; role: Adm
         '진행 중에는 이 화면에서 경과 시간을 볼 수 있습니다.',
       ],
       label: '만들기 시작',
-      run: () => api.startBuild(knowledgeBaseId, newest.connectorVersionId, `admin build ${new Date().toISOString().slice(0, 10)}`),
+      sources: { base: newest.connectorVersionId },
+      run: (picked) => api.startBuild(
+        knowledgeBaseId,
+        picked?.base ?? newest.connectorVersionId,
+        `admin build ${new Date().toISOString().slice(0, 10)}`,
+        picked?.overlays ?? [],
+      ),
     })
   }, [api, knowledgeBaseId, newest])
 
@@ -302,15 +353,33 @@ export function RagAdminPanel({ api, role }: { api: KnowledgeAdminApi; role: Adm
         className={tableButton}
         disabled={!canWrite || busy || newest == null || view != null}
         onClick={askBuild}
-        title={!mayWrite ? WRITE_DENIED : view != null ? '이미 만드는 중입니다.' : '검색에 쓸 자료를 새로 만듭니다 (약 8분).'}
+        title={!mayWrite ? WRITE_DENIED_HINT : view != null ? '이미 만드는 중입니다.' : '검색에 쓸 자료를 새로 만듭니다 (약 8분).'}
       >새 자료 만들기</button>
     </PageHead>
 
-    {/* 스케줄러 감지분(AI02-022). 활성 버전 기준 괴리라 갱신(새 버전 활성화) 전까지 남는다. */}
+    {/* 스케줄러 감지분(AI02-022). 활성 버전 기준 괴리라 갱신(새 버전 활성화) 전까지 남는다.
+        최고 관리자는 여기서 바로 만들 수 있다 — 알림을 본 사람과 조치할 수 있는 사람이
+        같은데 다른 패널로 보내면, 읽고 나서 할 일을 한 번 더 찾아야 한다(AI02-027). */}
     {changeSummary && <Callout tone="warn" icon="triangle-alert">
-      원천 데이터 변경 감지({new Date(changeSummary.checkedAt).toLocaleString('ko-KR')} 확인 · 활성 v{changeSummary.comparedVersion} 기준)
-      — 신규 {changeSummary.added} · 수정 {changeSummary.modified} · 소멸 {changeSummary.missing}건.
-      RAG 갱신이 필요합니다. 아래 「갱신 요청」에 남겨 주세요.
+      <span className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <span className="font-bold">원천 데이터가 바뀌었습니다</span>
+        <span className="flex items-center gap-2">
+          <ChangeCount label="신규" value={changeSummary.added} />
+          <ChangeCount label="수정" value={changeSummary.modified} />
+          <ChangeCount label="소멸" value={changeSummary.missing} />
+        </span>
+        <span className="text-[0.6875rem] opacity-80">
+          {new Date(changeSummary.checkedAt).toLocaleString('ko-KR')} 확인 · 활성 v{changeSummary.comparedVersion} 기준
+        </span>
+        {mayWrite
+          ? <button
+              className={tableButton}
+              disabled={busy || newest == null || view != null}
+              onClick={askBuild}
+              title={view != null ? '이미 만드는 중입니다.' : '바뀐 원천으로 검색 자료를 새로 만듭니다 (약 8분).'}
+            >지금 새 자료 만들기</button>
+          : <span>갱신은 최고 관리자가 합니다. 아래 「갱신 요청」에 남겨 주세요.</span>}
+      </span>
     </Callout>}
     {/* 이 문장은 원래 아무 데로도 가지 않았다. 이제 아래 요청 패널이 그 경로다. */}
     {!mayWrite && <Callout tone="warn" icon="lock">조회만 가능합니다. {WRITE_DENIED} 아래 「갱신 요청」에 남기면 그대로 전달됩니다.</Callout>}
@@ -339,6 +408,7 @@ export function RagAdminPanel({ api, role }: { api: KnowledgeAdminApi; role: Adm
         projectId={target?.kind === 'ready' ? target.projectId : null}
         mayWrite={mayWrite}
         onFirstBuild={canWrite && versions?.length === 0 && view == null ? askFirstBuild : undefined}
+        onConnectors={setConnectors}
       />
       <ActivationRequests
         api={api}
@@ -355,15 +425,104 @@ export function RagAdminPanel({ api, role }: { api: KnowledgeAdminApi; role: Adm
         canRollback={canWrite && previousActive != null}
         onSwitch={askSwitch}
         onRollback={askRollback}
+        onDiagnose={canWrite ? setDiagnosing : null}
+        diagnosing={diagnosing?.knowledgeVersionId ?? null}
       />
+      {diagnosing && knowledgeBaseId && <TourDiagnosisPanel
+        api={api}
+        knowledgeBaseId={knowledgeBaseId}
+        version={diagnosing}
+        onClose={() => setDiagnosing(null)}
+      />}
     </div>
     {confirmation && <ConfirmDialog
       confirmation={confirmation}
+      connectors={connectors}
       busy={busy}
       onCancel={() => { if (!busy) setConfirmation(null) }}
-      onConfirm={() => { void runConfirmed() }}
+      onConfirm={(picked) => { void runConfirmed(picked) }}
     />}
   </>
+}
+
+/**
+ * 스케줄러가 센 건수 한 칸. 0은 흐리게 둔다 — 셋 중 실제로 바뀐 것만 눈에 남는다.
+ */
+function ChangeCount({ label, value }: { label: string; value: number }) {
+  return <span className={`inline-flex items-baseline gap-1 ${value === 0 ? 'opacity-45' : ''}`}>
+    <b className="text-sm font-bold tabular-nums">{value}</b>
+    <span className="text-[0.6875rem]">{label}</span>
+  </span>
+}
+
+/**
+ * 무엇을 모을지 고르는 칸(AI02-027).
+ *
+ * <p>두 자리의 역할이 다르다. <b>기준 자료</b>는 문서 집합을 만든다 — 여기 없는 문서는
+ * 어디에도 없다. <b>추가 자료</b>는 그 문서에 정보를 덧붙인다(축제 행사일처럼 목록이
+ * 주지 않는 값). 그래서 기준은 하나만 고르고 추가는 여럿 고를 수 있다.
+ *
+ * <p>기준으로 고른 것은 추가 목록에서 뺀다 — 같은 자료를 두 번 넣을 이유가 없고,
+ * 서버도 중복을 무시한다.
+ */
+function SourcePicker({ connectors, base, overlays, disabled, onBase, onOverlays }: {
+  connectors: Connector[]
+  base: string
+  overlays: string[]
+  disabled: boolean
+  onBase: (id: string) => void
+  onOverlays: (ids: string[]) => void
+}) {
+  if (connectors.length === 0) {
+    return <p className="mt-3 text-[0.75rem] text-muted-3">쓸 수 있는 자료 출처가 없습니다.</p>
+  }
+  const extras = connectors.filter((item) => item.connectorVersionId !== base)
+  const chosen = overlays.filter((id) => id !== base)
+  const toggle = (id: string) => onOverlays(
+    chosen.includes(id) ? chosen.filter((kept) => kept !== id) : [...chosen, id])
+
+  return <div className="mt-3 flex flex-col gap-3 border-t border-line-soft pt-3">
+    <fieldset className="m-0 border-0 p-0">
+      <legend className="mb-1 p-0 text-[0.75rem] font-semibold text-ink">어느 자료를 모을까요?</legend>
+      <p className="m-0 mb-[0.375rem] text-[0.6875rem] text-muted-3">기준 자료가 문서 목록을 만듭니다.</p>
+      <div className="flex flex-col gap-[0.125rem]">
+        {connectors.map((item) => <label
+          key={item.connectorVersionId}
+          className="flex cursor-pointer items-center gap-2 rounded-[0.3125rem] px-1 py-[0.1875rem] text-[0.75rem] text-body hover:bg-sub"
+        >
+          <input
+            type="radio"
+            name="build-base-source"
+            checked={base === item.connectorVersionId}
+            disabled={disabled}
+            onChange={() => onBase(item.connectorVersionId)}
+          />
+          {item.name}
+        </label>)}
+      </div>
+    </fieldset>
+    {extras.length > 0 && <fieldset className="m-0 border-0 p-0">
+      <legend className="mb-1 p-0 text-[0.75rem] font-semibold text-ink">여기에 더 붙일 자료 (선택)</legend>
+      <p className="m-0 mb-[0.375rem] text-[0.6875rem] text-muted-3">
+        기준 자료가 모은 문서에 정보를 덧붙입니다. 최대 {MAX_OVERLAYS}개.
+      </p>
+      <div className="flex flex-col gap-[0.125rem]">
+        {extras.map((item) => <label
+          key={item.connectorVersionId}
+          className="flex cursor-pointer items-center gap-2 rounded-[0.3125rem] px-1 py-[0.1875rem] text-[0.75rem] text-body hover:bg-sub"
+        >
+          <input
+            type="checkbox"
+            checked={chosen.includes(item.connectorVersionId)}
+            disabled={disabled
+              || (!chosen.includes(item.connectorVersionId) && chosen.length >= MAX_OVERLAYS)}
+            onChange={() => toggle(item.connectorVersionId)}
+          />
+          {item.name}
+        </label>)}
+      </div>
+    </fieldset>}
+  </div>
 }
 
 /**
@@ -372,12 +531,21 @@ export function RagAdminPanel({ api, role }: { api: KnowledgeAdminApi; role: Adm
  * <p>건수(문서·청크)를 본문에 넣는 것이 핵심이다 — 빈 버전도 오류 없이 활성화되므로
  * (함정 2) 누르기 전에 사람이 눈으로 볼 마지막 지점이 여기다.
  */
-function ConfirmDialog({ confirmation, busy, onCancel, onConfirm }: {
+function ConfirmDialog({ confirmation, connectors, busy, onCancel, onConfirm }: {
   confirmation: Confirmation
+  /** 창이 열린 뒤에 도착할 수 있다. 그래서 스냅숏이 아니라 지금 값을 받는다. */
+  connectors: Connector[] | null
   busy: boolean
   onCancel: () => void
-  onConfirm: () => void
+  onConfirm: (picked?: BuildSources) => void
 }) {
+  const pick = confirmation.sources
+  // 활성 원천만 쓸 수 있다 — 서버가 ACTIVE가 아닌 커넥터 버전을 거절한다.
+  const usable = (connectors ?? []).filter((item) => item.status === 'ACTIVE')
+  const [base, setBase] = useState(pick?.base ?? '')
+  const [overlays, setOverlays] = useState<string[]>([])
+  const picked = pick ? { base, overlays: overlays.filter((id) => id !== base) } : undefined
+
   return <div
     className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
     role="dialog"
@@ -390,10 +558,22 @@ function ConfirmDialog({ confirmation, busy, onCancel, onConfirm }: {
         <ul className="mt-2 flex flex-col gap-1">
           {confirmation.lines.map((line) => <li key={line} className="text-[0.75rem] text-muted-2">{line}</li>)}
         </ul>
+        {pick && <SourcePicker
+          connectors={usable}
+          base={base}
+          overlays={overlays}
+          disabled={busy}
+          onBase={setBase}
+          onOverlays={setOverlays}
+        />}
       </div>
       <div className="flex justify-end gap-2 border-t border-line px-4 py-3">
         <button className={noHover(secondaryButton)} onClick={onCancel} disabled={busy}>취소</button>
-        <button className={tableButton} onClick={onConfirm} disabled={busy}>
+        <button
+          className={tableButton}
+          onClick={() => onConfirm(picked)}
+          disabled={busy || (pick != null && base === '')}
+        >
           {busy ? '처리 중…' : confirmation.label}
         </button>
       </div>
@@ -605,7 +785,7 @@ function previousActiveOf(versions: KnowledgeVersion[] | null): KnowledgeVersion
 }
 
 /** A5 버전 테이블. 쓰기 버튼은 역할로 미리 판별해 disabled로 둔다 — 눌러서 403을 받지 않는다. */
-function VersionTable({ versions, mayWrite, blocked, busy, canRollback, onSwitch, onRollback }: {
+function VersionTable({ versions, mayWrite, blocked, busy, canRollback, onSwitch, onRollback, onDiagnose, diagnosing }: {
   versions: KnowledgeVersion[] | null
   mayWrite: boolean
   blocked: boolean
@@ -613,11 +793,14 @@ function VersionTable({ versions, mayWrite, blocked, busy, canRollback, onSwitch
   canRollback: boolean
   onSwitch: (version: KnowledgeVersion) => void
   onRollback: () => void
+  /** 진단은 로컬 통로(AI02-027)라 쓰기 권한이 없으면 넘어오지 않는다. */
+  onDiagnose: ((version: KnowledgeVersion) => void) | null
+  diagnosing: string | null
 }) {
   const shown = operating(versions)
   const archivedCount = (versions?.length ?? 0) - (shown?.length ?? 0)
   // 전체 100%를 비율로 나눈다 — 지표에 1fr을 주면 남는 폭을 전부 먹어 텅 비어 보인다.
-  const columns = 'grid-cols-[10fr_15fr_15fr_35fr_15fr_10fr]'
+  const columns = 'grid-cols-[8fr_13fr_12fr_28fr_13fr_26fr]'
   return <section className={panel}>
     <PanelTitle
       title="RAG 버전"
@@ -627,11 +810,11 @@ function VersionTable({ versions, mayWrite, blocked, busy, canRollback, onSwitch
         className={tableButton}
         disabled={busy || !canRollback}
         onClick={onRollback}
-        title={!mayWrite ? WRITE_DENIED : canRollback ? '마지막으로 활성화됐던 버전으로 되돌립니다.' : '되돌릴 이전 활성 버전이 없습니다.'}
+        title={!mayWrite ? WRITE_DENIED_HINT : canRollback ? '마지막으로 활성화됐던 버전으로 되돌립니다.' : '되돌릴 이전 활성 버전이 없습니다.'}
       >이전 버전 롤백</button>
     </PanelTitle>
     <div className="overflow-x-auto">
-      <div className="min-w-[44rem]">
+      <div className="min-w-[50rem]">
         <div className={`${headRow} ${columns}`}>
           <span>버전</span><span>상태</span><span>문서</span><span>평가 결과</span><span>활성화</span><span className="text-right">동작</span>
         </div>
@@ -647,14 +830,21 @@ function VersionTable({ versions, mayWrite, blocked, busy, canRollback, onSwitch
           <span className="font-mono">{version.documentCount}건</span>
           <MetricsCell version={version} />
           <span className="font-mono text-[0.6875rem]">{version.activatedAt ? new Date(version.activatedAt).toLocaleDateString('ko-KR') : '—'}</span>
-          <span className="flex justify-end">
+          <span className="flex items-center justify-end gap-1.5 whitespace-nowrap">
+            {/* 점수가 있는 버전에만 붙인다 — 측정 전 버전은 설명할 점수가 없다. */}
+            {onDiagnose && version.evaluation && <button
+              className={tableButton}
+              disabled={diagnosing === version.knowledgeVersionId}
+              onClick={() => onDiagnose(version)}
+              title={`이 점수가 왜 나왔는지 에이전트가 조사합니다 (약 30초).`}
+            ><Icon name="search-check" size={12} />원인 분석</button>}
             {version.status === 'ACTIVE'
               ? <small className="text-[0.6875rem] text-ok-fg">현재 활성</small>
               : <button
                 className={tableButton}
                 disabled={busy || switchPath(version.status) == null}
                 onClick={() => onSwitch(version)}
-                title={!mayWrite ? WRITE_DENIED : NOT_SWITCHABLE[version.status] ?? `포털이 v${version.versionNumber} 기준으로 답하게 합니다.`}
+                title={!mayWrite ? WRITE_DENIED_HINT : NOT_SWITCHABLE[version.status] ?? `포털이 v${version.versionNumber} 기준으로 답하게 합니다.`}
               ><Icon name="repeat" size={12} />전환</button>}
           </span>
         </div>)}
