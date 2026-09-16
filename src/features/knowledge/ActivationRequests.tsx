@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { describeFailure } from '../../shared/api/error'
 import { Badge, Callout, PanelTitle, panel, smallButton, tableButton, textarea } from '../../shared/ui/primitives'
+import { Icon } from '../../shared/ui/icons'
 import { REFRESH_INTERVAL_MS } from './pending-approvals'
 import type { KnowledgeAdminApi } from './admin-api'
 import type { ActivationRequest, KnowledgeVersion } from './admin-types'
@@ -165,8 +166,10 @@ export function ActivationRequests({ api, knowledgeBaseId, mayWrite, versions, r
         <p className="m-0 text-xs text-muted-3">요청 목록을 불러오지 못했습니다.</p>
         <button className={noHover(smallButton)} onClick={() => { void load() }}>다시 시도</button>
       </div>}
-      {requests != null && !listFailed && open.length === 0 && <p className="m-0 px-4 py-[0.875rem] text-xs text-muted-3">
-        열린 요청이 없습니다.
+      {/* 빈 상태에 넓은 칸을 내주지 않는다 — 아무것도 없다는 사실이 화면에서 제일 큰 자리를
+          차지하면 정작 아래 버전 목록이 밀린다. 점선 한 줄로 줄인다. */}
+      {requests != null && !listFailed && open.length === 0 && <p className="m-0 mx-4 my-[0.4375rem] flex items-center justify-center gap-1.5 rounded-[0.3125rem] border border-dashed border-line px-3 py-[0.4375rem] text-[0.6875rem] text-muted-3">
+        <Icon name="check" size={12} className="shrink-0" />열린 요청이 없습니다.
       </p>}
       {open.map((request) => <div key={request.requestId} className="border-b border-row-line px-4 py-[0.625rem] text-xs text-body last:border-b-0">
         <div className="flex flex-wrap items-center gap-2">

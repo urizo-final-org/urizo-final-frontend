@@ -160,7 +160,7 @@ test('a general admin sees the screen but every write button is already disabled
   await screen.findByText('관광 지식 베이스')
   // 눌러서 403을 받는 게 아니라 세션 역할로 미리 판별한다. 403은 방어선이지 UI가 아니다.
   expect(screen.getByRole('button', { name: '새 자료 만들기' })).toBeDisabled()
-  expect(screen.getByRole('button', { name: '이전 버전 롤백' })).toBeDisabled()
+  expect(screen.getByRole('button', { name: '이전 버전으로 롤백' })).toBeDisabled()
   expect(screen.getByText(/최고 관리자의 권한이 필요합니다/)).toBeInTheDocument()
   // 역할 코드는 화면에 쓰지 않는다 — 읽는 사람은 관리자이지 개발자가 아니다.
   expect(screen.queryByText(/SUPER_ADMIN/)).not.toBeInTheDocument()
@@ -211,7 +211,9 @@ test('several knowledge bases offer a choice instead of picking one', async () =
   // 첫 번째를 조용히 고르면 잘못된 지식 베이스를 보고도 모른다. 사람이 고르게 한다.
   const field = await screen.findByLabelText('지식 베이스')
   expect(within(field).getAllByRole('option').map((o) => o.textContent)).toContain('다른 지식 베이스')
-  expect(screen.getByText(/자동으로 고르지 않습니다/)).toBeInTheDocument()
+  // 고르기 전에는 아래가 잠겨 있다는 것을 화면이 스스로 말한다 —
+  // 예전에는 "자동으로 고르지 않습니다"라는 시스템 사정만 적혀 있어 할 일이 안 보였다.
+  expect(screen.getByText(/프로젝트를 먼저 선택해 주세요/)).toBeInTheDocument()
 })
 
 test('choosing a project puts it in the url and drops the stale knowledge base', async () => {
@@ -266,8 +268,9 @@ test('a blocked target says so instead of waiting forever', async () => {
   show(<RagAdminPanel api={api({ resolveTarget: vi.fn().mockResolvedValue({ kind: 'choose', what: 'project', projects }) })} role="SUPER_ADMIN" />)
   await screen.findByLabelText('프로젝트')
   // 대상이 없으면 버전을 부를 수 없다. 기다리는 것처럼 두면 사용자가 원인을 위쪽 안내가
-  // 아니라 네트워크에서 찾게 된다.
-  expect(screen.getByText(/위 안내를 해결해야 버전을 불러올 수 있습니다/)).toBeInTheDocument()
+  // 아니라 네트워크에서 찾게 된다. 빈 표 대신 해야 할 일 한 줄을 남긴다.
+  expect(screen.getByText(/버전 내역을 확인하려면 상단에서 프로젝트를 먼저 선택해 주세요/)).toBeInTheDocument()
+  expect(screen.getByText(/프로젝트 선택 시 활성화됩니다/)).toBeInTheDocument()
   expect(screen.queryByText('조회 중…')).not.toBeInTheDocument()
 })
 
@@ -428,7 +431,7 @@ test('the top rollback targets the most recently activated archived version', as
     rollback,
   })} role="SUPER_ADMIN" />)
 
-  fireEvent.click(await screen.findByTitle('마지막으로 활성화됐던 버전으로 되돌립니다.'))
+  fireEvent.click(await screen.findByRole('button', { name: '이전 버전으로 롤백' }))
   fireEvent.click(screen.getByRole('button', { name: '롤백' }))
   // v9가 아니라 v8이다 — 버전 번호가 아니라 마지막 활성화 시각으로 고른다.
   await waitFor(() => expect(rollback).toHaveBeenCalledWith('kb-1', 'kv-8'))
@@ -563,7 +566,7 @@ test('a version without a server measurement says so instead of borrowing old nu
   expect(table.queryByText(/기준선/)).not.toBeInTheDocument()
 })
 
-test('the switch button label is just 전환 while the endpoint split stays elsewhere', async () => {
+test('every non-active row offers the same 전환 action regardless of endpoint split', async () => {
   show(<RagAdminPanel api={api({
     listVersions: vi.fn().mockResolvedValue({
       items: [
@@ -573,7 +576,9 @@ test('the switch button label is just 전환 while the endpoint split stays else
       ],
     }),
   })} role="SUPER_ADMIN" />)
-  // 전환 가능한 행은 둘이다 — 승인 대기 v10과 되돌릴 대상인 보관 v11.
+  // 누를 수 있는 행은 둘이다 — 승인 대기 v10과 되돌릴 대상인 보관 v11.
+  // 버튼 이름은 둘 다 "전환"이다 — activate/rollback으로 갈리는 것은 내부 배선일 뿐,
+  // 관리자가 읽는 이름까지 나눌 필요는 없다는 것이 이번 단순화다.
   expect(await screen.findAllByRole('button', { name: '전환' })).toHaveLength(2)
   expect(screen.queryByRole('button', { name: /활성화\(승인\)/ })).not.toBeInTheDocument()
 })
@@ -592,26 +597,29 @@ function ladder() {
 }
 
 /**
- * 표는 지금 운영에 관계된 버전만 낸다(AI02-023) — 활성 · 승인 대기 · 실패 · 만드는 중,
- * 그리고 <b>되돌릴 대상인 직전 보관 하나</b>. 더 오래된 보관은 뺀다.
+ * 표는 <b>모든 버전을 낸다</b> — 운영 줄이 위, 보관 줄이 그 아래 제 구획에 놓인다.
  *
- * <p>보관을 전부 감췄더니 새 버전을 활성화하는 순간 직전 버전이 화면에서 증발했다
- * (2026-09-14 실측). 잘못 활성화했음을 알아챈 순간 돌아갈 곳이 안 보이는 상태다.
+ * <p>예전에는 보관을 직전 한 건만 남기고 접었다. 그랬더니 지나간 버전이 화면에서 아예
+ * 사라져 「원인 분석」으로 물어볼 수조차 없었다(2026-09-16 실측 — 빈약한 출처로 만든
+ * 버전을 찾지 못해 API를 직접 불러야 했다). 그래서 감추지 않고 구획으로 나눈다.
  */
-test('the table keeps the rollback target but drops older archives', async () => {
+test('the table lists archived versions in their own section instead of hiding them', async () => {
   show(<RagAdminPanel api={api({ listVersions: vi.fn().mockResolvedValue({ items: ladder() }) })} role="SUPER_ADMIN" />)
 
   // v8은 요약 카드에도 나오므로 버전 표 안으로 좁혀 단언한다.
   const table = within((await screen.findByText('RAG 버전')).closest('section') as HTMLElement)
-  // 활성·승인 대기·실패는 물론, 마지막으로 서비스됐던 v11이 남는다.
-  for (const shown of ['v11', 'v10', 'v8', 'v4', 'v3']) {
+  // 보관까지 포함해 여섯 줄이 모두 보인다 — 옛 보관 v9도 빠지지 않는다.
+  for (const shown of ['v11', 'v10', 'v9', 'v8', 'v4', 'v3']) {
     expect(table.getByText(shown)).toBeInTheDocument()
   }
-  // v9는 v11보다 먼저 서비스된 보관이라 목록에서 빠진다.
-  expect(table.queryByText('v9')).not.toBeInTheDocument()
-  // 사라진 것이 아니라 보관된 것이다 — 건수로 남는다.
-  expect(table.getByText('운영 5건 · 보관 1건')).toBeInTheDocument()
-  expect(table.queryByRole('button', { name: /더 보기|접기/ })).not.toBeInTheDocument()
+  expect(table.getByText('운영 4건 · 보관 2건')).toBeInTheDocument()
+  // 보관 구획은 접는 것이 아니라 늘 펼쳐진 구분선이다.
+  expect(table.getByText('보관 2건')).toBeInTheDocument()
+  expect(table.queryByRole('button', { name: /더 보기|접기|펼치기/ })).not.toBeInTheDocument()
+  // 어느 버전으로 되돌아가는지는 표를 어지럽히는 라벨 대신 상단 버튼의 tooltip과 확인창이 말한다.
+  expect(table.queryByText('롤백 대상')).not.toBeInTheDocument()
+  expect(table.getByRole('button', { name: '이전 버전으로 롤백' }))
+    .toHaveAttribute('title', expect.stringContaining('v11'))
 })
 
 function building() {
