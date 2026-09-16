@@ -145,10 +145,29 @@ test('폼에는 secretRef만 있고 키 값을 받는 입력이 없다', async (
   render(<ConnectorPanel api={api()} projectId="p-1" mayWrite />)
   fireEvent.click(await screen.findByRole('button', { name: /출처 추가/ }))
 
-  expect(screen.getByDisplayValue('cms-secret://sme-support-api')).toBeInTheDocument()
+  // 접두사는 입력값이 아니라 고정 라벨이다 — 이 칸이 키가 아니라 금고 참조라는 것을
+  // 모양으로 먼저 알린다. 저장되는 값은 접두사를 포함한 전체 문자열 그대로다.
+  expect(screen.getByDisplayValue('sme-support-api')).toBeInTheDocument()
+  expect(screen.getByText('cms-secret://')).toBeInTheDocument()
   // 비밀번호 입력도, API Key 값을 받는 칸도 없다. 화면에 남을 수 있는 것은 참조 문자열뿐이다.
   expect(document.querySelectorAll('input[type="password"]')).toHaveLength(0)
   expect(screen.queryByText(/API Key 값은 입력하지 않습니다/)).toBeInTheDocument()
+})
+
+// 저장 형식은 그대로 `라벨=$.경로` 여러 줄이다 — 화면만 행으로 풀어 보여 준다.
+test('metadata 행을 고쳐도 저장 형식은 라벨=경로 여러 줄 그대로다', async () => {
+  const client = api()
+  render(<ConnectorPanel api={client} projectId="p-1" mayWrite />)
+  fireEvent.click(await screen.findByRole('button', { name: /출처 추가/ }))
+
+  const label = screen.getByDisplayValue('신청기간')
+  fireEvent.change(label, { target: { value: '접수기간' } })
+  fireEvent.click(screen.getByRole('button', { name: '저장' }))
+
+  await waitFor(() => expect(client.createConnector).toHaveBeenCalled())
+  const sent = (client.createConnector as ReturnType<typeof vi.fn>).mock.calls[0][1]
+  expect(sent.documentMapping.metadata).toMatchObject({ 접수기간: '$.reqstBeginEndDe' })
+  expect(sent.documentMapping.metadata).not.toHaveProperty('신청기간')
 })
 
 test('저장이 성공하면 목록을 다시 읽고 폼을 닫는다', async () => {

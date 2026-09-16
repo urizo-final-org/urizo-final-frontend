@@ -30,7 +30,7 @@ const PORTAL_SLUG_BY_NAME: Readonly<Record<string, string>> = {
 /** 온보딩 기록을 되짚을 때 훑을 slug. 이름 매핑이 없는 신규 고객사가 여기로 잡힌다. */
 const PORTAL_SLUGS: readonly string[] = ['sme']
 
-const TOUR_PROJECT_NAME = '관광 포털'
+const TOUR_PROJECT_NAME = '관광 정보 포털'  // ⚠️ app.project.name과 문자열이 정확히 같아야 한다. 화면에서 이름을 바꾸면 여기도 바꾼다.
 
 /** 온보딩과 포털이 같은 키를 쓴다. 형식을 바꾸면 온보딩 쪽 기록도 함께 바꿔야 한다. */
 export function portalProjectKey(slug: string): string {

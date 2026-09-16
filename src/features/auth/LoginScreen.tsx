@@ -57,15 +57,27 @@ export default function LoginScreen({ notice, onSignedIn }: LoginScreenProps) {
           <p className="m-0 text-xs leading-[1.65] text-muted">사이트 운영을 위한 관리자 전용 화면입니다.</p>
         </div>
 
+        {/* 고른 계정이 어느 쪽인지 버튼 스스로 말한다 — 예전에는 둘 다 같은 연한 색이라
+            눌러도 반응이 없는 것처럼 보였고, 누를 수 있는 것인지도 흐렸다.
+            선택된 쪽은 아래 「로그인」과 같은 primary를 쓴다(같은 위계임을 색으로 잇는다). */}
         <div className="grid grid-cols-2 gap-2">
           {[
             ['최고관리자', 'super-admin', 'axms-super-admin-demo'],
             ['일반관리자', 'general-admin', 'axms-general-admin-demo'],
-          ].map(([label, id, password]) => (
-            <button key={id} className="rounded-lg border border-field-line bg-run-bg p-2 text-[0.625rem] font-bold text-run-fg" type="button" onClick={() => { setLoginId(id); setPasswordValue(password) }}>
-              {label}
-            </button>
-          ))}
+          ].map(([label, id, password]) => {
+            const picked = loginId === id
+            // 색을 유틸리티로 주면 `.admin-app button { color: inherit; border: 0 }` 리셋이
+            // 이겨서, 바깥 래퍼의 `text-white`가 글자까지 흰색으로 끌고 온다.
+            // 이 저장소가 같은 문제를 푸는 방식(전용 클래스 + data-active)을 따른다.
+            return <button
+              key={id}
+              aria-pressed={picked}
+              data-active={picked}
+              className="login-role-button"
+              type="button"
+              onClick={() => { setLoginId(id); setPasswordValue(password) }}
+            >{label}</button>
+          })}
         </div>
 
         <label className="grid min-w-0 gap-[0.4375rem]">

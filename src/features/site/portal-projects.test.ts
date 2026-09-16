@@ -36,7 +36,7 @@ test('prefers an explicit deep-link query over everything', () => {
 // 새로 생기지만 이름은 어느 PC에서도 같다.
 test('portalPathOf hands the admin a working deep link', () => {
   expect(portalPathOf(NEW_ID, '중소벤처기업부')).toBe(`/sme?project=${NEW_ID}`)
-  expect(portalPathOf(NEW_ID, '관광 포털')).toBe('/')
+  expect(portalPathOf(NEW_ID, '관광 정보 포털')).toBe('/')
   expect(portalPathOf(NEW_ID, '이름 매핑도 등록 기록도 없음')).toBeNull()
 })
 

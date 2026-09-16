@@ -177,7 +177,7 @@ function AuthenticatedAdmin({ session, theme, onToggleTheme, onRefresh, onExpire
     ...(sourceChanges ?? []).map((change) => ({
       id: `source-change-${change.knowledgeBaseId}`,
       text: `${change.name}의 원천 데이터가 변경되었습니다 — ${isSuperAdmin ? '새 자료를 만들어 주세요' : 'RAG 갱신이 필요합니다'}`,
-      detail: `신규 ${change.summary.added} · 수정 ${change.summary.modified} · 소멸 ${change.summary.missing}`,
+      detail: `신규 ${change.summary.added} · 수정 ${change.summary.modified} · 사라짐 ${change.summary.missing}`,
       at: change.summary.checkedAt,
       onPick: () => go('rag'),
     })),
@@ -254,15 +254,22 @@ function AuthenticatedAdmin({ session, theme, onToggleTheme, onRefresh, onExpire
           <ApprovalBell api={codingApi} onOpen={() => go('devops')} extra={ragNotices} />
           <Icon name="circle-help" size={16} />
         </div>
-        <button
-          type="button"
-          className="admin-theme-toggle inline-flex h-[1.875rem] items-center gap-1.5 rounded-[0.3125rem] px-2.5 text-[0.6875rem] font-semibold text-strong"
-          aria-label={theme === 'light' ? '다크 테마 사용' : '라이트 테마 사용'}
-          aria-pressed={theme === 'dark'}
-          onClick={onToggleTheme}
-        ><span aria-hidden="true">{theme === 'light' ? '☾' : '☀'}</span><span className="max-[560px]:hidden">{theme === 'light' ? 'Dark' : 'Light'}</span></button>
-        <div className="grid h-[1.625rem] w-[1.625rem] shrink-0 place-items-center rounded-full bg-teal-bg text-[0.59375rem] font-bold text-teal-ink max-[560px]:hidden" aria-hidden="true">{initials}</div>
-        <button className="inline-flex h-[1.875rem] shrink-0 items-center rounded-[0.3125rem] border border-btn-line bg-white px-[0.625rem] text-[0.71875rem] font-semibold text-strong hover:bg-sub" onClick={onSignOut}>로그아웃</button>
+        {/* 테마·프로필·로그아웃은 "내 계정" 한 묶음이다. 낱개로 흩어 두면 간격이 제각각이라
+            헤더 오른쪽이 정렬돼 보이지 않는다. 한 칸으로 묶고 구분선으로 왼쪽과 뗀다. */}
+        <div className="flex h-[1.875rem] shrink-0 items-center gap-2 border-l border-line-soft pl-3">
+          <button
+            type="button"
+            className="admin-theme-toggle inline-flex h-[1.875rem] items-center gap-1.5 rounded-[0.3125rem] px-2.5 text-[0.6875rem] font-semibold text-strong"
+            aria-label={theme === 'light' ? '다크 테마 사용' : '라이트 테마 사용'}
+            aria-pressed={theme === 'dark'}
+            onClick={onToggleTheme}
+          ><span aria-hidden="true">{theme === 'light' ? '☾' : '☀'}</span><span className="max-[560px]:hidden">{theme === 'light' ? 'Dark' : 'Light'}</span></button>
+          <div className="grid h-[1.625rem] w-[1.625rem] shrink-0 place-items-center rounded-full bg-teal-bg text-[0.59375rem] font-bold text-teal-ink max-[560px]:hidden" aria-hidden="true">{initials}</div>
+          <button
+            className="inline-flex h-[1.875rem] shrink-0 items-center rounded-[0.3125rem] border border-transparent px-[0.625rem] text-[0.71875rem] font-semibold text-strong transition-colors hover:border-btn-line hover:bg-sub"
+            onClick={onSignOut}
+          >로그아웃</button>
+        </div>
       </header>
 
       <main className="mx-auto w-full max-w-[87.5rem] px-7 pb-16 pt-[1.625rem] max-[900px]:px-4 max-[900px]:pt-5">

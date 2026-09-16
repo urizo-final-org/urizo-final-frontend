@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { portalPathOf } from '../site/portal-projects'
 import { describeFailure } from '../../shared/api/error'
@@ -6,11 +6,11 @@ import type { AdminRole } from '../../shared/api/session'
 import { Badge, Callout, PageHead, PanelTitle, panel, primaryButton, secondaryButton, smallButton, tableButton, type Tone } from '../../shared/ui/primitives'
 import { Icon } from '../../shared/ui/icons'
 import { ActivationRequests } from './ActivationRequests'
-import { ConnectorPanel } from './ConnectorPanel'
+import { ConnectorPanel, PreviewResult, PREVIEW_MAX_ITEMS } from './ConnectorPanel'
 import { TourDiagnosisPanel } from './TourDiagnosis'
 import { noHover } from './no-hover'
 import { KnowledgeAdminApi } from './admin-api'
-import type { BuildEvaluation, Connector, KnowledgeBase, KnowledgeTarget, KnowledgeVersion, KnowledgeVersionStatus, AgentJob, Project } from './admin-types'
+import type { BuildEvaluation, Connector, ConnectorPreview, KnowledgeBase, KnowledgeTarget, KnowledgeVersion, KnowledgeVersionStatus, AgentJob, Project } from './admin-types'
 import { buildView, findInProgress, formatElapsed, BUILD_STEPS, BUILD_STEP_LABEL, stepStates, type BuildView } from './build-progress'
 
 /**
@@ -357,37 +357,47 @@ export function RagAdminPanel({ api, role }: { api: KnowledgeAdminApi; role: Adm
       >새 자료 만들기</button>
     </PageHead>
 
+    {/* 프로젝트 선택이 이 화면의 시작점이다. 그래서 어떤 안내보다 위에 둔다 —
+        아래 것들은 전부 "고른 프로젝트의 내용"이라, 고르기 전에는 읽을 것이 없다. */}
+    {target?.kind === 'empty' && <TargetNotice target={target} />}
+    {target != null && target.kind !== 'empty' && <TargetPicker target={target} onPick={pickTarget} />}
+
     {/* 스케줄러 감지분(AI02-022). 활성 버전 기준 괴리라 갱신(새 버전 활성화) 전까지 남는다.
+        <b>고른 프로젝트에 종속된 알림</b>이므로 선택 드롭다운보다 아래에 둔다 — 위에 두면
+        시스템 전체 경고처럼 읽힌다.
         최고 관리자는 여기서 바로 만들 수 있다 — 알림을 본 사람과 조치할 수 있는 사람이
         같은데 다른 패널로 보내면, 읽고 나서 할 일을 한 번 더 찾아야 한다(AI02-027). */}
-    {changeSummary && <Callout tone="warn" icon="triangle-alert">
+    {/* 위아래 카드와 붙어 있으면 카드의 일부처럼 읽힌다. 독립된 알림 블록으로 보이도록 띄운다. */}
+    {changeSummary && <div className="my-5"><Callout tone="warn" icon="triangle-alert">
       <span className="flex flex-wrap items-center gap-x-3 gap-y-2">
         <span className="font-bold">원천 데이터가 바뀌었습니다</span>
         <span className="flex items-center gap-2">
           <ChangeCount label="신규" value={changeSummary.added} />
           <ChangeCount label="수정" value={changeSummary.modified} />
-          <ChangeCount label="소멸" value={changeSummary.missing} />
+          <ChangeCount label="사라짐" value={changeSummary.missing} />
         </span>
         <span className="text-[0.6875rem] opacity-80">
           {new Date(changeSummary.checkedAt).toLocaleString('ko-KR')} 확인 · 활성 v{changeSummary.comparedVersion} 기준
         </span>
         {mayWrite
-          ? <button
-              className={tableButton}
+          ? /* 배너 안에서는 버튼 모양을 쓰지 않는다 — 우측 상단의 같은 동작과 형태가 부딪쳐
+               둘 중 무엇을 눌러야 하는지 흐려진다. 문장 옆 링크로 붙인다. */
+            <button
+              className="font-semibold underline underline-offset-2 enabled:hover:opacity-75 disabled:opacity-45"
               disabled={busy || newest == null || view != null}
               onClick={askBuild}
               title={view != null ? '이미 만드는 중입니다.' : '바뀐 원천으로 검색 자료를 새로 만듭니다 (약 8분).'}
             >지금 새 자료 만들기</button>
           : <span>갱신은 최고 관리자가 합니다. 아래 「갱신 요청」에 남겨 주세요.</span>}
       </span>
-    </Callout>}
+    </Callout></div>}
     {/* 이 문장은 원래 아무 데로도 가지 않았다. 이제 아래 요청 패널이 그 경로다. */}
-    {!mayWrite && <Callout tone="warn" icon="lock">조회만 가능합니다. {WRITE_DENIED} 아래 「갱신 요청」에 남기면 그대로 전달됩니다.</Callout>}
-    {failure != null && <Callout tone="warn" icon="triangle-alert">{describeFailure(failure)}</Callout>}
-    {target?.kind === 'empty' && <TargetNotice target={target} />}
-    {target != null && target.kind !== 'empty' && <TargetPicker target={target} onPick={pickTarget} />}
+    {!mayWrite && <div className="mb-4"><Callout tone="warn" icon="lock">조회만 가능합니다. {WRITE_DENIED} 아래 「갱신 요청」에 남기면 그대로 전달됩니다.</Callout></div>}
+    {failure != null && <div className="mb-4"><Callout tone="warn" icon="triangle-alert">{describeFailure(failure)}</Callout></div>}
 
-    <div className="flex min-w-0 flex-col gap-[0.875rem]">
+    {/* 프로젝트를 고르기 전에는 아래 패널이 전부 빈칸("—")이라 읽을 것이 없다.
+        빈 표를 흐리게 깔아 두는 대신 해야 할 일 한 줄만 남긴다. */}
+    {target?.kind === 'choose' ? <ProjectGate /> : <div className="flex min-w-0 flex-col gap-[0.875rem]">
       {/* 대상이 정해지지 않으면 요약·버전 표는 영원히 "조회 중"에 머문다. 기다리는 것처럼
           보이면 사용자가 원인을 위쪽 안내가 아니라 네트워크에서 찾게 된다. */}
       <Summary
@@ -433,9 +443,12 @@ export function RagAdminPanel({ api, role }: { api: KnowledgeAdminApi; role: Adm
         knowledgeBaseId={knowledgeBaseId}
         version={diagnosing}
         onClose={() => setDiagnosing(null)}
+        // 진단 패널은 열어 둔 채로 확인창만 띄운다 — 취소하면 읽던 진단으로 그대로 돌아온다.
+        onRebuild={canWrite && newest != null && view == null ? askBuild : undefined}
       />}
-    </div>
+    </div>}
     {confirmation && <ConfirmDialog
+      api={api}
       confirmation={confirmation}
       connectors={connectors}
       busy={busy}
@@ -465,7 +478,8 @@ function ChangeCount({ label, value }: { label: string; value: number }) {
  * <p>기준으로 고른 것은 추가 목록에서 뺀다 — 같은 자료를 두 번 넣을 이유가 없고,
  * 서버도 중복을 무시한다.
  */
-function SourcePicker({ connectors, base, overlays, disabled, onBase, onOverlays }: {
+function SourcePicker({ api, connectors, base, overlays, disabled, onBase, onOverlays }: {
+  api: KnowledgeAdminApi
   connectors: Connector[]
   base: string
   overlays: string[]
@@ -473,6 +487,13 @@ function SourcePicker({ connectors, base, overlays, disabled, onBase, onOverlays
   onBase: (id: string) => void
   onOverlays: (ids: string[]) => void
 }) {
+  // 열어 둔 미리보기는 하나다. 같은 원천이 기준·추가 두 목록에 모두 서므로 자리까지 키에 넣는다 —
+  // 커넥터 id만 쓰면 한 번 눌렀을 때 두 목록에서 동시에 펼쳐진다.
+  const [open, setOpen] = useState<string | null>(null)
+  const [preview, setPreview] = useState<ConnectorPreview | null>(null)
+  const [previewFailure, setPreviewFailure] = useState<unknown>(null)
+  const [loading, setLoading] = useState(false)
+
   if (connectors.length === 0) {
     return <p className="mt-3 text-[0.75rem] text-muted-3">쓸 수 있는 자료 출처가 없습니다.</p>
   }
@@ -481,48 +502,90 @@ function SourcePicker({ connectors, base, overlays, disabled, onBase, onOverlays
   const toggle = (id: string) => onOverlays(
     chosen.includes(id) ? chosen.filter((kept) => kept !== id) : [...chosen, id])
 
+  const look = async (slot: string, connector: Connector) => {
+    if (open === slot) { setOpen(null); return }
+    setOpen(slot); setPreview(null); setPreviewFailure(null); setLoading(true)
+    try { setPreview(await api.previewConnector(connector.connectorId, PREVIEW_MAX_ITEMS)) }
+    catch (error) { setPreviewFailure(error) }
+    finally { setLoading(false) }
+  }
+
+  /**
+   * 원천 한 줄. **고르는 자리와 들여다보는 자리를 분리한다** — 미리보기 버튼을 `label`
+   * 안에 두면 누를 때마다 라디오·체크박스가 같이 눌린다.
+   */
+  const option = (item: Connector, slot: string, control: React.ReactNode) => <div
+    key={slot}
+    className="rounded-[0.3125rem] px-1 py-[0.1875rem] hover:bg-sub"
+  >
+    <div className="flex items-center gap-2">
+      <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-[0.75rem] text-body">
+        {control}
+        <span className="truncate">{item.name}</span>
+      </label>
+      <button
+        type="button"
+        className="inline-flex shrink-0 items-center gap-1 rounded-[0.25rem] border border-field-line px-2 py-1 text-[0.6875rem] font-semibold text-muted-2 hover:border-btn-line hover:bg-sub hover:text-ink"
+        aria-expanded={open === slot}
+        onClick={() => { void look(slot, item) }}
+      ><Icon name="search-check" size={11} />{open === slot ? '접기' : '미리보기'}</button>
+    </div>
+    {open === slot && <SourcePreview
+      loading={loading}
+      failure={previewFailure}
+      result={preview}
+    />}
+  </div>
+
   return <div className="mt-3 flex flex-col gap-3 border-t border-line-soft pt-3">
     <fieldset className="m-0 border-0 p-0">
-      <legend className="mb-1 p-0 text-[0.75rem] font-semibold text-ink">어느 자료를 모을까요?</legend>
-      <p className="m-0 mb-[0.375rem] text-[0.6875rem] text-muted-3">기준 자료가 문서 목록을 만듭니다.</p>
+      <legend className="mb-1 p-0 text-[0.75rem] font-semibold text-ink">기준 데이터 선택 (필수)</legend>
+      <p className="m-0 mb-[0.375rem] text-[0.6875rem] text-muted-3">
+        기준 자료가 문서 목록을 만듭니다. 「미리보기」로 그 자료가 실제로 무엇을 주는지 볼 수 있습니다.
+      </p>
       <div className="flex flex-col gap-[0.125rem]">
-        {connectors.map((item) => <label
-          key={item.connectorVersionId}
-          className="flex cursor-pointer items-center gap-2 rounded-[0.3125rem] px-1 py-[0.1875rem] text-[0.75rem] text-body hover:bg-sub"
-        >
-          <input
-            type="radio"
-            name="build-base-source"
-            checked={base === item.connectorVersionId}
-            disabled={disabled}
-            onChange={() => onBase(item.connectorVersionId)}
-          />
-          {item.name}
-        </label>)}
+        {connectors.map((item) => option(item, `base:${item.connectorVersionId}`, <input
+          type="radio"
+          name="build-base-source"
+          checked={base === item.connectorVersionId}
+          disabled={disabled}
+          onChange={() => onBase(item.connectorVersionId)}
+        />))}
       </div>
     </fieldset>
     {extras.length > 0 && <fieldset className="m-0 border-0 p-0">
-      <legend className="mb-1 p-0 text-[0.75rem] font-semibold text-ink">여기에 더 붙일 자료 (선택)</legend>
+      <legend className="mb-1 p-0 text-[0.75rem] font-semibold text-ink">추가 병합 데이터 (선택)</legend>
       <p className="m-0 mb-[0.375rem] text-[0.6875rem] text-muted-3">
         기준 자료가 모은 문서에 정보를 덧붙입니다. 최대 {MAX_OVERLAYS}개.
       </p>
       <div className="flex flex-col gap-[0.125rem]">
-        {extras.map((item) => <label
-          key={item.connectorVersionId}
-          className="flex cursor-pointer items-center gap-2 rounded-[0.3125rem] px-1 py-[0.1875rem] text-[0.75rem] text-body hover:bg-sub"
-        >
-          <input
-            type="checkbox"
-            checked={chosen.includes(item.connectorVersionId)}
-            disabled={disabled
-              || (!chosen.includes(item.connectorVersionId) && chosen.length >= MAX_OVERLAYS)}
-            onChange={() => toggle(item.connectorVersionId)}
-          />
-          {item.name}
-        </label>)}
+        {extras.map((item) => option(item, `overlay:${item.connectorVersionId}`, <input
+          type="checkbox"
+          checked={chosen.includes(item.connectorVersionId)}
+          disabled={disabled
+            || (!chosen.includes(item.connectorVersionId) && chosen.length >= MAX_OVERLAYS)}
+          onChange={() => toggle(item.connectorVersionId)}
+        />))}
       </div>
     </fieldset>}
   </div>
+}
+
+/** 창 안에서 펼치는 미리보기. 결과 카드는 커넥터 패널이 쓰는 것을 그대로 쓴다. */
+function SourcePreview({ loading, failure, result }: {
+  loading: boolean
+  failure: unknown
+  result: ConnectorPreview | null
+}) {
+  if (loading) {
+    return <p className="m-0 mt-[0.375rem] flex items-center gap-1.5 text-[0.6875rem] text-muted-3">
+      <Icon name="loader-circle" size={12} className="animate-spin" />원천을 불러오는 중입니다…
+    </p>
+  }
+  if (failure != null) {
+    return <p className="m-0 mt-[0.375rem] text-[0.6875rem] text-fail-fg">{describeFailure(failure)}</p>
+  }
+  return result ? <PreviewResult result={result} /> : null
 }
 
 /**
@@ -531,7 +594,8 @@ function SourcePicker({ connectors, base, overlays, disabled, onBase, onOverlays
  * <p>건수(문서·청크)를 본문에 넣는 것이 핵심이다 — 빈 버전도 오류 없이 활성화되므로
  * (함정 2) 누르기 전에 사람이 눈으로 볼 마지막 지점이 여기다.
  */
-function ConfirmDialog({ confirmation, connectors, busy, onCancel, onConfirm }: {
+function ConfirmDialog({ api, confirmation, connectors, busy, onCancel, onConfirm }: {
+  api: KnowledgeAdminApi
   confirmation: Confirmation
   /** 창이 열린 뒤에 도착할 수 있다. 그래서 스냅숏이 아니라 지금 값을 받는다. */
   connectors: Connector[] | null
@@ -552,13 +616,31 @@ function ConfirmDialog({ confirmation, connectors, busy, onCancel, onConfirm }: 
     aria-modal="true"
     aria-label={confirmation.title}
   >
-    <div className={`${panel} w-full max-w-[26rem]`}>
-      <div className="px-4 py-3">
+    <div className={`${panel} flex max-h-full w-full max-w-[26rem] flex-col`}>
+      {/* 미리보기를 펼치면 본문이 길어진다. 창 자체가 화면 밖으로 자라면 「만들기 시작」이
+          잘려 보이지 않으므로, 늘어나는 쪽은 본문만이고 버튼 줄은 항상 남는다. */}
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
         <h2 className="text-[0.875rem] font-semibold text-ink">{confirmation.title}</h2>
-        <ul className="mt-2 flex flex-col gap-1">
+        {/* 빌드 확인창(소스를 고르는 창)만 뱃지로 감싼다 — "8분·승인 대기"가 매번 같은 값으로
+            반복되니 핵심만 눈에 먼저 들어오게 하고, 문장은 그 아래에 그대로 둔다.
+            활성화·롤백처럼 소스를 안 고르는 확인창은 원래의 담백한 목록 그대로 둔다. */}
+        {pick ? <div className="mt-2 flex flex-col gap-2 rounded-[0.375rem] border border-line-soft bg-sub px-3 py-[0.625rem]">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="inline-flex items-center gap-1 rounded-full border border-line bg-panel px-2 py-[0.125rem] text-[0.625rem] font-semibold text-muted-2">
+              <Icon name="timer" size={11} />약 8분 소요
+            </span>
+            <span className="inline-flex items-center gap-1 rounded-full border border-line bg-panel px-2 py-[0.125rem] text-[0.625rem] font-semibold text-muted-2">
+              <Icon name="inbox" size={11} />승인 대기로 시작
+            </span>
+          </div>
+          <ul className="m-0 flex flex-col gap-1 p-0">
+            {confirmation.lines.map((line) => <li key={line} className="text-[0.75rem] text-muted-2">{line}</li>)}
+          </ul>
+        </div> : <ul className="mt-2 flex flex-col gap-1">
           {confirmation.lines.map((line) => <li key={line} className="text-[0.75rem] text-muted-2">{line}</li>)}
-        </ul>
+        </ul>}
         {pick && <SourcePicker
+          api={api}
           connectors={usable}
           base={base}
           overlays={overlays}
@@ -569,8 +651,10 @@ function ConfirmDialog({ confirmation, connectors, busy, onCancel, onConfirm }: 
       </div>
       <div className="flex justify-end gap-2 border-t border-line px-4 py-3">
         <button className={noHover(secondaryButton)} onClick={onCancel} disabled={busy}>취소</button>
+        {/* 되돌리기 어려운 쓰기를 실제로 시작하는 단 하나의 버튼이다 — 이 창에서 가장 눈에
+            띄어야 한다. */}
         <button
-          className={tableButton}
+          className={primaryButton}
           onClick={() => onConfirm(picked)}
           disabled={busy || (pick != null && base === '')}
         >
@@ -591,9 +675,31 @@ function TargetNotice({ target }: { target: Extract<KnowledgeTarget, { kind: 'em
 }
 
 /**
+ * 프로젝트를 고르기 전에는 아래가 전부 잠겨 있다는 것만 말한다.
+ *
+ * <p>예전에는 빈 표를 그대로 두고 "위 안내를 해결해야 버전을 불러올 수 있습니다"라고 했다.
+ * 어떤 안내인지 화면 어디에도 없어서, 사용자가 원인을 네트워크나 권한에서 찾았다.
+ */
+function ProjectGate() {
+  return <section className={`${panel} px-4 py-12`}>
+    <div className="mx-auto flex max-w-[26rem] flex-col items-center gap-[0.625rem] text-center">
+      <span aria-hidden className="text-2xl">📁</span>
+      <b className="break-keep text-[0.875rem] font-semibold text-ink">
+        버전 내역을 확인하려면 상단에서 프로젝트를 먼저 선택해 주세요.
+      </b>
+      <p className="m-0 flex items-center gap-1.5 break-keep text-[0.75rem] text-muted-3">
+        <Icon name="lock" size={12} className="shrink-0" />
+        지식 베이스 · 자료 출처 · 버전 목록은 프로젝트 선택 시 활성화됩니다.
+      </p>
+    </div>
+  </section>
+}
+
+/**
  * 후보가 여럿일 때만 드롭다운을 그린다. 1건이면 자동 선택돼 여기 오지 않는다.
  *
- * <p>디자인은 최소다 — 이번 범위는 "동작한다"이지 "다듬는다"가 아니다.
+ * <p><b>툴바로 둔다.</b> 이 화면 전체가 "고른 프로젝트의 내용"이므로, 일반 입력 폼처럼
+ * 본문 중간에 끼면 한 번 고르고 마는 값처럼 보인다. 회색 바로 묶어 페이지 머리에 붙인다.
  */
 function TargetPicker({ target, onPick }: {
   target: Extract<KnowledgeTarget, { kind: 'ready' | 'choose' }>
@@ -605,44 +711,60 @@ function TargetPicker({ target, onPick }: {
   const needsBase = bases.length > 1
   if (!needsProject && !needsBase) return null
 
-  return <section className={panel}>
-    <div className="flex flex-wrap items-end gap-4 px-4 py-3">
+  return <section className={`${panel} bg-sub`}>
+    <div className="flex flex-wrap items-end gap-5 px-6 py-5">
       {needsProject && <Field
         label="프로젝트"
         value={target.project?.projectId ?? ''}
+        required={target.project == null}
         options={projects.map((item) => ({ id: item.projectId, name: item.name }))}
         onPick={(id) => onPick('project', id)}
       />}
       {needsBase && <Field
         label="지식 베이스"
         value={target.kind === 'ready' ? target.knowledgeBaseId : ''}
+        required={target.kind !== 'ready'}
         options={bases.map((item) => ({ id: item.knowledgeBaseId, name: item.name }))}
         onPick={(id) => onPick('knowledgeBase', id)}
       />}
-      {target.kind === 'choose' && <p className="m-0 text-[0.6875rem] text-muted-3">
-        후보가 여럿이라 자동으로 고르지 않습니다 — 잘못된 대상을 보고도 모르게 되기 때문입니다.
-      </p>}
     </div>
   </section>
 }
 
-function Field({ label, value, options, onPick }: {
+function Field({ label, value, options, onPick, required }: {
   label: string
   value: string
   options: { id: string; name: string }[]
   onPick: (id: string) => void
+  /** 아직 안 고른 칸. 테두리와 뱃지로 "여기부터"라고 말한다. */
+  required: boolean
 }) {
-  return <label className="flex flex-col gap-1 text-[0.6875rem] text-muted-3">
-    {label}
+  // 뱃지를 label 안에 두면 접근 이름이 "프로젝트필수"가 되어 낭독기와 테스트가 칸을 못 찾는다.
+  // 그래서 뱃지는 label 밖 형제로 두고 htmlFor로 묶는다.
+  const id = useId()
+  return <div className="flex flex-col gap-3 text-[0.75rem] text-muted-3">
+    <span className="flex items-center gap-2">
+      <label htmlFor={id} className="font-semibold">{label}</label>
+      {required && <span className="rounded-full bg-primary px-[0.4375rem] py-[0.0625rem] text-[0.625rem] font-semibold text-white">필수</span>}
+    </span>
     <select
+      id={id}
       value={value}
+      aria-required={required}
       onChange={(event) => onPick(event.target.value)}
-      className="min-w-[14rem] rounded-[0.3125rem] border border-field-line bg-white px-2 py-[0.375rem] text-xs text-ink"
+      className={`h-11 min-w-[16rem] rounded-[0.375rem] border bg-white px-4 text-[0.8125rem] text-ink ${
+        required ? 'border-primary shadow-[0_0_0_3px_#1733551f]' : 'border-field-line'}`}
     >
-      <option value="" disabled>선택하세요</option>
+      <option value="" disabled>작업할 {label}를 선택해 주세요</option>
       {options.map((option) => <option key={option.id} value={option.id}>{option.name}</option>)}
     </select>
-  </label>
+  </div>
+}
+
+/** 루트 포털("/")은 그대로 쓰면 값이 비어 보인다 — 무엇인지 한 마디 붙인다. */
+function portalLabel(portalPath: string): string {
+  const path = portalPath.split('?')[0]
+  return path === '/' ? '/ (메인)' : path
 }
 
 /** A2 요약. 활성 버전이 없으면 그렇게 말한다(콜드 스타트·전 버전 보관 상태). */
@@ -661,19 +783,27 @@ function Summary({ active, name, loading, blocked, portalPath }: {
     { label: '활성화', value: active?.activatedAt ? new Date(active.activatedAt).toLocaleString('ko-KR') : '—' },
   ]
   return <section className={panel}>
-    <PanelTitle title={name ?? '지식 베이스'} sub={active?.label ?? undefined} />
+    {/* 제목에 프로젝트 이름을 다시 쓰지 않는다 — 바로 위 드롭다운이 이미 말하고 있어서
+        같은 이름이 두 번 나오면(중기부처럼 KB 이름이 같을 때) 화면이 겹쳐 읽힌다. */}
+    <PanelTitle title="현재 활성 지식 베이스" sub={name ?? undefined} />
     <div className={`grid sm:grid-cols-2 ${portalPath ? 'xl:grid-cols-4' : 'xl:grid-cols-3'}`}>
       {cells.map((cell) => <div key={cell.label} className="border-r border-row-line px-4 py-[0.875rem]">
         <small className="block text-[0.65625rem] text-muted-3">{cell.label}</small>
-        <b className="mt-[0.3125rem] block text-[0.78125rem] font-semibold">{cell.value}</b>
+        {/* 이 화면에서 가장 먼저 읽혀야 할 값이다. 표의 한 칸이 아니라 숫자로 보이게 키운다. */}
+        <b className="mt-[0.3125rem] block truncate text-[1.0625rem] font-bold tabular-nums leading-tight text-ink">{cell.value}</b>
       </div>)}
       {portalPath && <div className="border-r border-row-line px-4 py-[0.875rem]">
         <small className="block text-[0.65625rem] text-muted-3">포털 주소</small>
+        {/* 루트 포털은 경로가 "/" 한 글자뿐이라 값이 빠진 것처럼 보이고 클릭할 곳도 없다.
+            무엇인지 덧붙이고, 새 창으로 열린다는 것을 화살표로 알린다. */}
         <a
-          className="mt-[0.3125rem] block truncate text-[0.78125rem] font-semibold text-primary underline"
+          className="mt-[0.3125rem] inline-flex max-w-full items-center gap-1 truncate text-[1.0625rem] font-bold leading-tight text-primary hover:underline"
           href={portalPath} target="_blank" rel="noreferrer"
           title="이 고객사의 사용자 포털을 새 탭에서 엽니다."
-        >{portalPath.split('?')[0]}</a>
+        >
+          <span className="truncate">{portalLabel(portalPath)}</span>
+          <Icon name="arrow-up-right" size={14} className="shrink-0" />
+        </a>
       </div>}
     </div>
   </section>
@@ -754,23 +884,26 @@ function MetricsCell({ version }: { version: KnowledgeVersion }) {
 }
 
 /**
- * 지금 운영에 관계된 버전만 보인다 — 보관은 <b>직전 한 건만</b> 남긴다(AI02-023).
+ * 운영 중인 것과 보관된 것으로 나눈다. <b>보관을 목록에서 빼지는 않는다.</b>
  *
- * <p>여덟 줄을 늘어놓으면 관리자가 "지금 서비스되는 것이 무엇인가"를 한눈에 읽지 못하고,
- * 평가 방식이 서로 다른 옛 줄이 나란히 놓여 성립하지 않는 대조를 만든다. 그렇다고 보관을
- * 전부 감추면 <b>방금 밀려난 버전이 활성화와 동시에 사라진다</b> — 되돌릴 대상이 화면에서
- * 증발하는 셈이라 "잘못 활성화했다"를 알아챈 순간 돌아갈 곳이 안 보인다(2026-09-14 실측).
- * 그래서 마지막으로 활성화됐던 보관 버전 하나는 남긴다. 「이전 버전 롤백」 버튼이 가리키는
- * 바로 그 버전이고, 더 오래된 것은 DB에 남아 있되 목록에서 빠진다.
+ * <p>예전에는 보관을 직전 한 건만 남기고 접었다. 한눈에 읽히기는 했지만 대가가 컸다 —
+ * 지나간 버전이 화면에서 아예 사라져, 그 버전이 왜 그 점수였는지 물어볼 수도(「원인 분석」),
+ * 무엇으로 만들어졌는지 확인할 수도 없었다. 실제로 「빈약한 출처」로 만들어진 버전을
+ * 화면에서 찾지 못해 API를 직접 불러야 했다(2026-09-16 실측).
  *
- * <p><b>실패·빌드 중 버전은 남긴다.</b> 지금 처리해야 할 상태이기 때문이다 — 숨기면 방금
- * 실패한 빌드가 화면에서 조용히 사라져, 관리자가 왜 새 버전이 안 생겼는지 알 길이 없어진다.
+ * <p>그래서 감추는 대신 <b>구획을 나눈다</b>. 운영 줄이 위에 모여 "지금 서비스되는 것"은
+ * 그대로 한눈에 읽히고, 보관은 그 아래 제 구획에서 계속 보인다. 평가 방식이 다른 줄이
+ * 섞여 보이는 문제는 숨김이 아니라 구분선과 안내 문구로 푼다.
  */
-function operating(versions: KnowledgeVersion[] | null): KnowledgeVersion[] | null {
+function groupVersions(versions: KnowledgeVersion[] | null) {
   if (versions == null) return null
-  const rollbackTarget = previousActiveOf(versions)
-  return versions.filter((v) => v.status !== 'ARCHIVED'
-    || v.knowledgeVersionId === rollbackTarget?.knowledgeVersionId)
+  return {
+    live: versions.filter((v) => v.status !== 'ARCHIVED'),
+    // 보관은 활성화됐던 순서로 — 가장 최근에 서비스된 것이 위에 온다.
+    archived: versions.filter((v) => v.status === 'ARCHIVED')
+      .sort((a, b) => (a.activatedAt ?? '') < (b.activatedAt ?? '') ? 1 : -1),
+    rollbackTargetId: previousActiveOf(versions)?.knowledgeVersionId ?? null,
+  }
 }
 
 /**
@@ -797,21 +930,66 @@ function VersionTable({ versions, mayWrite, blocked, busy, canRollback, onSwitch
   onDiagnose: ((version: KnowledgeVersion) => void) | null
   diagnosing: string | null
 }) {
-  const shown = operating(versions)
-  const archivedCount = (versions?.length ?? 0) - (shown?.length ?? 0)
+  const groups = groupVersions(versions)
   // 전체 100%를 비율로 나눈다 — 지표에 1fr을 주면 남는 폭을 전부 먹어 텅 비어 보인다.
   const columns = 'grid-cols-[8fr_13fr_12fr_28fr_13fr_26fr]'
+  const rollbackTarget = groups?.archived.find(
+    (item) => item.knowledgeVersionId === groups.rollbackTargetId) ?? null
+
+  const row = (version: KnowledgeVersion) => <div
+    key={version.knowledgeVersionId}
+    className={`${bodyRow} ${columns}`}
+  >
+    <span className="flex items-baseline gap-1.5">
+      <b className="text-[0.78125rem] font-semibold text-ink">v{version.versionNumber}</b>
+    </span>
+    <span><Badge tone={STATUS_TONE[version.status]}>{STATUS_LABEL[version.status]}</Badge></span>
+    <span className="font-mono">{version.documentCount}건</span>
+    <MetricsCell version={version} />
+    <span className="font-mono text-[0.6875rem]">{version.activatedAt ? new Date(version.activatedAt).toLocaleDateString('ko-KR') : '—'}</span>
+    <span className="flex items-center justify-end gap-1.5 whitespace-nowrap">
+      {/* 점수가 있는 버전에만 붙인다 — 측정 전 버전은 설명할 점수가 없다.
+          조사는 읽는 동작이라 보조(회색), 전환은 포털 답이 바뀌는 동작이라 주(primary)로 갈라 둔다. */}
+      {onDiagnose && version.evaluation && <button
+        className={secondaryButton}
+        disabled={diagnosing === version.knowledgeVersionId}
+        onClick={() => onDiagnose(version)}
+        title={`이 점수가 왜 나왔는지 에이전트가 조사합니다 (약 30초).`}
+      ><Icon name="search-check" size={12} />AI 분석 보기</button>}
+      {/* 두 줄의 높이·모양을 맞춘다 — 활성 줄만 글씨였을 때 표가 한 칸 어긋나 보였다.
+          활성은 누를 것이 없으므로 버튼 모양이되 꺼진 상태로 둔다. */}
+      {/* secondaryButton을 그대로 펼치고 색만 덮어씌우면 bg-field/text-strong과 특정도가
+          같아 스타일시트 선언 순서에 운을 맡기게 된다(실측: 글자색이 회색으로 나옴).
+          겹치는 속성이 없는 클래스만 새로 쓴다. */}
+      {version.status === 'ACTIVE'
+        ? <span className="inline-flex h-8 cursor-default items-center gap-[0.375rem] rounded-[0.3125rem] border border-ok-fg/30 bg-ok-bg px-[0.6875rem] text-xs font-semibold text-ok-fg">
+          <Icon name="check" size={12} />현재 활성
+        </span>
+        : <button
+          className={primaryButton}
+          disabled={busy || switchPath(version.status) == null}
+          onClick={() => onSwitch(version)}
+          title={!mayWrite ? WRITE_DENIED_HINT : NOT_SWITCHABLE[version.status] ?? `포털이 v${version.versionNumber} 기준으로 답하게 합니다.`}
+        ><Icon name="repeat" size={12} />전환</button>}
+    </span>
+  </div>
+
   return <section className={panel}>
     <PanelTitle
       title="RAG 버전"
-      sub={shown ? `운영 ${shown.length}건${archivedCount > 0 ? ` · 보관 ${archivedCount}건` : ''}` : undefined}
+      sub={groups ? `운영 ${groups.live.length}건${groups.archived.length > 0 ? ` · 보관 ${groups.archived.length}건` : ''}` : undefined}
     >
+      {/* 사고가 났을 때 표에서 줄을 찾지 않고 한 번에 되돌리는 자리라 남긴다(복구까지 10초).
+          어느 버전으로 가는지는 이름 대신 tooltip과 확인창이 말한다 — 제목줄이 길어지면
+          버튼이 문장처럼 읽혀 누를 수 있는 것으로 안 보인다. */}
       <button
-        className={tableButton}
+        className={secondaryButton}
         disabled={busy || !canRollback}
         onClick={onRollback}
-        title={!mayWrite ? WRITE_DENIED_HINT : canRollback ? '마지막으로 활성화됐던 버전으로 되돌립니다.' : '되돌릴 이전 활성 버전이 없습니다.'}
-      >이전 버전 롤백</button>
+        title={!mayWrite ? WRITE_DENIED_HINT
+          : rollbackTarget ? `직전 활성 버전(v${rollbackTarget.versionNumber})으로 되돌립니다.`
+            : '되돌릴 이전 활성 버전이 없습니다.'}
+      ><Icon name="repeat" size={12} />이전 버전으로 롤백</button>
     </PanelTitle>
     <div className="overflow-x-auto">
       <div className="min-w-[50rem]">
@@ -819,35 +997,23 @@ function VersionTable({ versions, mayWrite, blocked, busy, canRollback, onSwitch
           <span>버전</span><span>상태</span><span>문서</span><span>평가 결과</span><span>활성화</span><span className="text-right">동작</span>
         </div>
         {versions == null && <div className="px-4 py-6 text-xs text-muted-3">
-          {blocked ? '위 안내를 해결해야 버전을 불러올 수 있습니다.' : '버전을 불러오는 중…'}
+          {blocked ? '버전 내역을 확인하려면 상단에서 프로젝트를 먼저 선택해 주세요.' : '버전을 불러오는 중…'}
         </div>}
-        {shown?.length === 0 && <div className="px-4 py-6 text-xs text-muted-3">
-          {archivedCount > 0 ? '운영 중인 버전이 없습니다. 보관된 버전은 롤백으로 되돌릴 수 있습니다.' : '버전이 없습니다.'}
+        {groups?.live.length === 0 && groups.archived.length === 0 && <div className="px-4 py-6 text-xs text-muted-3">
+          버전이 없습니다.
         </div>}
-        {shown?.map((version) => <div key={version.knowledgeVersionId} className={`${bodyRow} ${columns}`}>
-          <span><b className="text-[0.78125rem] font-semibold text-ink">v{version.versionNumber}</b></span>
-          <span><Badge tone={STATUS_TONE[version.status]}>{STATUS_LABEL[version.status]}</Badge></span>
-          <span className="font-mono">{version.documentCount}건</span>
-          <MetricsCell version={version} />
-          <span className="font-mono text-[0.6875rem]">{version.activatedAt ? new Date(version.activatedAt).toLocaleDateString('ko-KR') : '—'}</span>
-          <span className="flex items-center justify-end gap-1.5 whitespace-nowrap">
-            {/* 점수가 있는 버전에만 붙인다 — 측정 전 버전은 설명할 점수가 없다. */}
-            {onDiagnose && version.evaluation && <button
-              className={tableButton}
-              disabled={diagnosing === version.knowledgeVersionId}
-              onClick={() => onDiagnose(version)}
-              title={`이 점수가 왜 나왔는지 에이전트가 조사합니다 (약 30초).`}
-            ><Icon name="search-check" size={12} />원인 분석</button>}
-            {version.status === 'ACTIVE'
-              ? <small className="text-[0.6875rem] text-ok-fg">현재 활성</small>
-              : <button
-                className={tableButton}
-                disabled={busy || switchPath(version.status) == null}
-                onClick={() => onSwitch(version)}
-                title={!mayWrite ? WRITE_DENIED_HINT : NOT_SWITCHABLE[version.status] ?? `포털이 v${version.versionNumber} 기준으로 답하게 합니다.`}
-              ><Icon name="repeat" size={12} />전환</button>}
+        {groups?.live.map(row)}
+        {/* 보관은 접지 않고 제 구획에서 계속 보인다. 평가 방식이 다른 줄이 나란히 놓이므로
+            숫자를 가로로 비교하지 말라는 것을 구분선에서 한 번 말해 둔다. */}
+        {groups != null && groups.archived.length > 0 && <div className="flex flex-wrap items-center gap-x-2 gap-y-1 border-y border-line bg-sub px-4 py-[0.5625rem]">
+          <span className="inline-flex items-center gap-1.5 text-[0.6875rem] font-semibold uppercase tracking-[.04em] text-muted-2">
+            <Icon name="lock" size={11} className="shrink-0 opacity-70" />보관 {groups.archived.length}건
           </span>
-        </div>)}
+          <span className="break-keep text-[0.6875rem] text-muted-3">
+            지난 버전입니다. 같은 질문 세트로 잰 값끼리만 비교할 수 있습니다.
+          </span>
+        </div>}
+        {groups?.archived.map(row)}
       </div>
     </div>
   </section>

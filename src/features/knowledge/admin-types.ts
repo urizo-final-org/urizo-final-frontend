@@ -144,7 +144,8 @@ export type Project = {
 
 /**
  * 원천 변경 점검 요약(AI02-022). 스케줄러가 활성 버전과 원천 API를 (공고 ID, 내용 해시)로
- * 대조해 남긴다. "소멸"은 삭제가 아니라 원천 조회 창에서 빠진 것까지 포함한다.
+ * 대조해 남긴다. 화면 라벨 "사라짐"(구 "소멸")은 삭제가 아니라 원천 조회 창에서 빠진 것까지
+ * 포함한다 — 정렬 순서가 흔들려 top-N 밖으로 밀려난 문서도 여기 잡힌다.
  */
 export type SourceChangeSummary = {
   checkedAt: string
@@ -351,6 +352,12 @@ export type DiagnosisVerdict = {
   reasoning: string
   recommendation: string
   confidence: string
+  /**
+   * `ADD_SOURCE`면 자료를 더 붙여 다시 만들면 나아진다는 뜻이다. 화면은 그때만 「새 자료
+   * 만들기」를 띄운다. 어느 자료를 붙일지는 모델이 정하지 않는다 — 도구가 커넥터 목록을
+   * 주지 않으므로 이름을 적게 하면 지어내게 된다. 고르는 것은 사람이다.
+   */
+  remedy?: string
 }
 
 export type TourDiagnosis = {
