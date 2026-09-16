@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { describeFailure } from '../../shared/api/error'
-import { Badge, Callout, PanelTitle, control, fieldLabel, panel, smallButton, tableButton, textarea, type Tone } from '../../shared/ui/primitives'
+import { Badge, Callout, PanelTitle, control, fieldLabel, panel, primaryButton, secondaryButton, smallButton, tableButton, type Tone } from '../../shared/ui/primitives'
 import { Icon } from '../../shared/ui/icons'
 import { noHover } from './no-hover'
 import type { KnowledgeAdminApi } from './admin-api'
@@ -52,7 +52,7 @@ const WRITE_DENIED = '최고 관리자의 권한이 필요합니다. 아래 「�
 const SECRET_REF_PATTERN = 'fixture://.+|cms-secret://[a-z0-9][a-z0-9-]{0,63}'
 
 /** 계약 상한이 20이다. 5건이면 매핑이 맞는지 눈으로 보기에 충분하다. */
-const PREVIEW_MAX_ITEMS = 5
+export const PREVIEW_MAX_ITEMS = 5
 
 /** 미리보기 본문은 매핑 확인용이다 — 전문을 붙이면 카드가 화면을 덮는다. */
 const PREVIEW_CONTENT_CHARS = 200
@@ -334,13 +334,18 @@ export function ConnectorPanel({ api, projectId, mayWrite, onFirstBuild, onConne
 
   useEffect(() => { void load() }, [load])
 
-  const submit = useCallback(async () => {
+  /**
+   * @param thenPreview 저장 직후 그 커넥터로 5건을 실제로 받아 본다. 매핑 오타를 8분짜리
+   *     빌드가 아니라 여기서 잡게 하는 것이 목적이다.
+   */
+  const submit = useCallback(async (thenPreview = false) => {
     if (!projectId || !form) return
     setBusy(true)
     setFailure(null)
+    let saved: Connector | null = null
     try {
-      const connector = await api.createConnector(projectId, buildCreateRequest(form))
-      if (alive.current) { setCreated(connector.name); setForm(null) }
+      saved = await api.createConnector(projectId, buildCreateRequest(form))
+      if (alive.current) { setCreated(saved.name); setForm(null) }
     }
     catch (error) {
       // 422 본문에 사유가 그대로 들어 있다. 화면이 다시 쓰지 않고 서버 문장을 보인다.
@@ -349,6 +354,15 @@ export function ConnectorPanel({ api, projectId, mayWrite, onFirstBuild, onConne
     finally {
       await load()
       if (alive.current) setBusy(false)
+    }
+    // 저장이 실패했으면 미리보기할 대상이 없다 — 실패 사유를 덮지 않는다.
+    if (thenPreview && saved && alive.current) {
+      setPreview(null)
+      try {
+        const result = await api.previewConnector(saved.connectorId, PREVIEW_MAX_ITEMS)
+        if (alive.current) setPreview({ connectorId: saved.connectorId, result })
+      }
+      catch (error) { if (alive.current) setFailure(error) }
     }
   }, [api, projectId, form, load])
 
@@ -402,6 +416,7 @@ export function ConnectorPanel({ api, projectId, mayWrite, onFirstBuild, onConne
       busy={busy}
       onChange={setForm}
       onSubmit={() => { void submit() }}
+      onSubmitAndPreview={() => { void submit(true) }}
     />}
 
     {created && <div className="border-b border-line-soft px-4 py-[0.875rem]">
@@ -438,15 +453,22 @@ export function ConnectorPanel({ api, projectId, mayWrite, onFirstBuild, onConne
               onClick={() => { void runPreview(connector) }}
               title={!mayWrite ? WRITE_DENIED : '문서 몇 건을 실제로 가져와 매핑 결과를 봅니다.'}
             ><Icon name="search-check" size={12} />미리보기</button>
-            <button
-              className={tableButton}
-              disabled={!mayWrite || busy || connector.status === 'ARCHIVED'}
-              onClick={() => { void activate(connector) }}
-              title={!mayWrite ? WRITE_DENIED
-                : connector.status === 'ARCHIVED' ? '보관된 버전은 활성화할 수 없습니다.'
-                  : connector.status === 'ACTIVE' ? '이미 활성입니다.'
+            {/* 이미 활성인 커넥터는 눌러도 할 일이 없다 — 버튼 모양으로 두면 "또 눌러야 하나"로
+                읽힌다. 버전 표의 「현재 활성」 배지와 같은 패턴으로 맞춘다. */}
+            {/* secondaryButton을 펼치고 색만 덮으면 bg-field/text-strong과 특정도가 같아
+                스타일시트 순서에 운을 맡기게 된다 — 겹치는 속성 없는 클래스만 새로 쓴다. */}
+            {connector.status === 'ACTIVE'
+              ? <span className="inline-flex h-8 cursor-default items-center gap-[0.375rem] rounded-[0.3125rem] border border-ok-fg/30 bg-ok-bg px-[0.6875rem] text-xs font-semibold text-ok-fg">
+                <Icon name="check" size={12} />활성
+              </span>
+              : <button
+                className={tableButton}
+                disabled={!mayWrite || busy || connector.status === 'ARCHIVED'}
+                onClick={() => { void activate(connector) }}
+                title={!mayWrite ? WRITE_DENIED
+                  : connector.status === 'ARCHIVED' ? '보관된 버전은 활성화할 수 없습니다.'
                     : '다음 빌드가 이 자료원을 쓰게 합니다.'}
-            ><Icon name="check" size={12} />활성화</button>
+              ><Icon name="check" size={12} />활성화</button>}
             {/* 활성 버전에만 단다. 백엔드가 ACTIVE가 아닌 커넥터 버전으로는 빌드를 거절한다
                 (`ProductJobStore.createKnowledgeBuild` → 409 `CONNECTOR_VERSION_NOT_ACTIVE`).
                 눌러서 409를 받는 대신 누를 수 없게 둔다. */}
@@ -473,7 +495,7 @@ export function ConnectorPanel({ api, projectId, mayWrite, onFirstBuild, onConne
  * (`ConnectorStore.previewConnector`). 픽스처에서만 진짜 전체 건수라, 응답만 보고는 어느
  * 쪽인지 구분할 수 없다. 그래서 **받아온 건수와 「더 있음」만 말한다** — 두 경우 모두 참인 표현이다.
  */
-function PreviewResult({ result }: { result: ConnectorPreview }) {
+export function PreviewResult({ result }: { result: ConnectorPreview }) {
   return <div className="mt-[0.625rem] rounded-[0.3125rem] border border-line-soft bg-sub p-[0.6875rem]">
     <p className="m-0 text-[0.71875rem] text-muted-2">
       표본 {result.itemCount}건{result.truncated && ' · 더 있음'}
@@ -506,11 +528,12 @@ function PreviewResult({ result }: { result: ConnectorPreview }) {
  * 같은 규칙을 두 곳에 적어 두면 서로 달라졌을 때 화면이 틀린 쪽이 된다. 네이티브
  * `required`·`pattern`으로 오타를 먼저 걸러 내고 최종 판정은 서버 응답을 그대로 보인다.
  */
-function RegisterForm({ form, busy, onChange, onSubmit }: {
+function RegisterForm({ form, busy, onChange, onSubmit, onSubmitAndPreview }: {
   form: ConnectorForm
   busy: boolean
   onChange: (next: ConnectorForm) => void
   onSubmit: () => void
+  onSubmitAndPreview: () => void
 }) {
   const set = <K extends keyof ConnectorForm>(key: K, value: ConnectorForm[K]) => onChange({ ...form, [key]: value })
 
@@ -533,26 +556,27 @@ function RegisterForm({ form, busy, onChange, onSubmit }: {
       API Key 값은 입력하지 않습니다 — 서버가 보관한 비밀의 <b>참조 문자열</b>(<code className="font-mono">cms-secret://…</code>)만 적습니다.
     </Callout>
 
-    <Group title="연결">
-      <Text label="이름" value={form.name} onChange={(value) => set('name', value)}
-        required pattern="[A-Z][A-Z0-9_]*" hint="대문자·숫자·밑줄. 예: SME_BIZINFO" />
-      <Text label="baseUrl" value={form.baseUrl} onChange={(value) => set('baseUrl', value)}
-        required pattern="https://[^/?#@]+(/[^?#]*)?" hint="HTTPS 원본과 선택적 경로. 질의·조각·계정 정보는 넣지 않습니다." />
-      <Text label="endpoint" value={form.endpoint} onChange={(value) => set('endpoint', value)}
-        required pattern="/[^/].*" hint="원본 기준 상대 경로. / 로 시작합니다." />
-      <Read label="method" value="GET" hint="계약이 GET으로 고정합니다." />
-    </Group>
+    <Section title="1 · API 연결과 인증" description="어느 주소를 무슨 키로 부를지 정합니다.">
+      <Group title="연결">
+        <Text label="이름" value={form.name} onChange={(value) => set('name', value)}
+          required pattern="[A-Z][A-Z0-9_]*" hint="대문자·숫자·밑줄. 예: SME_BIZINFO" />
+        <Text label="baseUrl" value={form.baseUrl} onChange={(value) => set('baseUrl', value)}
+          required pattern="https://[^/?#@]+(/[^?#]*)?" hint="HTTPS 원본과 선택적 경로. 질의·조각·계정 정보는 넣지 않습니다." />
+        <Text label="endpoint" value={form.endpoint} onChange={(value) => set('endpoint', value)}
+          required pattern="/[^/].*" hint="원본 기준 상대 경로. / 로 시작합니다." />
+        <Read label="method" value="GET" hint="계약이 GET으로 고정합니다." />
+      </Group>
 
-    <Group title="인증">
-      <Select label="위치" value={form.authLocation} onChange={(value) => set('authLocation', value as 'QUERY' | 'HEADER')}
-        options={[['QUERY', '질의 문자열'], ['HEADER', '헤더']]} hint="공공데이터포털은 질의 문자열입니다." />
-      <Text label="파라미터 이름" value={form.authName} onChange={(value) => set('authName', value)}
-        required hint="예: serviceKey" />
-      <Text label="secretRef" value={form.secretRef} onChange={(value) => set('secretRef', value)}
-        required pattern={SECRET_REF_PATTERN}
-        hint="키 값이 아니라 참조입니다. 실제 원천은 cms-secret://<이름>(소문자·숫자·하이픈), 픽스처는 fixture:// 입니다." />
-    </Group>
+      <Group title="인증">
+        <Select label="위치" value={form.authLocation} onChange={(value) => set('authLocation', value as 'QUERY' | 'HEADER')}
+          options={[['QUERY', '질의 문자열'], ['HEADER', '헤더']]} hint="공공데이터포털은 질의 문자열입니다." />
+        <Text label="파라미터 이름" value={form.authName} onChange={(value) => set('authName', value)}
+          required hint="예: serviceKey" />
+        <SecretRef value={form.secretRef} onChange={(value) => set('secretRef', value)} />
+      </Group>
+    </Section>
 
+    <Section title="2 · 데이터 탐색과 페이지" description="응답 어디에 문서가 들어 있고, 몇 개씩 몇 번 넘겨 받을지 정합니다.">
     <Group title="응답 매핑">
       <Text label="itemsPath" value={form.itemsPath} onChange={(value) => set('itemsPath', value)}
         required pattern="\$.*" hint="문서 배열의 위치. 예: $.response.body.items.item" />
@@ -571,7 +595,12 @@ function RegisterForm({ form, busy, onChange, onSubmit }: {
       <Text label="시작 페이지" value={form.startPage} onChange={(value) => set('startPage', value)} required type="number" min="0" />
       <Text label="페이지 크기" value={form.pageSize} onChange={(value) => set('pageSize', value)} required type="number" min="1" max="1000" />
     </Group>
+    </Section>
 
+    <Section
+      title="3 · 문서 표준 매핑"
+      description="원천의 필드 이름을 우리 문서의 칸으로 옮깁니다. 도메인마다 다른 것은 여기뿐이고, 이 규칙 덕분에 코드를 고치지 않고 새 고객사를 붙입니다."
+    >
     <Group title="문서 매핑">
       <Text label="documentId" value={form.documentId} onChange={(value) => set('documentId', value)} required pattern="\$.*" hint="예: $.pblancId" />
       <Text label="title" value={form.title} onChange={(value) => set('title', value)} required pattern="\$.*" hint="예: $.pblancNm" />
@@ -581,23 +610,12 @@ function RegisterForm({ form, busy, onChange, onSubmit }: {
       <Text label="sourceUrl (선택)" value={form.sourceUrl} onChange={(value) => set('sourceUrl', value)} pattern="\$.*" />
     </Group>
 
-    <label className="block">
-      <span className={fieldLabel}>metadata (선택)</span>
-      <textarea
-        className={textarea}
-        rows={6}
-        value={form.metadata}
-        onChange={(event) => set('metadata', event.target.value)}
-        placeholder="신청기간=$.reqstBeginEndDe"
-      />
-      {/* 키가 곧 화면 라벨이고 적은 순서가 표시 순서다 — 이 규칙을 모르면 라벨이 영문 필드명으로 나간다. */}
-      <small className="mt-[0.25rem] block text-[0.65625rem] text-muted-3">
-        한 줄에 <code className="font-mono">라벨=$.경로</code> 하나. <b>적은 순서가 표시 순서</b>이고 라벨이 그대로 화면에 나옵니다.
-      </small>
-    </label>
+    <MetadataRows value={form.metadata} onChange={(next) => set('metadata', next)} />
+    </Section>
 
     {/* 접어 두지 않는다. 중기부 프리셋의 dataType=json이 여기 있고 그게 없으면 원천이 XML을
         돌려줘 수집이 통째로 실패한다 — 접힌 칸에 시연의 성패가 들어 있으면 안 된다. */}
+    <Section title="4 · 고정 요청 파라미터" description="원천이 매 호출마다 요구하는 값입니다. 비면 요청에 실리지 않습니다.">
     <fieldset className="m-0 border-0 p-0">
       <legend className="mb-2 p-0 text-[0.71875rem] font-semibold text-muted-2">요청 파라미터</legend>
       <div className="flex flex-col gap-2">
@@ -647,15 +665,117 @@ function RegisterForm({ form, busy, onChange, onSubmit }: {
         </small>
       </div>
     </fieldset>
+    </Section>
 
-    <div>
+    <div className="flex flex-wrap justify-end gap-2">
+      {/* 매핑 오타는 8분짜리 빌드를 끝내고서야 드러나면 늦다. 저장 직후 5건만 실제로 받아
+          매핑 결과를 눈으로 보게 한다. 미리보기 계약이 저장된 커넥터 id를 요구하므로
+          "저장 없이 테스트"는 만들 수 없다 — DRAFT는 활성화 전까지 어떤 빌드에도 쓰이지 않아
+          먼저 저장해도 되돌릴 것이 없다. */}
+      <button className={noHover(secondaryButton)} type="button" disabled={busy} onClick={onSubmitAndPreview}>
+        <Icon name="search-check" size={12} />저장하고 미리보기
+      </button>
       {/* 만들어지는 것은 DRAFT 버전이다. "등록"이라고 쓰면 이미 쓰이는 것처럼 읽힌다 —
           실제로 자료원이 되는 시점은 활성화이고, 그 전까지는 되돌릴 것도 없다. */}
-      <button className={tableButton} type="submit" disabled={busy}>
+      <button className={primaryButton} type="submit" disabled={busy}>
         {busy ? '저장 중…' : '저장'}
       </button>
     </div>
   </form>
+}
+
+/**
+ * 메타데이터 매핑. **저장 형식은 그대로 `라벨=$.경로` 여러 줄**이고(서버 계약·`parseMetadata`가
+ * 그 모양을 기대한다), 화면에서만 행으로 풀어 보여 준다.
+ *
+ * <p>한 덩어리 textarea였을 때는 `=`를 빠뜨리거나 경로에 `$`를 안 쓴 줄이 조용히 버려졌다
+ * (`parseMetadata`가 그런 줄을 걸러낸다). 칸을 둘로 쪼개면 그 실수를 애초에 못 한다.
+ *
+ * <p>순서가 곧 화면 표시 순서라서 위/아래 이동을 둔다. 드래그 대신 버튼인 이유는
+ * 키보드로도 옮길 수 있고, 이 화면에서 실제로 눌러 확인할 수 있기 때문이다.
+ */
+function MetadataRows({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  const rows = value.split('\n').filter((line) => line.trim().length > 0).map((line) => {
+    const at = line.indexOf('=')
+    return at < 0 ? { label: line.trim(), path: '' } : { label: line.slice(0, at).trim(), path: line.slice(at + 1).trim() }
+  })
+  const write = (next: { label: string; path: string }[]) =>
+    onChange(next.map((row) => `${row.label}=${row.path}`).join('\n'))
+  const move = (index: number, to: number) => {
+    if (to < 0 || to >= rows.length) return
+    const next = [...rows]
+    const [moved] = next.splice(index, 1)
+    next.splice(to, 0, moved)
+    write(next)
+  }
+
+  return <fieldset className="m-0 border-0 p-0">
+    <legend className="mb-2 p-0 text-[0.71875rem] font-semibold text-muted-2">metadata (선택)</legend>
+    <div className="flex flex-col gap-2">
+      {rows.length === 0 && <p className="m-0 text-[0.6875rem] text-muted-3">
+        없음. 본문에 라벨 줄로 덧붙일 값이 있으면 추가하세요.
+      </p>}
+      {rows.map((row, index) => <div key={index} className="flex flex-wrap items-center gap-1.5">
+        <span className="flex shrink-0 flex-col">
+          <button
+            type="button" aria-label={`${index + 1}번째 항목 위로`}
+            className="flex h-[0.9375rem] w-5 items-center justify-center rounded-t-[0.1875rem] border border-field-line text-muted-3 disabled:opacity-40 enabled:hover:bg-sub enabled:hover:text-ink"
+            disabled={index === 0} onClick={() => move(index, index - 1)}
+          ><Icon name="chevron-down" size={10} className="rotate-180" /></button>
+          <button
+            type="button" aria-label={`${index + 1}번째 항목 아래로`}
+            className="-mt-px flex h-[0.9375rem] w-5 items-center justify-center rounded-b-[0.1875rem] border border-field-line text-muted-3 disabled:opacity-40 enabled:hover:bg-sub enabled:hover:text-ink"
+            disabled={index === rows.length - 1} onClick={() => move(index, index + 1)}
+          ><Icon name="chevron-down" size={10} /></button>
+        </span>
+        <input
+          className={`${control} mt-0 w-[9rem]`}
+          value={row.label}
+          placeholder="라벨 (예: 신청기간)"
+          onChange={(event) => write(rows.map((item, at) => at === index ? { ...item, label: event.target.value } : item))}
+        />
+        <span className="text-[0.75rem] font-semibold text-muted-3">=</span>
+        <input
+          className={`${control} mt-0 w-[13rem]`}
+          value={row.path}
+          placeholder="$.reqstBeginEndDe"
+          pattern="\$.*"
+          onChange={(event) => write(rows.map((item, at) => at === index ? { ...item, path: event.target.value } : item))}
+        />
+        <button
+          type="button"
+          className={noHover(smallButton)}
+          onClick={() => write(rows.filter((_, at) => at !== index))}
+        >삭제</button>
+      </div>)}
+      <button
+        type="button"
+        className={noHover(smallButton)}
+        onClick={() => write([...rows, { label: '', path: '' }])}
+      ><Icon name="plus" size={12} />항목 추가</button>
+      {/* 키가 곧 화면 라벨이고 적은 순서가 표시 순서다 — 이 규칙을 모르면 라벨이 영문 필드명으로 나간다. */}
+      <small className="break-keep text-[0.65625rem] text-muted-3">
+        왼쪽 <b>라벨이 그대로 사용자 화면에 나옵니다</b>(본문에 <code className="font-mono">[라벨] 값</code> 줄로 붙습니다).
+        <b>위에서부터 적은 순서가 표시 순서</b>입니다.
+      </small>
+    </div>
+  </fieldset>
+}
+
+/**
+ * 설정서의 한 단원. 카드로 끊어 두지 않으면 20개 넘는 칸이 한 줄기로 이어져,
+ * 지금 무엇을 정하는 중인지가 화면에서 사라진다.
+ */
+function Section({ title, description, children }: {
+  title: string
+  description: string
+  children: React.ReactNode
+}) {
+  return <section className="rounded-[0.375rem] border border-line-soft bg-sub p-4">
+    <h4 className="m-0 text-[0.78125rem] font-semibold text-ink">{title}</h4>
+    <p className="m-0 mt-[0.125rem] mb-3 break-keep text-[0.65625rem] text-muted-3">{description}</p>
+    <div className="flex flex-col gap-4">{children}</div>
+  </section>
 }
 
 function Group({ title, children }: { title: string; children: React.ReactNode }) {
@@ -663,6 +783,38 @@ function Group({ title, children }: { title: string; children: React.ReactNode }
     <legend className="mb-2 p-0 text-[0.71875rem] font-semibold text-muted-2">{title}</legend>
     <div className="grid gap-3 sm:grid-cols-2">{children}</div>
   </fieldset>
+}
+
+/**
+ * 비밀 참조 칸. 접두사를 입력값이 아니라 <b>고정 라벨</b>로 보여 준다 — 키를 적는 칸이
+ * 아니라 서버 금고를 가리키는 칸이라는 것이 모양에서 먼저 읽혀야 한다.
+ *
+ * <p>저장되는 값은 접두사를 포함한 전체 문자열 그대로다. 픽스처(`fixture://`)도 같은 칸을
+ * 쓰므로, 접두사가 `cms-secret://`가 아닐 때는 통짜 입력으로 물러난다.
+ */
+function SecretRef({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  const PREFIX = 'cms-secret://'
+  const managed = value.startsWith(PREFIX) || value === ''
+  return <label className="block">
+    <span className={fieldLabel}>secretRef</span>
+    <div className={`mt-[0.375rem] flex items-stretch overflow-hidden rounded-[0.3125rem] border ${managed ? 'border-field-line' : 'border-wait-dot/60'}`}>
+      <span className="flex items-center gap-1.5 border-r border-field-line bg-line px-[0.625rem] text-[0.71875rem] font-semibold text-muted-2">
+        <Icon name="lock" size={12} />{managed ? PREFIX : '참조'}
+      </span>
+      <input
+        className="min-w-0 flex-1 border-0 bg-field px-[0.625rem] py-[0.375rem] text-[0.78125rem] text-ink outline-0"
+        value={managed ? value.slice(PREFIX.length) : value}
+        onChange={(event) => onChange(managed ? PREFIX + event.target.value : event.target.value)}
+        placeholder={managed ? 'sme-support-api' : 'fixture://…'}
+        required
+        pattern={managed ? '[a-z0-9-]+' : SECRET_REF_PATTERN}
+      />
+    </div>
+    <small className="mt-[0.25rem] block break-keep text-[0.65625rem] text-muted-3">
+      키 값이 아니라 <b>참조</b>입니다. 실제 값은 서버가 보관하고, 이 화면·로그·DB 어디에도 남지 않습니다.
+      픽스처는 <code className="font-mono">fixture://</code>를 그대로 적습니다.
+    </small>
+  </label>
 }
 
 function Text({ label, value, onChange, hint, ...rest }: {

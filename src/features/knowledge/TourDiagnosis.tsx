@@ -20,11 +20,13 @@ import type { BuildEvaluation, KnowledgeVersion, TourDiagnosis as Diagnosis } fr
  * 있었다는 사실이 보이지 않습니다. 실시간 스트리밍이 아니라 재생이고, 내용은 서버가
  * 보낸 그대로입니다.
  */
-export function TourDiagnosisPanel({ api, knowledgeBaseId, version, onClose }: {
+export function TourDiagnosisPanel({ api, knowledgeBaseId, version, onClose, onRebuild }: {
   api: KnowledgeAdminApi
   knowledgeBaseId: string
   version: KnowledgeVersion
   onClose: () => void
+  /** 없으면 권고를 읽기만 한다 — 쓰기 권한이 없거나 이미 만드는 중일 때다. */
+  onRebuild?: () => void
 }) {
   const [diagnosis, setDiagnosis] = useState<Diagnosis | null>(null)
   const [failure, setFailure] = useState<unknown>(null)
@@ -76,6 +78,7 @@ export function TourDiagnosisPanel({ api, knowledgeBaseId, version, onClose }: {
             steps={diagnosis.steps.length}
             stopReason={diagnosis.stopReason}
             evaluation={version.evaluation}
+            onRebuild={onRebuild}
           />}
         </>}
     </div>
@@ -145,11 +148,12 @@ const CONFIDENCE_LABEL: Record<string, string> = { HIGH: '높음', MEDIUM: '보�
  * <p>한국어는 기본 줄바꿈이 글자 단위라 긴 문장이 단어 중간에서 끊깁니다. `break-keep`으로
  * 어절 단위 줄바꿈을 걸고, 줄 길이를 `max-w`로 묶어 눈이 다음 줄을 찾기 쉽게 합니다.
  */
-function Verdict({ verdict, steps, stopReason, evaluation }: {
+function Verdict({ verdict, steps, stopReason, evaluation, onRebuild }: {
   verdict: Diagnosis['verdict']
   steps: number
   stopReason: string
   evaluation?: BuildEvaluation
+  onRebuild?: () => void
 }) {
   return <div className="rounded-[0.3125rem] border border-wait-dot/45 bg-wait-bg p-4 text-wait-fg">
     <p className="m-0 text-[0.6875rem] font-semibold uppercase tracking-[.04em] text-muted-2">진단 결과</p>
@@ -169,6 +173,16 @@ function Verdict({ verdict, steps, stopReason, evaluation }: {
       {verdict.reasoning && <Field label="판단 과정">{verdict.reasoning}</Field>}
       {verdict.recommendation && <Field label="권고">{verdict.recommendation}</Field>}
     </dl>
+
+    {/* 읽고 끝나면 관리자는 할 일을 한 번 더 찾아야 합니다. 자료를 더 붙이면 되는 원인일
+        때만(`ADD_SOURCE`) 그 자리를 여기 둡니다 — 어느 자료를 붙일지는 다음 창에서 사람이
+        고릅니다. 에이전트는 커넥터 목록을 본 적이 없으므로 이름을 정해 주지 않습니다. */}
+    {verdict.remedy === 'ADD_SOURCE' && onRebuild && <div className="mt-[0.875rem] flex flex-wrap items-center gap-2">
+      <button className={tableButton} onClick={onRebuild}>
+        <Icon name="database" size={12} />자료를 더 붙여 새로 만들기
+      </button>
+      <span className="break-keep text-[0.6875rem] text-muted-2">다음 창에서 어떤 자료를 붙일지 고릅니다.</span>
+    </div>}
 
     <p className="m-0 mt-[0.875rem] border-t border-wait-dot/30 pt-[0.5625rem] text-[0.6875rem] text-muted-2">
       확신도 {CONFIDENCE_LABEL[verdict.confidence] ?? verdict.confidence}

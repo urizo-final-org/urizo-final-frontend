@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { describeFailure } from '../../shared/api/error'
 import type { AdminRole } from '../../shared/api/session'
 import { PanelTitle, panel, control, primaryButton, secondaryButton } from '../../shared/ui/primitives'
+import { Icon } from '../../shared/ui/icons'
 import type { KnowledgeAdminApi } from './admin-api'
 import type { KnowledgeBase, Project } from './admin-types'
 import { RagAdminPanel } from './RagAdminPanel'
@@ -127,11 +128,15 @@ export function CustomerOnboarding({ api, role, onCreated }: {
   }
 
   if (!open) {
-    return <button
-      type="button"
-      onClick={() => setOpen(true)}
-      className="mb-3 flex w-full items-center justify-center gap-2 rounded-md border border-dashed border-line px-4 py-3 text-xs font-semibold text-muted-2 hover:border-primary hover:text-primary"
-    >+ 새 고객사 등록</button>
+    // 화면 폭을 가로지르는 점선 상자로 두면 "여기부터 시작"처럼 읽혀 제목보다 먼저 눈에 든다.
+    // 실제로는 가끔 쓰는 부가 동작이라, 오른쪽 끝의 작은 버튼으로 물린다.
+    return <div className="mb-4 flex justify-end">
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className={secondaryButton}
+      ><Icon name="plus" size={12} />새 고객사 등록</button>
+    </div>
   }
 
   return <section className={`${panel} mb-3 p-4`} aria-label="새 고객사 등록">
