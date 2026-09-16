@@ -834,6 +834,124 @@ test('the deploy gate is its own approval, so merging is not deploying', async (
 })
 
 /*
+ * The DEPLOY gate opens twice by design - once with the pull request still open, once after it
+ * is in dev - and until the verdict reached the screen the second opening looked exactly like
+ * the first. Someone pressed approve, got the same panel back, and had nothing saying the
+ * merge was what was still missing.
+ */
+const deployPending = {
+  ...pendingGithub, stage: 'DEPLOY' as const, nodeId: 'deploy_approval',
+}
+
+function deployDetail(merge: JobDetail['merge']): JobDetail {
+  return {
+    ...githubDetail,
+    currentStage: 'deploy_approval',
+    pendingApproval: deployPending,
+    merge,
+  }
+}
+
+test('the deploy gate says the pull request is not in dev yet and which one to merge', async () => {
+  render(<CodingWorkspace role="SUPER_ADMIN" api={finalApi(deployDetail({
+    status: 'NOT_MERGED', prNumber: 93, prUrl: 'https://github.com/o/r/pull/93',
+    checkedAt: '2026-09-16T01:30:00Z',
+  }))} />)
+
+  expect(await screen.findByText(/GitHub 에 아직 병합되지 않았습니다/)).toBeInTheDocument()
+  expect(screen.getByText(/#93/)).toBeInTheDocument()
+})
+
+test('the deploy gate confirms the merge with the sha that proves it', async () => {
+  render(<CodingWorkspace role="SUPER_ADMIN" api={finalApi(deployDetail({
+    status: 'MERGED', prNumber: 93, mergeSha: `sha1:${'b'.repeat(40)}`,
+    checkedAt: '2026-09-16T01:45:00Z',
+  }))} />)
+
+  expect(await screen.findByText(/dev 에 병합되었습니다/)).toBeInTheDocument()
+  expect(screen.getByText('bbbbbbbbbbbb')).toBeInTheDocument()
+})
+
+test('a blocked check carries its reason, being the one verdict nobody can act on here', async () => {
+  render(<CodingWorkspace role="SUPER_ADMIN" api={finalApi(deployDetail({
+    status: 'BLOCKED', reason: 'PR 이 닫힌 뒤 병합되지 않았습니다.',
+    checkedAt: '2026-09-16T01:45:00Z',
+  }))} />)
+
+  expect(await screen.findByText(/병합 여부를 확인하지 못했습니다/)).toBeInTheDocument()
+  expect(screen.getByText('PR 이 닫힌 뒤 병합되지 않았습니다.')).toBeInTheDocument()
+})
+
+test('a general administrator reads where the merge stands without reading the code', async () => {
+  // They cannot press this gate and are told so, but they approved the two before it and are
+  // the one waiting on the answer.
+  render(<CodingWorkspace role="GENERAL_ADMIN" api={finalApi({
+    // The server omits technical for this role entirely, which is what makes the merge
+    // verdict the only pull request news they get.
+    ...deployDetail({ status: 'NOT_MERGED', prNumber: 93, checkedAt: '2026-09-16T01:30:00Z' }),
+    technical: undefined,
+  })} />)
+
+  expect(await screen.findByText(/GitHub 에 아직 병합되지 않았습니다/)).toBeInTheDocument()
+  expect(screen.getByText(/최고관리자만 결정할 수 있습니다/)).toBeInTheDocument()
+  expect(screen.queryByText(/바뀐 파일/)).not.toBeInTheDocument()
+})
+
+test('the pull request button opens the PR once the server stops sending a null url', async () => {
+  render(<CodingWorkspace role="SUPER_ADMIN" api={finalApi({
+    ...deployDetail({ status: 'NOT_MERGED', prNumber: 93, checkedAt: '2026-09-16T01:30:00Z' }),
+    technical: { ...githubDetail.technical!, pullRequestUrl: 'https://github.com/o/r/pull/93' },
+  })} />)
+
+  const link = await screen.findByRole('link', { name: 'PR 열기' })
+  expect(link).toHaveAttribute('href', 'https://github.com/o/r/pull/93')
+})
+
+test('the verdict the press brings back is announced, not swallowed as old news', async () => {
+  // Job 8edb08e5, from the real stack: the gate had no verdict at all until the press, so a
+  // rule written as "announce a verdict that changed" treated the answer as a first sighting
+  // and said nothing. The press is the one moment the toast exists for.
+  const before = deployDetail(undefined)
+  const after = deployDetail({
+    status: 'NOT_MERGED', prNumber: 93, checkedAt: '2026-09-16T02:20:59Z',
+  })
+  const api = consoleApi({
+    listJobs: vi.fn().mockResolvedValue({ schemaVersion: '1.0', items: [openJob] }),
+    getJob: vi.fn().mockResolvedValueOnce(before).mockResolvedValue(after),
+    decideApproval: vi.fn().mockResolvedValue({}),
+  })
+  render(<CodingWorkspace role="SUPER_ADMIN" api={api} />)
+
+  fireEvent.click(await screen.findByRole('button', { name: '네, 배포합니다' }))
+
+  // Queried by class rather than by role: the panel below carries its own role="status" line,
+  // and the toast is the thing under test.
+  await waitFor(() => expect(document.querySelector('.cms-success-toast'))
+    .toHaveTextContent('아직 병합되지 않았습니다. PR #93 을 먼저 병합해 주세요.'))
+})
+
+test('opening a request that was already checked does not shout about it', async () => {
+  // The same rule from the other side: this sighting is the one that registers the Job.
+  render(<CodingWorkspace role="SUPER_ADMIN" api={finalApi(deployDetail({
+    status: 'MERGED', prNumber: 93, mergeSha: `sha1:${'b'.repeat(40)}`,
+    checkedAt: '2026-09-16T01:45:00Z',
+  }))} />)
+
+  // The callout says it, because the gate is still open. The toast does not, because nothing
+  // changed while anyone was watching.
+  expect(await screen.findByText(/dev 에 병합되었습니다/)).toBeInTheDocument()
+  expect(document.querySelector('.cms-success-toast')).toBeNull()
+})
+
+test('the gate stays silent about a merge nobody has checked yet', async () => {
+  render(<CodingWorkspace role="SUPER_ADMIN" api={finalApi(deployDetail(undefined))} />)
+
+  expect(await screen.findByText('배포 승인')).toBeInTheDocument()
+  expect(screen.queryByText(/병합되지 않았습니다/)).not.toBeInTheDocument()
+  expect(screen.queryByText(/병합되었습니다/)).not.toBeInTheDocument()
+})
+
+/*
  * The deploy gate is the last click of the demo and the server answers APPROVAL_ROLE_FORBIDDEN
  * to a general administrator. The screen used to offer the button anyway, so the refusal was
  * discovered as a red error at the end of the run.

@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react'
 import { describeFailure } from '../../shared/api/error'
 import { ROLE_LABELS, type AdminRole } from '../../shared/api/session'
 import {
@@ -8,7 +8,7 @@ import {
 import { Icon } from '../../shared/ui/icons'
 import type {
   ApprovalDecision, ApprovalStage, CodingConsoleApiClient, CodingJobStatus, CodingNotification,
-  CodingRepository, Handover, JobDetail, JobSummary, PendingApproval, RunnerStatus,
+  CodingRepository, Handover, JobDetail, JobSummary, Merge, PendingApproval, RunnerStatus,
 } from './api'
 import { diffLines } from './diffLines'
 import { lastSeenAt, markSeen, notificationSentence, sinceLabel, unseen } from './notifications'
@@ -237,6 +237,32 @@ function failureReason(code?: string): string {
     : '요청을 완료하지 못했습니다.'
 }
 
+/** One line of news, in the words the gate itself uses. */
+function mergeSentence(merge: Merge): string {
+  if (merge.status === 'MERGED') return 'dev 에 병합되었습니다.'
+  if (merge.status === 'BLOCKED') return '병합 여부를 확인하지 못했습니다.'
+  return merge.prNumber
+    ? `아직 병합되지 않았습니다. PR #${merge.prNumber} 을 먼저 병합해 주세요.`
+    : '아직 병합되지 않았습니다. PR 을 먼저 병합해 주세요.'
+}
+
+/**
+ * The same centre-screen toast the CMS and Agent 설정 screens use.
+ *
+ * Kept local on purpose: `CmsWorkspace` and `WorkflowPanel` each hold their own identical copy
+ * and share only the `cms-success-toast` class, which is where the 2.6 second fade lives. The
+ * toast says it once and leaves; what has to survive being looked away from is the callout
+ * inside the approval panel, not this.
+ */
+function MergeToast({ message }: { message: string }) {
+  return message ? <div className="pointer-events-none fixed inset-0 z-[100] grid place-items-center p-5" aria-live="polite" aria-atomic="true">
+    <div key={message} className="cms-success-toast flex max-w-[32.5rem] items-center gap-3 rounded-lg bg-[#16293c] px-6 py-5 text-sm font-semibold text-white shadow-[0_24px_70px_rgba(22,41,60,.35)]" role="status">
+      <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-accent text-base text-[#16293c]" aria-hidden="true">✓</span>
+      <span>{message}</span>
+    </div>
+  </div> : null
+}
+
 export default function CodingWorkspace({ api, role, monitoringAction }: { api: CodingConsoleApiClient; role: AdminRole; monitoringAction?: ReactNode }) {
   const [loading, setLoading] = useState(true)
   const [failure, setFailure] = useState<string | null>(null)
@@ -256,6 +282,10 @@ export default function CodingWorkspace({ api, role, monitoringAction }: { api: 
   /* silent marks the automatic ticks: they update the data but never blank the screen with
    * "불러오는 중", which every 15 seconds would read as the page breaking. */
   const [reload, setReload] = useState({ token: 0, silent: false })
+  /* The merge verdict as it arrives, announced once. The panel keeps the standing version of
+   * the same news; this is the moment it changes, which is the press the person just made. */
+  const [mergeNotice, setMergeNotice] = useState('')
+  const seenMerge = useRef<string | null>(null)
   const [history, setHistory] = useState<JobSummary[]>([])
   const [runner, setRunner] = useState<RunnerStatus | null>(null)
   const [notifications, setNotifications] = useState<CodingNotification[]>([])
@@ -423,6 +453,28 @@ export default function CodingWorkspace({ api, role, monitoringAction }: { api: 
   }, [submitting, deciding])
 
   /**
+   * Announce a merge verdict the moment it changes, and only then.
+   *
+   * <p>What is remembered is the Job, not the verdict - including the ordinary case of a Job
+   * with no verdict yet. Job 8edb08e5 showed why: before the press there was nothing to
+   * remember, so the verdict that came back from the press looked like the first sighting and
+   * was swallowed as old news. It was the one moment worth announcing. Opening a request that
+   * was already checked still stays quiet, because that sighting is the one that registers the
+   * Job.
+   */
+  useEffect(() => {
+    if (!detail) return
+    const merge = detail.merge
+    const key = `${detail.jobId}:${merge ? `${merge.status}:${merge.checkedAt ?? ''}` : 'none'}`
+    if (key === seenMerge.current) return
+    const known = seenMerge.current !== null
+      && seenMerge.current.startsWith(`${detail.jobId}:`)
+    seenMerge.current = key
+    if (!known || !merge) return
+    setMergeNotice(mergeSentence(merge))
+  }, [detail])
+
+  /**
    * The screen returns the pendingApproval it was handed. approvalId is a deterministic hash
    * of the stage and round, so recomputing it here would be guessing at the server's own
    * bookkeeping.
@@ -523,6 +575,7 @@ export default function CodingWorkspace({ api, role, monitoringAction }: { api: 
     : `최근 ${recent.length}건 · 완료 ${recentDone} · 멈춤 ${recentStopped}`
 
   return <>
+    <MergeToast message={mergeNotice} />
     {/* No refresh button: the screen polls every 15 seconds, and a button that repeats what
       * already happens on its own only asks the reader to wonder whether it is needed. */}
     <PageHead title="LLM CI/CD" description="한국어로 개발을 요청하고 단계마다 사람이 승인합니다." wrapActions>
@@ -1267,6 +1320,8 @@ function FinalApproval({ detail, pending, busy, role, onDecide }: {
   const [feedback, setFeedback] = useState('')
   const copy = finalStageCopy[pending.stage]
   const technical = detail.technical
+  /* Only the DEPLOY gate is the one that opens twice, so only it is owed the explanation. */
+  const merge = pending.stage === 'DEPLOY' ? detail.merge : undefined
   /* The server refuses both decisions of a stage this role cannot decide, so rejecting is locked
    * with approving rather than left as the one button that still returns a 403. */
   const permitted = canDecide(role, pending.requiredRole)
@@ -1290,6 +1345,36 @@ function FinalApproval({ detail, pending, busy, role, onDecide }: {
           <span className="mt-1 block break-all font-mono text-[0.6875rem]">
             {technical.runnerFailure}
           </span>
+        </Callout>
+      </div>}
+
+      {/*
+        * Why the same gate came back. The server has always recorded this verdict; until it
+        * reached here the person pressed approve, got the panel again, and had nothing telling
+        * them the merge was the thing still missing.
+        */}
+      {merge?.status === 'NOT_MERGED' && <div className="mb-[0.875rem]">
+        <Callout tone="warn" icon="triangle-alert">
+          GitHub 에 아직 병합되지 않았습니다. PR
+          {merge.prNumber ? ` #${merge.prNumber} ` : ' '}
+          을 먼저 병합한 뒤 다시 승인해 주세요.
+        </Callout>
+      </div>}
+
+      {merge?.status === 'MERGED' && <div className="mb-[0.875rem]">
+        <Callout tone="ok" icon="check-check">
+          dev 에 병합되었습니다.
+          {merge.mergeSha && <span className="mt-1 block break-all font-mono text-[0.6875rem]">
+            {merge.mergeSha.replace(/^sha1:/, '').slice(0, 12)}
+          </span>}
+        </Callout>
+      </div>}
+
+      {/* The one verdict nobody can act on from this panel, so it carries its reason. */}
+      {merge?.status === 'BLOCKED' && <div className="mb-[0.875rem]">
+        <Callout tone="warn" icon="triangle-alert">
+          병합 여부를 확인하지 못했습니다.
+          {merge.reason && <span className="mt-1 block">{merge.reason}</span>}
         </Callout>
       </div>}
 
@@ -1338,7 +1423,7 @@ function FinalApproval({ detail, pending, busy, role, onDecide }: {
               </Callout>
             </div>}
 
-          {/* Queuing CREATE_PR is a later slice, so this stays empty rather than pretending. */}
+          {/* Empty only until the PR receipt exists; the server stopped hard-coding null. */}
           <div className="mt-[0.875rem]">
             {technical.pullRequestUrl
               ? <a className={secondaryButton} href={technical.pullRequestUrl} target="_blank" rel="noreferrer">PR 열기</a>

@@ -169,6 +169,22 @@ export interface Technical {
   runnerFailure?: string
 }
 
+/**
+ * Whether the pull request this Job opened is in `dev` yet.
+ *
+ * Sent to both roles, unlike `Technical`. A general administrator cannot press the DEPLOY
+ * gate, but they approved the two gates before it and are the one waiting on the answer.
+ */
+export interface Merge {
+  status: 'MERGED' | 'NOT_MERGED' | 'BLOCKED'
+  prNumber?: number
+  prUrl?: string
+  head?: string
+  mergeSha?: string
+  reason?: string
+  checkedAt?: string
+}
+
 export interface JobDetail {
   schemaVersion: string
   jobId: string
@@ -184,6 +200,7 @@ export interface JobDetail {
   decisions: DecisionRecord[]
   handover?: Handover
   preview?: PreviewLink
+  merge?: Merge
   technical?: Technical
   createdAt: string
   finishedAt?: string
