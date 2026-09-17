@@ -53,10 +53,14 @@ test('card board filters by separate region and category while retaining disable
   await screen.findByRole('option', { name: '강원' })
   fireEvent.change(screen.getByLabelText('지역'), { target: { value: '2' } })
   fireEvent.change(screen.getByLabelText('분류'), { target: { value: '4' } })
+  fireEvent.change(screen.getByLabelText('월별'), { target: { value: '2026-09' } })
   expect(screen.getAllByRole('link')).toHaveLength(5)
   expect(screen.getAllByAltText('숲길 샘플')[0]).toHaveAttribute('src', '/api/site/images/7')
   expect(screen.getByLabelText('현재 주소')).toHaveTextContent('region=2')
   expect(screen.getByLabelText('현재 주소')).toHaveTextContent('category=4')
+  expect(screen.getByLabelText('현재 주소')).toHaveTextContent('month=2026-09')
+  fireEvent.click(screen.getByRole('button', { name: '초기화' }))
+  expect(screen.queryByLabelText('현재 주소')).not.toHaveTextContent('month=')
 })
 
 test('list board without optional groups has no irrelevant filters or code request', () => {
