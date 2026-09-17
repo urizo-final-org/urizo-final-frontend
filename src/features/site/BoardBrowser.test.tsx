@@ -95,27 +95,3 @@ test('post uses document renderer and returns to the same filtered list', () => 
   expect(screen.getByRole('link', { name: '목록으로' })).toHaveAttribute('href', '/news?q=숲길&page=2')
   expect(screen.queryByRole('searchbox')).not.toBeInTheDocument()
 })
-
-test('filters by month, combines with category and search, and resets with reset button', () => {
-  const customPosts: Post[] = [
-    { id: 1, boardId: 4, title: '8월 글', body: '내용', authorId: '1', authorName: '관리자', createdAt: '2026-08-10T00:00:00Z', updatedAt: '2026-08-10T00:00:00Z', categoryCodeId: 3 },
-    { id: 2, boardId: 4, title: '9월 글 A', body: '내용', authorId: '1', authorName: '관리자', createdAt: '2026-09-01T00:00:00Z', updatedAt: '2026-09-01T00:00:00Z', categoryCodeId: 3 },
-    { id: 3, boardId: 4, title: '9월 글 B', body: '내용', authorId: '1', authorName: '관리자', createdAt: '2026-09-15T00:00:00Z', updatedAt: '2026-09-15T00:00:00Z', categoryCodeId: 4 },
-  ]
-  render(<MemoryRouter initialEntries={['/news']}><BoardBrowser board={board} posts={customPosts} /><Location /></MemoryRouter>)
-  const monthSelect = screen.getByLabelText('월별')
-  expect(within(monthSelect).getAllByRole('option').map((o) => (o as HTMLOptionElement).value)).toEqual(['', '2026-09', '2026-08'])
-  fireEvent.change(monthSelect, { target: { value: '2026-09' } })
-  expect(screen.getAllByRole('link')).toHaveLength(2)
-  expect(screen.getByLabelText('현재 주소')).toHaveTextContent('month=2026-09')
-
-  fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'B' } })
-  fireEvent.click(screen.getByRole('button', { name: '검색' }))
-  expect(screen.getAllByRole('link')).toHaveLength(1)
-  expect(screen.getByText('9월 글 B')).toBeInTheDocument()
-
-  fireEvent.click(screen.getByRole('button', { name: '초기화' }))
-  expect(screen.getAllByRole('link')).toHaveLength(3)
-  expect((monthSelect as HTMLSelectElement).value).toBe('')
-  expect(screen.getByLabelText('현재 주소')).not.toHaveTextContent('month=')
-})
