@@ -52,15 +52,7 @@ export default function BoardBrowser({ board, posts, publicPath = '/' }: { board
   }, [posts])
 
   const filtered = posts.filter((post) => {
-    let postMonth = ''
-    if (post.createdAt) {
-      const d = new Date(post.createdAt)
-      if (!isNaN(d.getTime())) {
-        const y = d.getFullYear()
-        const m = String(d.getMonth() + 1).padStart(2, '0')
-        postMonth = `${y}-${m}`
-      }
-    }
+    const postMonth = post.createdAt ? post.createdAt.slice(0, 7) : ''
     return (!query.trim() || (post.title + ' ' + postText(post.body)).toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()))
       && (!region || String(post.regionCodeId) === region)
       && (!category || String(post.categoryCodeId) === category)
@@ -91,20 +83,20 @@ export default function BoardBrowser({ board, posts, publicPath = '/' }: { board
           <option value="">전체 지역</option>{options(board.regionGroupKey).map((code) => <option key={code.id} value={code.id}>{code.label}</option>)}
         </select>
       </label>}
-      <label className="grid gap-2 text-xs font-bold text-body">월별
-        <select className={field} value={month} onChange={(event) => update('month', event.target.value)}>
-          <option value="">전체 월</option>
-          {availableMonths.map((m) => {
-            const [y, mm] = m.split('-')
-            return <option key={m} value={m}>{y}년 {parseInt(mm, 10)}월</option>
-          })}
-        </select>
-      </label>
       {board.categoryGroupKey && <label className="grid gap-2 text-xs font-bold text-body">분류
         <select className={field} value={category} onChange={(event) => update('category', event.target.value)}>
           <option value="">전체 분류</option>{options(board.categoryGroupKey).map((code) => <option key={code.id} value={code.id}>{code.label}</option>)}
         </select>
       </label>}
+      <label className="grid gap-2 text-xs font-bold text-body">월별
+        <select className={field} value={month} onChange={(event) => update('month', event.target.value)}>
+          <option value="">전체 월</option>
+          {availableMonths.map((m) => {
+            const [y, mm] = m.split('-')
+            return <option key={m} value={m}>{y}년 {Number(mm)}월</option>
+          })}
+        </select>
+      </label>
       <label className="grid min-w-40 flex-1 gap-2 text-xs font-bold text-body">검색어
         <input className={field} type="search" placeholder="제목 또는 내용 검색" value={draft} onChange={(event) => setDraft(event.target.value)} />
       </label>
