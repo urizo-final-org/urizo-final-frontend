@@ -194,9 +194,9 @@ function ModelUsage({ api, revision }: { api: DashboardProps['profileApi']; revi
       {data?.status === 'DISABLED' && <p className="dashboard-message">모델 계측이 연결되지 않았습니다.</p>}
       {data?.status === 'UNAVAILABLE' && <p className="dashboard-message dashboard-error" role="alert">모델 계측을 조회할 수 없습니다. {data.errorCode}</p>}
       {data?.status === 'AVAILABLE' && (!rows.length ? <p className="dashboard-message">선택 기간에 관측된 모델 호출이 없습니다.</p> : <div className="dashboard-bars" role="group" aria-label={`모델별 ${metrics.find((item) => item.key === metric)?.label} 비교`}>
-        {sorted.map((row, index) => <div className="dashboard-bar-row" key={`${row.model}-${index}`}><div><span title={row.model ?? undefined}>{row.model ?? '모델 미확인'}</span><b>{metricText(row[metric], metric)}</b></div><div className="dashboard-bar-track" aria-hidden="true"><i style={{ width: `${numeric(row[metric]) && maximum > 0 ? row[metric] / maximum * 100 : 0}%`, background: ['#4c9ddd', '#45b9ac', '#a28ad9', '#d6a456', '#6586d0', '#ca839c'][index] }} /></div></div>)}
+        {sorted.map((row, index) => <div className="dashboard-bar-row" key={`${row.model}-${index}`}><div><span title={row.model ?? undefined}>{row.model ?? '모델 미확인'}</span><b>{metricText(row[metric], metric)}</b>{metric === 'totalTokens' && row.totalKnown !== undefined && <small>토큰 수집 {row.totalKnown}/{row.observationCount}회</small>}</div><div className="dashboard-bar-track" aria-hidden="true"><i style={{ width: `${numeric(row[metric]) && maximum > 0 ? row[metric] / maximum * 100 : 0}%`, background: ['#4c9ddd', '#45b9ac', '#a28ad9', '#d6a456', '#6586d0', '#ca839c'][index] }} /></div></div>)}
       </div>)}
-      {data && <p className="dashboard-footnote">{time(data.from)} – {time(data.to)} · {data.environment}<br />같은 기간의 계측값 · 최대 50개 모델 조회 · 미수집은 0으로 처리하지 않습니다.</p>}
+      {data && <p className="dashboard-footnote">{time(data.from)} – {time(data.to)} · {data.environment}<br />로컬 DB 집계 · 수집된 토큰의 부분 합계 · 비용 미수집 · 최대 50개 모델</p>}
       {data?.status === 'AVAILABLE' && rows.length > 0 && <LatencyTable rows={sorted} />}
     </QueryMessage>
   </Panel>

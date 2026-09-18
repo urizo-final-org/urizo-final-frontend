@@ -89,7 +89,7 @@ export default function IntegratedObservabilityDashboard({ api, query, onDetail,
     </div>
     <section className={panel} aria-label="토큰 사용량 추이">
       <PanelTitle title="토큰 사용량 추이"><Badge tone="idle" dot={false}>입력 · 출력 · 전체</Badge></PanelTitle>
-      <p className="px-4 pt-3 text-xs leading-5 text-muted-2">실제 Provider 호출의 전체 조회 기간 집계 · 48시간 이하는 시간별, 그 이상은 일별 UTC 구간입니다. 최초·마지막 구간은 선택 기간과 겹치는 부분만 집계합니다.</p>
+      <p className="px-4 pt-3 text-xs leading-5 text-muted-2">로컬 DB의 수집된 토큰 부분 합계 · 비용 미수집 · 실제 Provider 호출의 전체 조회 기간 집계 · 48시간 이하는 시간별, 그 이상은 일별 UTC 구간입니다. 최초·마지막 구간은 선택 기간과 겹치는 부분만 집계합니다.</p>
       <State result={tokens} count={tokens.data?.points.length ?? 0}>
         {tokens.data && <TokenUsageChart key={tokens.loadedAt} data={tokens.data} jobId={query.jobId} getMetrics={api.getObservabilityMetrics} modelLimit={modelLimit} />}
       </State>
@@ -115,13 +115,13 @@ export default function IntegratedObservabilityDashboard({ api, query, onDetail,
       <section className={panel} aria-label="Provider 계측 요약">
         <p className="mb-2 text-xs text-muted-2">입력은 캐시를 포함한 전체 사용량입니다. 캐시 입력은 Provider 상세의 호출별 관측에서 확인하세요.</p>
         <PanelTitle title="Provider 계측 요약"><button type="button" className={secondaryButton} onClick={() => onDetail('provider')}>Provider 상세 보기</button></PanelTitle>
-        <p className="px-4 pt-3 text-xs leading-5 text-muted-2">전체 조회 기간의 모델별 호출·토큰·비용 · 비용순 상위 5개 모델만 표시합니다. 전체 모델 합계가 아닙니다.</p>
+        <p className="px-4 pt-3 text-xs leading-5 text-muted-2">로컬 DB 집계 · 토큰은 수집된 호출의 부분 합계 · 비용 미수집 · 호출순 상위 5개 모델입니다.</p>
         <State result={providers} count={providerRows.length}>
           <div className="overflow-x-auto p-3"><table className="w-full min-w-[30rem] text-left text-xs">
             <thead className="bg-sub text-muted-2"><tr><th className="p-2">Model / 호출</th><th className="p-2">입력 / 출력 / 전체 Token</th><th className="p-2">비용 / P95</th></tr></thead>
             <tbody>{providerRows.slice(0, 5).map((row, index) => <tr key={`${row.model}-${index}`} className="border-t border-line-soft">
               <td className="p-2"><span className="block font-mono">{shown(row.model)}</span>{shown(row.observationCount)} 회</td>
-              <td className="p-2">{shown(row.inputTokens)} / {shown(row.outputTokens)} / {shown(row.totalTokens)}</td>
+              <td className="p-2">{shown(row.inputTokens)} / {shown(row.outputTokens)} / {shown(row.totalTokens)}{row.totalKnown !== undefined && <small className="block text-muted-2">입력 {row.inputKnown}/{row.observationCount} · 출력 {row.outputKnown}/{row.observationCount} · 전체 {row.totalKnown}/{row.observationCount}회 수집</small>}</td>
               <td className="p-2">{shown(row.totalCost)} / {row.p95LatencyMs == null ? shown(null) : `${row.p95LatencyMs} ms`}</td>
             </tr>)}</tbody>
           </table></div>
@@ -169,7 +169,7 @@ export function TokenUsageChart({ data, jobId = '', getMetrics, modelLimit = 50 
       const box = chart.getBoundingClientRect()
       const target = anchor.getBoundingClientRect()
       const viewportWidth = document.documentElement.clientWidth || window.innerWidth
-      const width = Math.max(0, Math.min(900, box.width - 32, viewportWidth - 24))
+      const width = Math.max(0, Math.min(560, box.width - 32, viewportWidth - 24))
       const minLeft = Math.max(12, box.left + 16)
       const maxRight = Math.min(viewportWidth - 12, box.right - 16)
       const preferredLeft = target.right + 12 + width <= maxRight ? target.right + 12 : target.left - width - 12

@@ -2,6 +2,29 @@ import { ProductApiError, type PublicErrorEnvelope } from '../../shared/api/erro
 import { fetchWithSessionRefresh, type AdminSession } from '../../shared/api/session'
 
 export type ProfileKey = 'LLM_OPS' | 'NATURAL_CMS'
+
+export interface InputOptimizationDecision {
+  toolCallId: string; tool: string; operation: 'RTK' | 'RETENTION' | 'REQUEST_BUDGET'; reason: string
+  beforeBytes: number; afterBytes: number; firstProcessing: boolean
+}
+export interface InputOptimizationCall {
+  callId: string; callOrder: number; nodeId: string; turnId: string; pipelineAttempt: number
+  executionAttempt: number; providerAttempt: number; provider: string; model: string; status: string
+  errorCode: string | null; startedAt: string; finishedAt: string | null
+  inputTokens: number | null; outputTokens: number | null; cachedInputTokens: number | null
+  observationTraceId: string | null
+  inputProcessing: { processingId: string; rtkEnabled: boolean; retentionEnabled: boolean; decisions: InputOptimizationDecision[] } | null
+}
+export interface InputOptimizationJob {
+  jobId: string; profileVersionId: string; profileVersion: number; profileKey: 'LLM_OPS'
+  status: string; stage: string; request: string | null; repositoryId: string | null; baseSha: string | null
+  createdAt: string; finishedAt: string | null
+  settings: { nodes?: { id: string; handlerKey?: string; config?: { rtkSearchEnabled?: boolean; retainSmallToolResults?: boolean } }[]; modelBindings?: unknown; toolBindings?: unknown }
+  calls: number; inputTokens: number | null; outputTokens: number | null; cachedInputTokens: number | null
+  inputKnown: number; outputKnown: number; cacheKnown: number; cacheHits: number; reviewResult: string | null
+}
+export interface InputOptimizationHistory { observedAt: string; jobs: InputOptimizationJob[]; truncated: boolean }
+export interface InputOptimizationDetail { observedAt: string; job: InputOptimizationJob; calls: InputOptimizationCall[]; truncated: boolean }
 export type ProfileStatus = 'DRAFT' | 'ACTIVE' | 'INACTIVE'
 export type ModelProvider = 'OPENAI' | 'ANTHROPIC' | 'GOOGLE_GENAI'
 export type ProviderCredentialState = 'STORED' | 'VERIFIED' | 'BILLING_BLOCKED' | 'INVALID_CREDENTIAL' | 'PROVIDER_UNAVAILABLE'
@@ -122,6 +145,9 @@ export interface SelectedObservationsResponse {
 }
 
 export interface ObservabilityMetricRow {
+  inputKnown?: number
+  outputKnown?: number
+  totalKnown?: number
   model: string | null
   observationCount: number | null
   inputTokens: number | null
@@ -133,6 +159,8 @@ export interface ObservabilityMetricRow {
 }
 
 export interface ObservabilityMetricsResponse {
+  source?: 'LOCAL_DB'
+  truncated?: boolean
   status: ObservabilityStatus
   errorCode: string | null
   from: string
@@ -142,6 +170,10 @@ export interface ObservabilityMetricsResponse {
 }
 
 export interface TokenUsagePoint {
+  observationCount?: number
+  inputKnown?: number
+  outputKnown?: number
+  totalKnown?: number
   bucketStart: string
   inputTokens: number | null
   outputTokens: number | null
@@ -149,6 +181,7 @@ export interface TokenUsagePoint {
 }
 
 export interface TokenUsageResponse {
+  source?: 'LOCAL_DB'
   status: ObservabilityStatus
   errorCode: string | null
   from: string
@@ -370,6 +403,8 @@ export interface ModelCatalogApiClient {
 }
 
 export interface AgentSettingsApiClient extends ProfileVersionApiClient, ProfileEditorLayoutApiClient, ProfileDefaultTemplateApiClient, ModelCatalogApiClient {
+  listInputOptimizationJobs?(from: string, to: string, jobId?: string, signal?: AbortSignal): Promise<InputOptimizationHistory>
+  getInputOptimizationJob?(jobId: string, signal?: AbortSignal): Promise<InputOptimizationDetail>
   listMonitoringJobs(signal?: AbortSignal): Promise<MonitoringJobListResponse>
   getMonitoringJobSnapshot(jobId: string, signal?: AbortSignal): Promise<MonitoringJobSnapshotResponse>
   getMonitoringOccurrenceObservations(path: string, signal?: AbortSignal): Promise<SelectedObservationsResponse>
@@ -398,6 +433,12 @@ async function responseBody<T>(response: Response): Promise<T> {
 }
 
 export class ProfileVersionApi implements AgentSettingsApiClient {
+  listInputOptimizationJobs = (from: string, to: string, jobId?: string, signal?: AbortSignal) => this.request<InputOptimizationHistory>(
+    `/api/admin/ai/monitoring/input-optimization/jobs?${new URLSearchParams({ from, to, ...(jobId ? { jobId } : {}) })}`, { signal },
+  )
+  getInputOptimizationJob = (jobId: string, signal?: AbortSignal) => this.request<InputOptimizationDetail>(
+    `/api/admin/ai/monitoring/input-optimization/jobs/${encodeURIComponent(jobId)}`, { signal },
+  )
   constructor(
     private token: string,
     private readonly onRefreshed: (session: AdminSession) => void,
@@ -471,18 +512,18 @@ export class ProfileVersionApi implements AgentSettingsApiClient {
   }
 
   getObservabilityMetrics = (from: string, to: string, jobId?: string, signal?: AbortSignal) => this.request<ObservabilityMetricsResponse>(
-    `/api/admin/ai/observability/metrics?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}${jobId ? `&jobId=${encodeURIComponent(jobId)}` : ''}`, { signal },
+    `/api/admin/ai/observability/local/metrics?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}${jobId ? `&jobId=${encodeURIComponent(jobId)}` : ''}`, { signal },
   )
 
   getTokenUsage = (from: string, to: string, jobId?: string, signal?: AbortSignal) => this.request<TokenUsageResponse>(
-    `/api/admin/ai/observability/token-usage?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}${jobId ? `&jobId=${encodeURIComponent(jobId)}` : ''}`, { signal },
+    `/api/admin/ai/observability/local/token-usage?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}${jobId ? `&jobId=${encodeURIComponent(jobId)}` : ''}`, { signal },
   )
 
   getObservations = (from: string, to: string, query: ObservabilityQuery = {}, signal?: AbortSignal) => {
     const options = Object.entries(query).filter(([, value]) => value !== undefined && value !== '')
       .map(([key, value]) => `&${key}=${encodeURIComponent(String(value))}`).join('')
     return this.request<ObservabilityResponse>(
-      `/api/admin/ai/observability/observations?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}${options}`, { signal },
+      `/api/admin/ai/observability/${query.kind === 'PROVIDER' ? 'local/' : ''}observations?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}${options}`, { signal },
     )
   }
 

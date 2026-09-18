@@ -221,7 +221,7 @@ test('tooltip clamps to viewport and chart width, and a tall overlay scrolls wit
     render(<TokenUsageChart data={tokenData} getMetrics={api().getObservabilityMetrics} />)
     fireEvent.focus(screen.getByRole('button', { name: `${tokenData.points[2].bucketStart} 구간 상세` }))
     const tooltip = screen.getByRole('dialog', { name: '시간 구간 툴팁' })
-    expect(tooltip).toHaveStyle({ left: '16px', width: '888px', top: '-24px' })
+    expect(tooltip).toHaveStyle({ left: '238px', width: '560px', top: '-24px' })
     width = 340; height = 1500
     fireEvent.resize(window)
     expect(tooltip).toHaveStyle({ left: '16px', width: '308px', top: '-248px' })

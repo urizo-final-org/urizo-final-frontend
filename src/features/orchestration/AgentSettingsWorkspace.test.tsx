@@ -18,8 +18,10 @@ const gemini36Binding = () => ({
 })
 
 afterEach(() => {
+  vi.restoreAllMocks()
   vi.unstubAllGlobals()
   window.localStorage.removeItem('axms-workflow-tool-layout')
+  window.localStorage.removeItem('axms-observability-range-v1')
 })
 
 // jsdom does not implement native dialog methods or the browser's modal focus trap.
@@ -178,6 +180,7 @@ function profileApi(overrides: Partial<AgentSettingsApiClient> = {}): AgentSetti
       profileKey: 'LLM_OPS', updatedAt: '2026-09-03T00:00:00Z', snapshot: starterSnapshots.LLM_OPS,
     }),
     listModelCatalog: vi.fn().mockImplementation((profileKey) => Promise.resolve(modelCatalog(profileKey))),
+    listInputOptimizationJobs: vi.fn().mockResolvedValue({ observedAt: '2026-09-07T00:00:00Z', jobs: [], truncated: false }),
     listMonitoringJobs: vi.fn().mockResolvedValue({ schemaVersion: '1.0', observedAt: '2026-09-07T00:00:00Z', jobs: [] }),
     getMonitoringJobSnapshot: vi.fn(),
     getMonitoringOccurrenceObservations: vi.fn(),
@@ -211,12 +214,12 @@ test('input optimization defaults off and saves independent frozen node options'
   const { unmount } = render(<AgentSettingsWorkspace api={profileApi({ create })} />)
   fireEvent.click(await screen.findByLabelText('code Node'))
   expect(screen.getByLabelText('RTK 검색 결과 압축')).not.toBeChecked()
-  expect(screen.getByLabelText('작은 도구 결과 추가 보존')).not.toBeChecked()
+  expect(screen.getByLabelText('작은 Tool 결과 캐시')).not.toBeChecked()
   fireEvent.click(screen.getByLabelText('RTK 검색 결과 압축'))
-  fireEvent.click(screen.getByLabelText('작은 도구 결과 추가 보존'))
+  fireEvent.click(screen.getByLabelText('작은 Tool 결과 캐시'))
   fireEvent.click(screen.getByLabelText('review Node'))
   expect(screen.getByLabelText('RTK 검색 결과 압축')).not.toBeChecked()
-  expect(screen.queryByLabelText('작은 도구 결과 추가 보존')).not.toBeInTheDocument()
+  expect(screen.queryByLabelText('작은 Tool 결과 캐시')).not.toBeInTheDocument()
   fireEvent.click(screen.getByLabelText('RTK 검색 결과 압축'))
   fireEvent.click(screen.getByLabelText('analyze Node'))
   expect(screen.queryByLabelText('RTK 검색 결과 압축')).not.toBeInTheDocument()
@@ -231,7 +234,7 @@ test('input optimization defaults off and saves independent frozen node options'
   render(<AgentSettingsWorkspace api={profileApi({ list: vi.fn().mockResolvedValue([{ ...activeVersion, snapshot: { ...activeVersion.snapshot, nodes: saved.nodes } }]) })} />)
   fireEvent.click(await screen.findByLabelText('code Node'))
   expect(screen.getByLabelText('RTK 검색 결과 압축')).toBeChecked()
-  expect(screen.getByLabelText('작은 도구 결과 추가 보존')).toBeChecked()
+  expect(screen.getByLabelText('작은 Tool 결과 캐시')).toBeChecked()
 })
 
 test('incoming monitoring navigation selects its tab and returning to the plain route restores the default tab', async () => {
@@ -337,6 +340,53 @@ test('dashboard period presets update UTC inputs and all queries while preservin
   await waitFor(() => expect(api.getObservations).toHaveBeenLastCalledWith('2026-08-26T00:00:00.000Z', '2026-09-02T00:00:00.000Z', { jobId, kind: 'PROVIDER', limit: 50, cursor: undefined }, expect.any(AbortSignal)))
 })
 
+test('restores the applied UTC range after remount, without saving unsubmitted edits or Job filters', async () => {
+  const api = profileApi()
+  const view = render(<AgentSettingsWorkspace api={api} />)
+  fireEvent.click(screen.getByRole('tab', { name: /사용량·평가/ }))
+  await waitFor(() => expect(screen.getByRole('button', { name: '검색' })).toBeEnabled())
+  fireEvent.change(screen.getByLabelText('조회 시작 UTC'), { target: { value: '2026-09-10T14:14' } })
+  fireEvent.change(screen.getByLabelText('조회 종료 UTC'), { target: { value: '2026-09-17T14:14' } })
+  fireEvent.change(screen.getByLabelText('Job ID 검색'), { target: { value: '11111111-1111-4111-8111-111111111111' } })
+  fireEvent.click(screen.getByRole('button', { name: '검색' }))
+  await waitFor(() => expect(screen.getByRole('button', { name: '검색' })).toBeEnabled())
+  fireEvent.change(screen.getByLabelText('조회 시작 UTC'), { target: { value: '2026-09-01T00:00' } })
+  view.unmount()
+  render(<AgentSettingsWorkspace api={api} />)
+  fireEvent.click(screen.getByRole('tab', { name: /사용량·평가/ }))
+  await waitFor(() => expect(screen.getByRole('button', { name: '검색' })).toBeEnabled())
+  expect(screen.getByLabelText('조회 시작 UTC')).toHaveValue('2026-09-10T14:14')
+  expect(screen.getByLabelText('조회 종료 UTC')).toHaveValue('2026-09-17T14:14')
+  expect(screen.getByLabelText('Job ID 검색')).toHaveValue('')
+  expect(api.getObservations).toHaveBeenLastCalledWith('2026-09-10T14:14:00.000Z', '2026-09-17T14:14:00.000Z',
+    { jobId: undefined, kind: 'NODE', limit: 50, cursor: undefined }, expect.any(AbortSignal))
+})
+
+test.each([
+  '{broken',
+  JSON.stringify({ from: '2026-09-17T00:00', to: '2026-09-10T00:00' }),
+  JSON.stringify({ from: '2026-09-01T00:00', to: '2026-10-03T00:00' }),
+  JSON.stringify({ from: '2026-02-30T00:00', to: '2026-03-04T00:00' }),
+])('falls back to 24 hours for invalid saved telemetry range %s', async (saved) => {
+  window.localStorage.setItem('axms-observability-range-v1', saved)
+  const api = profileApi()
+  render(<AgentSettingsWorkspace api={api} />)
+  fireEvent.click(screen.getByRole('tab', { name: /사용량·평가/ }))
+  await waitFor(() => expect(screen.getByRole('button', { name: '새로고침' })).toBeEnabled())
+  const [from, to] = vi.mocked(api.getObservations).mock.calls[0]
+  expect(Date.parse(to) - Date.parse(from)).toBe(86400000)
+})
+
+test('telemetry remains usable when browser storage is blocked', async () => {
+  vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new Error('Storage blocked') })
+  vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('Storage blocked') })
+  const api = profileApi()
+  render(<AgentSettingsWorkspace api={api} />)
+  fireEvent.click(screen.getByRole('tab', { name: /사용량·평가/ }))
+  await waitFor(() => expect(screen.getByRole('button', { name: '새로고침' })).toBeEnabled())
+  expect(api.getObservations).toHaveBeenCalledTimes(1)
+})
+
 test('rejects windows beyond 31 days before making an observability request', async () => {
   const api = profileApi()
   render(<AgentSettingsWorkspace api={api} />)
@@ -395,16 +445,20 @@ test('uses one UTC range for Node and Provider telemetry and preserves nullable 
   expect(getObservabilityMetrics.mock.calls[0].slice(0, 2)).toEqual(getObservations.mock.calls[0].slice(0, 2))
   expect(provider).toHaveTextContent('gpt-5.6-sol')
   expect(provider).toHaveTextContent('0.0042')
-  expect(provider).toHaveTextContent('실제 Provider 호출')
-  expect(provider).toHaveTextContent('선택한 조건의 Provider 관측 · 페이지당 최대 50건')
-  expect(provider).toHaveTextContent('OPENAI')
-  expect(provider).toHaveTextContent('job-1')
-  expect(provider).toHaveTextContent('otel-trace')
-  const call = within(provider).getByText('otel-trace').closest('tr')!
+  const calls = screen.getByRole('region', { name: '실제 Provider 호출' })
+  expect(screen.queryByRole('region', { name: '요청별 최적화 이력' })).not.toBeInTheDocument()
+  fireEvent.click(within(calls).getByText('DB 개별 호출 · 자연어 CMS·이전 기록 포함'))
+  expect(calls).toHaveTextContent('로컬 DB Provider 기록 · 자연어 CMS·LLM Ops 포함 · 페이지당 최대 50건')
+  expect(calls).toHaveTextContent('OPENAI')
+  expect(calls).toHaveTextContent('job-1')
+  expect(calls).toHaveTextContent('otel-trace')
+  expect(calls).toHaveTextContent('실행 시각 UTC')
+  const call = within(calls).getByText('otel-trace').closest('tr')!
   expect(within(call).getByText('96')).toBeInTheDocument()
   expect(within(call).getByText('24')).toBeInTheDocument()
   expect(within(call).getByText('120 / 제공되지 않음')).toBeInTheDocument()
-  expect(within(provider).getAllByText('제공되지 않음').length).toBeGreaterThan(0)
+  expect(within(call).getByText('2026-09-06T00:00:00Z')).toBeInTheDocument()
+  expect(within(provider).getAllByText('미수집').length).toBeGreaterThan(0)
 })
 
 test('cache evidence distinguishes reported zero from absent and unsupported counters', async () => {
@@ -462,6 +516,7 @@ test('searches full Job IDs on the server and keeps conditions while paging then
   await waitFor(() => expect(screen.getByText('2 페이지 · 현재 0건')).toBeInTheDocument())
   fireEvent.click(screen.getByRole('tab', { name: 'Provider 계측' }))
   await waitFor(() => expect(screen.getByText('1 페이지 · 현재 0건')).toBeInTheDocument())
+  fireEvent.click(screen.getByText('DB 개별 호출 · 자연어 CMS·이전 기록 포함'))
   expect(getObservations.mock.lastCall?.[2]).toEqual({ jobId, kind: 'PROVIDER', limit: 50, cursor: undefined })
   expect(getObservabilityMetrics.mock.lastCall?.[2]).toBe(jobId)
   expect(screen.getByText(/상단 집계는 전체 조회 기간 기준/)).toBeInTheDocument()
@@ -491,6 +546,7 @@ test('rejects partial Job IDs without a request and ignores aborted stale pages 
   fireEvent.click(screen.getByRole('tab', { name: /사용량·평가/ }))
   fireEvent.click(screen.getByRole('tab', { name: 'Provider 계측' }))
   await waitFor(() => expect(screen.getByRole('region', { name: 'Provider 계측 결과' })).toBeInTheDocument())
+  fireEvent.click(screen.getByText('DB 개별 호출 · 자연어 CMS·이전 기록 포함'))
   expect(getObservations.mock.calls[0][3].aborted).toBe(true)
   await act(async () => resolveFirst({
     status: 'AVAILABLE', errorCode: null, from: firstFrom, to: firstTo, environment: 'local', observations: [], nextCursor: 'stale',

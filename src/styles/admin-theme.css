@@ -254,10 +254,10 @@
   --tool-fg: #d9f1ff;
   cursor: grab;
   border-color: var(--tool-line);
-  color: var(--tool-fg);
   background: var(--tool-bg);
   transition: transform 150ms ease, box-shadow 150ms ease, border-color 150ms ease;
 }
+.admin-app .workflow-tool-satellite { color: var(--tool-fg); }
 .workflow-tool-satellite:active { cursor: grabbing; }
 .workflow-tool-satellite:hover { transform: translateY(-2px); box-shadow: 0 0 0 3px rgb(125 211 252 / 0.16), 0 10px 24px rgb(7 10 14 / 0.42); }
 .workflow-tool-satellite[data-tool-selected='true'] { z-index: 30; border-width: 2px; border-color: #e0f2fe; box-shadow: 0 0 0 4px rgb(56 189 248 / 0.34), 0 12px 28px rgb(7 10 14 / 0.54); }
@@ -269,6 +269,7 @@
 .workflow-tool-satellite[data-tool-tone='teal'], .workflow-tool-detail-icon[data-tool-tone='teal'] { --tool-bg: #193e42; --tool-line: #5ca7aa; --tool-fg: #d5f3f3; }
 .workflow-tool-satellite[data-tool-tone='rose'], .workflow-tool-detail-icon[data-tool-tone='rose'] { --tool-bg: #4a2934; --tool-line: #cc738d; --tool-fg: #ffe0e9; }
 .workflow-tool-detail-icon { color: var(--tool-fg, #d9f1ff); background: var(--tool-bg, #18384d); border: 1px solid var(--tool-line, #5da7cf); }
+.workflow-fallback-models { margin-top: 1rem; border-top: 1px solid var(--field-line); padding-top: 1rem; }
 .workflow-tool-lane { color: var(--body); background: #eef4f7; border-color: #aebfca; box-shadow: 0 -8px 24px rgb(15 23 42 / 0.18); }
 .workflow-tool-lane__item { color: var(--body); background: var(--field); border-color: var(--line-soft); box-shadow: 0 3px 10px rgb(15 23 42 / 0.08); }
 .workflow-tool-lane__item:hover { border-color: #70b9e8; background: #f4faff; }
