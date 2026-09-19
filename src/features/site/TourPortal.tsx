@@ -285,31 +285,56 @@ function PortalSearchDialog({ onClose, returnFocus }: { onClose: () => void; ret
 }
 
 /** 섹션 머리 — 근거를 댈 수 있는 부제는 집계 건수뿐이라 그것만 남긴다. */
-function SectionHead({ title, eyebrow, moreCategory }: { title: string; eyebrow: string; moreCategory?: string }) {
+function SectionHead({ title, eyebrow, moreCategory, action }: { title: string; eyebrow: string; moreCategory?: string; action?: ReactNode }) {
   return <div className="flex items-end justify-between gap-5">
     <div>
       <p className="m-0 mb-2 text-xs font-bold text-muted">{eyebrow}</p>
       <h2 className="m-0 text-[clamp(1.5rem,3vw,2rem)] font-extrabold tracking-[-.04em] text-ink">{title}</h2>
     </div>
-    {moreCategory && <Link className="whitespace-nowrap text-[0.8125rem] font-bold text-body no-underline hover:text-ink" to={searchUrl(moreCategory)}>전체 보기 →</Link>}
+    <div className="flex items-center gap-3">
+      {action}
+      {moreCategory && <Link className="whitespace-nowrap text-[0.8125rem] font-bold text-body no-underline hover:text-ink" to={searchUrl(moreCategory)}>전체 보기 →</Link>}
+    </div>
   </div>
 }
 
 export function PortalHome({ template, menus = [], notices = [] }: { template: SiteTemplate; menus?: Menu[]; notices?: Post[] }) {
   const [page, setPage] = useState(1)
+  const [ongoingOnly, setOngoingOnly] = useState(false)
 
   const [hero, ...rest] = HOME_SECTIONS
   const quickLinks = orderedMenus(menus, null).slice(0, 4)
   const notice = notices[0]
+
+  const displayedFestivals = ongoingOnly
+    ? FESTIVALS.filter((festival) => festivalBadge(festival.start, festival.end) === '진행 중')
+    : FESTIVALS
 
   return <main>
     <TemplateBanner template={template} />
 
     <section className="border-b border-line-soft bg-page">
       <div className="mx-auto max-w-[75rem] px-7 pb-[3.75rem] pt-14 max-[560px]:px-4">
-        <SectionHead title="지금 열리는 축제·행사?" eyebrow={`${todayLabel()} 기준 · 진행·예정 19건`} moreCategory="event" />
+        <SectionHead
+          title="지금 열리는 축제·행사?"
+          eyebrow={`${todayLabel()} 기준 · 진행·예정 19건`}
+          moreCategory="event"
+          action={
+            <button
+              type="button"
+              onClick={() => setOngoingOnly((prev) => !prev)}
+              className={`rounded-full border px-3 py-1 text-xs font-bold transition-colors ${
+                ongoingOnly
+                  ? 'border-primary bg-primary text-white'
+                  : 'border-line bg-panel text-body hover:border-primary'
+              }`}
+            >
+              진행 중만 보기
+            </button>
+          }
+        />
         <div className="mt-6 grid gap-5 [grid-template-columns:repeat(auto-fit,minmax(13.125rem,1fr))]">
-          {FESTIVALS.map((festival) => <article key={festival.name}>
+          {displayedFestivals.map((festival) => <article key={festival.name}>
             <div className="relative overflow-hidden rounded-xl border border-line-soft">
               <CardPhoto name={festival.name} img={festival.img} className="aspect-[3/4]" />
               <span className="pointer-events-none absolute left-[0.625rem] top-[0.625rem] rounded-md bg-white/95 px-[0.5625rem] py-1 text-[0.6875rem] font-extrabold text-ink">{festivalBadge(festival.start, festival.end)}</span>
