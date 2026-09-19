@@ -1,3 +1,4 @@
+import MeasuredTokens from './MeasuredTokens'
 import { useObservabilityRead } from './useObservabilityRead'
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { describeFailure } from '../../shared/api/error'
@@ -12,6 +13,7 @@ import type {
 } from './api'
 import ActiveJobMonitoringPanel from './ActiveJobMonitoringPanel'
 import IntegratedObservabilityDashboard from './IntegratedObservabilityDashboard'
+import InputOptimizationPanel from './InputOptimizationPanel'
 import WorkflowPanel, {
   hydrateToolBindings, normalizeModelBindings, profileToolRequirement, starterSnapshots,
   toolCatalog, toolDetails, toolRequirementLabel,
@@ -521,12 +523,31 @@ function PolicyPanel() {
   </section>
 }
 
-type ObservabilityTab = 'node' | 'provider' | 'dashboard'
+type ObservabilityTab = 'node' | 'provider' | 'dashboard' | 'optimization'
+
+const observabilityRangeStorageKey = 'axms-observability-range-v1'
 
 function defaultObservabilityRange() {
   const to = new Date()
   const from = new Date(to.getTime() - 24 * 60 * 60 * 1000)
   return { from: from.toISOString().slice(0, 16), to: to.toISOString().slice(0, 16) }
+}
+
+function restoredObservabilityRange() {
+  try {
+    const saved = JSON.parse(window.localStorage.getItem(observabilityRangeStorageKey) ?? 'null')
+    if (saved && typeof saved.from === 'string' && typeof saved.to === 'string'
+      && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(saved.from)
+      && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(saved.to)) {
+      const from = utcInstant(saved.from)
+      const to = utcInstant(saved.to)
+      if (from.slice(0, 16) === saved.from && to.slice(0, 16) === saved.to
+        && from < to && Date.parse(to) - Date.parse(from) <= 31 * 86400000) {
+        return { from: saved.from as string, to: saved.to as string }
+      }
+    }
+  } catch { /* Unavailable storage or an invalid saved range must not block telemetry. */ }
+  return defaultObservabilityRange()
 }
 
 function utcInstant(value: string) {
@@ -547,13 +568,14 @@ function availability(status: ObservabilityStatus, count: number) {
 }
 
 function UsagePanel({ api }: { api: AgentSettingsApiClient }) {
-  const initialRange = useRef(defaultObservabilityRange())
+  const [initialRange] = useState(restoredObservabilityRange)
   const [activeTab, setActiveTab] = useState<ObservabilityTab>('node')
-  const [fromInput, setFromInput] = useState(initialRange.current.from)
-  const [toInput, setToInput] = useState(initialRange.current.to)
+  const [comparisonJobs, setComparisonJobs] = useState<string[]>([])
+  const [fromInput, setFromInput] = useState(initialRange.from)
+  const [toInput, setToInput] = useState(initialRange.to)
   const [jobInput, setJobInput] = useState('')
   const [query, setQuery] = useState(() => ({
-    from: utcInstant(initialRange.current.from), to: utcInstant(initialRange.current.to), jobId: '',
+    from: utcInstant(initialRange.from), to: utcInstant(initialRange.to), jobId: '',
     kind: 'NODE' as 'NODE' | 'PROVIDER', cursors: [undefined] as (string | undefined)[], page: 0,
   }))
   const [metrics, setMetrics] = useState<ObservabilityMetricsResponse | null>(null)
@@ -561,6 +583,14 @@ function UsagePanel({ api }: { api: AgentSettingsApiClient }) {
   const [loadedAt, setLoadedAt] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [failure, setFailure] = useState<string | null>(null)
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(observabilityRangeStorageKey, JSON.stringify({
+        from: query.from.slice(0, 16), to: query.to.slice(0, 16),
+      }))
+    } catch { /* The current query still works when browser storage is unavailable. */ }
+  }, [query.from, query.to])
 
   function load() {
     try {
@@ -584,7 +614,7 @@ function UsagePanel({ api }: { api: AgentSettingsApiClient }) {
     setMetrics(null)
     setObservations(null)
     setLoadedAt(null)
-    if (activeTab === 'dashboard') {
+    if (activeTab === 'dashboard' || activeTab === 'optimization') {
       setLoading(false)
       return
     }
@@ -629,6 +659,7 @@ function UsagePanel({ api }: { api: AgentSettingsApiClient }) {
   const tabs: { id: ObservabilityTab; label: string }[] = [
     { id: 'node', label: 'Node 계측' },
     { id: 'provider', label: 'Provider 계측' },
+    { id: 'optimization', label: '최적화 비교' },
     { id: 'dashboard', label: '통합 계측 대시보드' },
   ]
 
@@ -658,7 +689,7 @@ function UsagePanel({ api }: { api: AgentSettingsApiClient }) {
         <button type="submit" className={secondaryButton} disabled={loading}>검색</button>
       </form>
       <div className="border-t border-line-soft px-4 py-3 text-[0.6875rem] leading-5 text-muted-2">
-        {activeTab === 'dashboard'
+        {activeTab === 'dashboard' || activeTab === 'optimization'
           ? <>기간 <span className="font-mono text-body">{query.from}</span> — <span className="font-mono text-body">{query.to}</span> · 환경 <b className="text-body">local</b> · Job <span className="break-all font-mono text-body">{query.jobId || '전체'}</span></>
           : observations
           ? <>기간 <span className="font-mono text-body">{observations.from}</span> — <span className="font-mono text-body">{observations.to}</span> · 환경 <b className="text-body">{observations.environment}</b> · Job <span className="break-all font-mono text-body">{query.jobId || '전체'}</span>{loadedAt && <> · 조회 완료 <span className="font-mono text-body">{loadedAt}</span></>}</>
@@ -689,25 +720,47 @@ function UsagePanel({ api }: { api: AgentSettingsApiClient }) {
         </tbody></table></div>}
     </section>}
 
+
+
     {!loading && activeTab === 'provider' && metrics && <section className={`${panel} mt-3`} aria-label="Provider 계측 결과">
+      <p className="mt-2 text-xs text-muted-2">로컬 DB에 저장된 실제 호출을 집계합니다. 토큰은 수집된 호출의 부분 합계이며 비용은 미수집입니다. 캐시 입력은 전체 입력에 포함됩니다.</p>
       <PanelTitle title="Provider 계측"><Badge tone={providerAvailability?.tone ?? 'idle'}>{providerAvailability?.label ?? '관측 대기'}</Badge></PanelTitle>
       {metrics.rows.length === 0
         ? <p className="p-4 text-[0.71875rem] text-muted-2">{metrics.status === 'AVAILABLE' ? '선택한 기간의 실제 Provider 호출 계측이 아직 없습니다.' : metrics.errorCode ?? '관측 연결 상태를 확인해 주세요.'}</p>
-        : <div className="overflow-x-auto"><table className="w-full min-w-[52rem] text-left text-[0.6875rem]"><thead className="bg-sub text-muted-2"><tr><th className="px-3 py-2">Model</th><th className="px-3 py-2">호출</th><th className="px-3 py-2">입력 Token</th><th className="px-3 py-2">출력 Token</th><th className="px-3 py-2">전체 Token</th><th className="px-3 py-2">Langfuse 비용</th><th className="px-3 py-2">P50 / P95</th></tr></thead><tbody>
-          {metrics.rows.map((row, index) => <tr key={`${row.model ?? 'unknown'}-${index}`} className="border-t border-line-soft"><td className="px-3 py-2 font-mono">{shown(row.model)}</td><td className="px-3 py-2">{shown(row.observationCount)}</td><td className="px-3 py-2">{shown(row.inputTokens)}</td><td className="px-3 py-2">{shown(row.outputTokens)}</td><td className="px-3 py-2">{shown(row.totalTokens)}</td><td className="px-3 py-2">{shown(row.totalCost)}</td><td className="px-3 py-2">{row.p50LatencyMs === null ? '제공되지 않음' : `${row.p50LatencyMs} ms`} / {row.p95LatencyMs === null ? '제공되지 않음' : `${row.p95LatencyMs} ms`}</td></tr>)}
+        : <div className="overflow-x-auto"><table className="w-full min-w-[52rem] text-left text-[0.6875rem]"><thead className="bg-sub text-muted-2"><tr><th className="px-3 py-2">Model</th><th className="px-3 py-2">호출</th><th className="px-3 py-2">입력 Token</th><th className="px-3 py-2">출력 Token</th><th className="px-3 py-2">전체 Token</th><th className="px-3 py-2">비용 (미수집)</th><th className="px-3 py-2">P50 / P95</th></tr></thead><tbody>
+          {metrics.rows.map((row, index) => <tr key={`${row.model ?? 'unknown'}-${index}`} className="border-t border-line-soft"><td className="px-3 py-2 font-mono">{shown(row.model)}</td><td className="px-3 py-2">{shown(row.observationCount)}</td><td className="px-3 py-2"><MeasuredTokens value={row.inputTokens} known={row.inputKnown} calls={row.observationCount} /></td><td className="px-3 py-2"><MeasuredTokens value={row.outputTokens} known={row.outputKnown} calls={row.observationCount} /></td><td className="px-3 py-2"><MeasuredTokens value={row.totalTokens} known={row.totalKnown} calls={row.observationCount} /></td><td className="px-3 py-2">{shown(row.totalCost)}</td><td className="px-3 py-2">{row.p50LatencyMs === null ? '제공되지 않음' : `${row.p50LatencyMs} ms`} / {row.p95LatencyMs === null ? '제공되지 않음' : `${row.p95LatencyMs} ms`}</td></tr>)}
         </tbody></table></div>}
-      {observations && <div className="border-t border-line-soft">
-        <div className="flex items-center justify-between gap-2 bg-sub px-3 py-2"><b className="text-[0.6875rem]">실제 Provider 호출</b><Badge tone={providerDetailAvailability?.tone ?? 'idle'} dot={false}>{providerDetailAvailability?.label ?? '관측 대기'}</Badge></div>
-        <p className="border-t border-line-soft px-4 py-2 text-[0.6875rem] text-muted-2">선택한 조건의 Provider 관측 · 페이지당 최대 50건 · 최신순 · 상단 집계는 전체 조회 기간 기준</p>
-        {providerRows.length === 0
-          ? <p className="p-4 text-[0.71875rem] text-muted-2">{observations.status === 'AVAILABLE' ? '이번 조회 결과에 실제 Provider 호출 Observation이 없습니다.' : observations.errorCode ?? '관측 연결 상태를 확인해 주세요.'}</p>
-          : <div className="overflow-x-auto"><table className="w-full min-w-[56rem] text-left text-[0.6875rem]"><thead className="bg-sub text-muted-2"><tr><th className="px-3 py-2">Provider / Model</th><th className="px-3 py-2">Job / Node</th><th className="px-3 py-2">OTel Trace</th><th className="px-3 py-2">입력 / 출력 Token</th><th className="px-3 py-2">지연시간</th></tr></thead><tbody>
-            {providerRows.map((row) => <tr key={row.id} className="border-t border-line-soft"><td className="px-3 py-2"><span className="block">{shown(row.metadata.provider)}</span><span className="font-mono text-muted-2">{shown(row.metadata.model ?? row.model)}</span></td><td className="px-3 py-2"><span className="block">{shown(row.metadata.jobId)}</span><span className="font-mono text-muted-2">{shown(row.metadata.nodeId)}</span></td><td className="px-3 py-2 font-mono">{row.traceId}</td><td className="px-3 py-2">{shown(row.inputTokens)} / {shown(row.outputTokens)}</td><td className="px-3 py-2">{row.latencyMs === null ? '제공되지 않음' : `${row.latencyMs} ms`}</td></tr>)}
-          </tbody></table></div>}
-      </div>}
+
     </section>}
 
-    {activeTab !== 'dashboard' && <nav className="mt-3 flex flex-wrap items-center justify-end gap-2 text-xs text-muted-2" aria-label="관측 페이지 이동">
+    {(activeTab === 'provider' || activeTab === 'optimization') && <InputOptimizationPanel
+      api={api} from={query.from} to={query.to} jobId={query.jobId}
+      mode={activeTab === 'provider' ? 'history' : 'compare'} selected={comparisonJobs}
+      onSelect={setComparisonJobs} onCompare={() => selectTab('optimization')} >
+      <details className="io-raw-observations">
+        <summary>DB 개별 호출 · 자연어 CMS·이전 기록 포함</summary>
+        <p className="io-muted my-2">선택 기간 안의 개별 관측입니다. 위 요청별 전체 실행 합계와 조회 범위가 다를 수 있습니다.</p>
+      {observations && <div className="border-t border-line-soft">
+        <div className="flex items-center justify-between gap-2 bg-sub px-3 py-2"><b className="text-[0.6875rem]">DB 개별 호출</b><Badge tone={providerDetailAvailability?.tone ?? 'idle'} dot={false}>{providerDetailAvailability?.label ?? '관측 대기'}</Badge></div>
+        <p className="border-t border-line-soft px-4 py-2 text-[0.6875rem] text-muted-2">로컬 DB Provider 기록 · 자연어 CMS·LLM Ops 포함 · 페이지당 최대 50건 · 최근 기록순 · 상단 집계는 전체 조회 기간 기준</p>
+        {providerRows.length === 0
+          ? <p className="p-4 text-[0.71875rem] text-muted-2">{observations.status === 'AVAILABLE' ? '이번 조회 결과에 실제 Provider 호출 Observation이 없습니다.' : observations.errorCode ?? '관측 연결 상태를 확인해 주세요.'}</p>
+          : <div className="overflow-x-auto"><table className="w-full min-w-[68rem] text-left text-[0.6875rem]"><thead className="bg-sub text-muted-2"><tr><th className="px-3 py-2">Provider / Model</th><th className="px-3 py-2">Job / Node</th><th className="px-3 py-2">OTel Trace</th><th className="px-3 py-2">입력 / 출력 Token</th><th className="px-3 py-2">입력 중 캐시</th><th className="px-3 py-2">미캐시 입력</th><th className="px-3 py-2">지연시간</th><th className="px-3 py-2">실행 시각 UTC</th></tr></thead><tbody>
+            {providerRows.map((row) => <tr key={row.id} className="border-t border-line-soft"><td className="px-3 py-2"><span className="block">{shown(row.metadata.provider)}</span><span className="font-mono text-muted-2">{shown(row.metadata.model ?? row.model)}</span></td><td className="px-3 py-2"><span className="block">{shown(row.metadata.jobId)}</span><span className="font-mono text-muted-2">{shown(row.metadata.nodeId)}</span></td><td className="px-3 py-2 font-mono">{shown(row.traceId)}</td><td className="px-3 py-2">{shown(row.inputTokens)} / {shown(row.outputTokens)}</td><td className="px-3 py-2">{row.cacheStatus === 'REPORTED' ? shown(row.cachedInputTokens ?? null) : row.cacheStatus === 'UNSUPPORTED_OR_UNKNOWN' ? '미지원·확인 불가' : '미제공'}</td><td className="px-3 py-2">{row.cacheStatus === 'REPORTED' ? shown(row.uncachedInputTokens ?? null) : row.cacheStatus === 'UNSUPPORTED_OR_UNKNOWN' ? '미지원·확인 불가' : '미제공'}</td><td className="px-3 py-2">{row.latencyMs === null ? '제공되지 않음' : `${row.latencyMs} ms`}</td><td className="whitespace-nowrap px-3 py-2 font-mono">{row.startTime}</td></tr>)}
+          </tbody></table></div>}
+      </div>}
+    {activeTab === 'provider' && <nav className="mt-3 flex flex-wrap items-center justify-end gap-2 text-xs text-muted-2" aria-label="관측 페이지 이동">
+      <span aria-live="polite">{query.page + 1} 페이지{!loading && observations && ` · 현재 ${(query.kind === 'NODE' ? nodeRows : providerRows).length}건`}</span>
+      <button type="button" className={secondaryButton} disabled={loading || query.page === 0} onClick={() => setQuery((current) => ({ ...current, page: current.page - 1 }))}>이전</button>
+      <button type="button" className={secondaryButton} disabled={loading || !!failure || !observations?.nextCursor || observations.status !== 'AVAILABLE'} onClick={() => {
+        const cursor = observations?.nextCursor
+        if (cursor) setQuery((current) => ({ ...current, page: current.page + 1, cursors: [...current.cursors.slice(0, current.page + 1), cursor] }))
+      }}>다음</button>
+    </nav>}
+      </details>
+    </InputOptimizationPanel>}
+
+    {activeTab === 'node' && <nav className="mt-3 flex flex-wrap items-center justify-end gap-2 text-xs text-muted-2" aria-label="관측 페이지 이동">
       <span aria-live="polite">{query.page + 1} 페이지{!loading && observations && ` · 현재 ${(query.kind === 'NODE' ? nodeRows : providerRows).length}건`}</span>
       <button type="button" className={secondaryButton} disabled={loading || query.page === 0} onClick={() => setQuery((current) => ({ ...current, page: current.page - 1 }))}>이전</button>
       <button type="button" className={secondaryButton} disabled={loading || !!failure || !observations?.nextCursor || observations.status !== 'AVAILABLE'} onClick={() => {

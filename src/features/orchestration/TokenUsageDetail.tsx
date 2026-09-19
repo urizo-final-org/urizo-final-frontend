@@ -48,33 +48,41 @@ export default function TokenUsageDetail({ data, point, jobId, getMetrics, cache
     <div className="flex items-center justify-between gap-2 border-b border-line-soft px-3 py-2">
       <b>시간 구간 상세 · UTC</b><button type="button" className={secondaryButton} onClick={onClose} aria-label="시간 구간 상세 닫기">닫기</button>
     </div>
-    <div className="space-y-3 p-4">
-      {range ? <div className="flex flex-wrap gap-x-8 gap-y-2 text-muted-2">
-        <p>집계 시작 (UTC)<time dateTime={range.from} className="mt-1 block font-semibold text-ink">{range.from.replace('T', ' ').replace('.000Z', '').replace('Z', '')}</time></p>
-        <p>집계 종료 (UTC · 미포함)<time dateTime={range.to} className="mt-1 block font-semibold text-ink">{range.to.replace('T', ' ').replace('.000Z', '').replace('Z', '')}</time></p>
+    <div className="space-y-2 p-3">
+      {range ? <div className="flex flex-wrap gap-x-1 text-[11px] text-muted-2">
+        <time dateTime={range.from}>{range.from.slice(5, 16).replace('T', ' ')}</time>
+        <span>→</span><time dateTime={range.to}>{range.to.slice(5, 16).replace('T', ' ')}</time><span>(종료 미포함)</span>
       </div> : <p>조회 기간과 겹치지 않는 구간입니다.</p>}
       <dl className="grid grid-cols-3 gap-2 rounded-md bg-sub p-2">
-        <div><dt className="text-sky-300">입력 Token</dt><dd>{shown(point.inputTokens)}</dd></div>
-        <div><dt className="text-amber-300">출력 Token</dt><dd>{shown(point.outputTokens)}</dd></div>
-        <div><dt className="text-violet-300">전체 Token</dt><dd>{shown(point.totalTokens)}</dd></div>
+        <div><dt className="text-muted-2">입력 Token</dt><dd className="font-semibold tabular-nums">{shown(point.inputTokens)}</dd></div>
+        <div><dt className="text-muted-2">출력 Token</dt><dd className="font-semibold tabular-nums">{shown(point.outputTokens)}</dd></div>
+        <div><dt className="text-muted-2">전체 Token</dt><dd className="font-semibold tabular-nums">{shown(point.totalTokens)}</dd></div>
       </dl>
-      <p className="text-[0.6875rem] text-muted-2">같은 구간·Job 조건 · 비용순 최대 50개 모델 · 전체 모델 합계가 아닙니다. 모델별 값은 별도 조회 시점의 집계입니다.</p>
+      <p className="text-[11px] text-muted-2">수집된 토큰 기준 · 미제공은 0이 아닙니다.</p>
       {range && !result && !error && <p role="status">모델별 사용량 조회 중…</p>}
       {error && <p role="alert" className="text-fail-fg">{error}</p>}
       {result?.status === 'DISABLED' && <p>관측 연결 안 됨</p>}
       {result?.status === 'UNAVAILABLE' && <p role="status">모델별 사용량 일시 사용 불가</p>}
       {result?.status === 'AVAILABLE' && result.rows.length === 0 && <p>이 구간의 모델 관측이 없습니다.</p>}
-      {result?.status === 'AVAILABLE' && result.rows.length > 0 && <p className="text-muted-2">조회된 {result.rows.length}개 중 {Math.min(modelLimit, result.rows.length)}개 표시 · 비용순</p>}
-      {result?.status === 'AVAILABLE' && <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 240px), 1fr))' }}>{result.rows.slice(0, modelLimit).map((row, index) => <article key={`${row.model}:${index}`} className="min-w-0 rounded-md border border-line-soft p-3">
-        <b className="block break-all font-mono">{row.model ?? '모델 미제공'}</b>
-        <dl className="mt-3 grid grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)] gap-x-3 gap-y-2 break-words text-xs">
-          <dt>호출 수</dt><dd>{shown(row.observationCount)}</dd>
-          <dt>입력 / 출력 Token</dt><dd>{shown(row.inputTokens)} / {shown(row.outputTokens)}</dd>
-          <dt>전체 Token</dt><dd>{shown(row.totalTokens)}</dd>
-          <dt>비용 (Langfuse)</dt><dd>{shown(row.totalCost)}</dd>
-          <dt>P95 지연 (ms)</dt><dd>{shown(row.p95LatencyMs)}</dd>
-        </dl>
-      </article>)}</div>}
+      {result?.status === 'AVAILABLE' && result.rows.length > 0 && <>
+        <p className="text-[11px] text-muted-2">조회된 {result.rows.length}개 중 {Math.min(modelLimit, result.rows.length)}개 표시 · 호출순{result.truncated ? ' · 상위 50개 한정' : ''}</p>
+        <div className="max-h-56 overflow-y-auto rounded-md border border-line-soft">
+          <table aria-label="모델별 호출과 토큰 요약" className="w-full table-fixed text-[11px]">
+            <thead className="sticky top-0 bg-sub text-muted-2"><tr>
+              <th className="w-[43%] px-2 py-1.5 text-left font-medium">모델</th>
+              <th className="w-[13%] px-2 py-1.5 text-right font-medium">호출</th>
+              <th className="w-[22%] px-2 py-1.5 text-right font-medium">입력</th>
+              <th className="w-[22%] px-2 py-1.5 text-right font-medium">출력</th>
+            </tr></thead>
+            <tbody>{result.rows.slice(0, modelLimit).map((row, index) => <tr key={`${row.model}:${index}`} className="border-t border-line-soft">
+              <th scope="row" title={row.model ?? '모델 미제공'} className="truncate px-2 py-1.5 text-left font-medium">{row.model ?? '모델 미제공'}</th>
+              <td className="px-2 py-1.5 text-right tabular-nums">{shown(row.observationCount)}</td>
+              <td className="px-2 py-1.5 text-right tabular-nums">{shown(row.inputTokens)}</td>
+              <td className="px-2 py-1.5 text-right tabular-nums">{shown(row.outputTokens)}</td>
+            </tr>)}</tbody>
+          </table>
+        </div>
+      </>}
       {(error || result?.status === 'UNAVAILABLE') && <button type="button" className={secondaryButton} onClick={() => { setResult(null); setError(null); setReload((value) => value + 1) }}>구간 상세 다시 조회</button>}
     </div>
   </section>

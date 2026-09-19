@@ -1649,7 +1649,8 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient & 
               selection={selectedBinding.selections?.[selectedBinding.primary]}
               onChange={(patch) => updateInference(selectedBinding.primary, catalogModels.find((model) => model.selectionId === selectedBinding.primary)!, patch)}
             />}
-            <fieldset className="mt-3">
+            <div className="workflow-fallback-models">
+            <fieldset>
               <legend className="text-[0.71875rem] font-semibold text-body">대체 모델 (Fallback Model)</legend>
               <p className="mt-1 text-[0.625rem] leading-4 text-muted-2">주 모델의 미설정·사용량 제한·시간 초과·Provider 장애 등 일시적 오류에 사용할 후보입니다.</p>
               <div className="mt-2 space-y-2">
@@ -1675,7 +1676,21 @@ export default function WorkflowPanel({ api }: { api: ProfileVersionApiClient & 
                 {selectableModels.length === 0 && <p className="text-[0.65625rem] text-muted-2">현재 연결 확인된 모델이 없습니다. Provider·Model 탭에서 Key 상태를 확인해 주세요.</p>}
               </div>
             </fieldset>
+            </div>
           </div>}
+
+          {(selected.handlerKey === 'coding.code' || selected.handlerKey === 'coding.review') && <section className="mt-3 border-t border-row-line pt-3" aria-label="모델 입력 최적화">
+            <b className="text-[0.71875rem] font-semibold text-body">모델 입력 최적화</b>
+            <label className="mt-2 flex items-start gap-2 text-xs">
+              <input type="checkbox" aria-label="RTK 검색 결과 압축" checked={selected.config.rtkSearchEnabled === true} disabled={loading || saving || !supported} onChange={(event) => updateSelectedConfig({ rtkSearchEnabled: event.target.checked })} />
+              <span>RTK 검색 결과 압축<small className="mt-1 block text-muted-2">큰 검색 결과를 압축합니다. 정보를 보존할 수 없으면 원문을 사용합니다.</small></span>
+            </label>
+            {selected.handlerKey === 'coding.code' && <label className="mt-2 flex items-start gap-2 text-xs">
+              <input type="checkbox" aria-label="작은 Tool 결과 캐시" checked={selected.config.retainSmallToolResults === true} disabled={loading || saving || !supported} onChange={(event) => updateSelectedConfig({ retainSmallToolResults: event.target.checked })} />
+              <span>작은 Tool 결과 캐시<small className="mt-1 block text-muted-2">이전 Tool 결과를 후속 모델 입력에 유지해 재조회를 줄이는 설정입니다. 입력량이 늘어날 수 있으며, Provider 입력 캐시와는 별개입니다.</small></span>
+            </label>}
+            <p className="mt-2 text-xs text-muted-2">새 버전을 활성화한 뒤 시작하는 Job부터 적용됩니다. 비용 절감은 실제 사용량으로 확인하세요.</p>
+          </section>}
 
           {Object.keys(selectedToolDefaults).length > 0 && <section className="mt-3 border-t border-row-line pt-3" aria-label="선택 Node MCP Tool binding">
             <b className="text-[0.71875rem] font-semibold text-body">MCP Tool binding</b>

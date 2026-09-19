@@ -95,6 +95,19 @@ test('loads the Profile-scoped model catalog without credential metadata', async
   expect(fetcher.mock.calls[0][1].body).toBeUndefined()
 })
 
+test('provider calls use the local DB endpoint and preserve the Job filter and cursor', async () => {
+  const fetcher = vi.fn().mockResolvedValue(new Response('{}'))
+  vi.stubGlobal('fetch', fetcher)
+  vi.stubGlobal('crypto', { randomUUID: () => 'trace-id' })
+  const api = new ProfileVersionApi('token', vi.fn(), vi.fn())
+  await api.getObservations('from', 'to', { kind: 'PROVIDER', jobId: 'latest-cms-job', cursor: '120', limit: 20 })
+  const url = new URL(fetcher.mock.calls[0][0], 'http://localhost')
+  expect(url.pathname).toBe('/api/admin/ai/observability/local/observations')
+  expect(url.searchParams.get('jobId')).toBe('latest-cms-job')
+  expect(url.searchParams.get('cursor')).toBe('120')
+  expect(url.searchParams.get('limit')).toBe('20')
+})
+
 test('loads Metrics and Observations with the same encoded UTC range', async () => {
   const metrics = {
     status: 'AVAILABLE', errorCode: null, from: '2026-09-05T00:00:00Z', to: '2026-09-06T00:00:00Z',
@@ -115,7 +128,7 @@ test('loads Metrics and Observations with the same encoded UTC range', async () 
   await expect(api.getObservations(metrics.from, metrics.to)).resolves.toEqual(observations)
 
   const query = 'from=2026-09-05T00%3A00%3A00Z&to=2026-09-06T00%3A00%3A00Z'
-  expect(fetcher.mock.calls[0][0]).toBe(`/api/admin/ai/observability/metrics?${query}`)
+  expect(fetcher.mock.calls[0][0]).toBe(`/api/admin/ai/observability/local/metrics?${query}`)
   expect(fetcher.mock.calls[1][0]).toBe(`/api/admin/ai/observability/observations?${query}`)
   expect(new Headers(fetcher.mock.calls[0][1].headers).get('X-Trace-Id')).toBe('trace-id')
   expect(new Headers(fetcher.mock.calls[1][1].headers).get('X-Trace-Id')).toBe('trace-id')
@@ -151,7 +164,7 @@ test('loads token time series from its read-only fixed endpoint with Job filter 
   const jobId = '11111111-1111-4111-8111-111111111111'
   await expect(api.getTokenUsage(response.from, response.to, jobId, signal)).resolves.toEqual(response)
   const url = new URL(fetcher.mock.calls[0][0], 'http://localhost')
-  expect(url.pathname).toBe('/api/admin/ai/observability/token-usage')
+  expect(url.pathname).toBe('/api/admin/ai/observability/local/token-usage')
   expect(Object.fromEntries(url.searchParams)).toEqual({ from: response.from, to: response.to, jobId })
   expect(fetcher.mock.calls[0][1].signal).toBe(signal)
   expect(fetcher.mock.calls[0][1].body).toBeUndefined()
